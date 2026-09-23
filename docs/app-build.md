@@ -173,3 +173,28 @@ focused Escape, “Kept in History” visual/VoiceOver announcement, Quit persis
 Delete leaving no pending image on disk, and actual backup exclusion. Continue
 ticket 08's permission and signed-rebuild checklist with Prateek. Recovery,
 retention/quota, and database-failure recovery UI are not implemented here.
+
+## Ticket 11 Settings and Save
+
+The thumbnail offers Save/Retry Save (S while focused). It shares History
+finalization with Copy and Dismiss. Export failures leave the thumbnail available
+for retry or dismissal; successful exports with failed History show an
+acknowledgment-required notice.
+
+The app's standard Settings menu command (Command-comma) and status menu open
+one SwiftUI Settings window hosted in AppKit. Export folder is its first section;
+Choose… uses a directory-only `NSOpenPanel` (also Command-O in Settings). Controls
+have accessible labels and native keyboard operation; verify actual VoiceOver
+and Full Keyboard Access behavior with the ticket's manual checklist.
+
+The current target explicitly does **not** enable App Sandbox (the entitlement
+file remains empty). Therefore `ExportSettings` stores `exportFolderPath` as a
+plain path in the app's bundle-scoped `UserDefaults`, defaulting to
+`~/Pictures/Frisket`. No security-scoped bookmark is needed or created. If a
+future ticket enables sandboxing, it must replace this path preference with a
+security-scoped bookmark and balance access around validation/export. Debug and
+production preferences remain separated by bundle identity.
+
+No app launch, screen capture, clipboard access, signing, or installation is
+part of ticket 11's automated verification. Operator runbook:
+[11-save-and-settings.md](manual-checks/11-save-and-settings.md).

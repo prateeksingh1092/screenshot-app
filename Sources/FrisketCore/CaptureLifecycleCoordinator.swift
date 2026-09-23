@@ -7,21 +7,24 @@ actor CaptureLifecycleCoordinator {
     private let fullScreenSource: (any CapturePixelSource)?
     private let clipboard: any ImageClipboard
     private let history: (any CaptureHistory)?
+    private let exporter: (any CaptureExport)?
     private var finalized: Set<CaptureID> = []
     private var copyCommits: [CaptureID: CommitOutcome] = [:]
     private var inProgress: Set<CaptureID> = []
     private var discarded: Set<CaptureID> = []
     private var failedDelivery: Set<CaptureID> = []
+    private var failedSave: Set<CaptureID> = []
     private var delivered: Set<CaptureID> = []
     private var images: [CaptureID: CaptureImage] = [:]
 
     init(source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
-         clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?) {
+         clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?, exporter: (any CaptureExport)?) {
         self.pendingByteLimit = max(0, pendingByteLimit)
         self.source = source
         self.fullScreenSource = fullScreenSource
         self.clipboard = clipboard
         self.history = history
+        self.exporter = exporter
     }
 
     func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {
@@ -56,6 +59,7 @@ actor CaptureLifecycleCoordinator {
                 pendingBytes -= image.pngData.count
                 images.removeValue(forKey: id)
                 failedDelivery.remove(id)
+                failedSave.remove(id)
             }
             inProgress.remove(id)
             return .finalized(revision, outcome)
@@ -69,6 +73,7 @@ actor CaptureLifecycleCoordinator {
             pendingBytes -= images[id]?.pngData.count ?? 0
             images.removeValue(forKey: id)
             failedDelivery.remove(id)
+            failedSave.remove(id)
             discarded.insert(id)
             return .discarded(id)
         case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes):
@@ -101,7 +106,7 @@ actor CaptureLifecycleCoordinator {
             case let .failure(error):
                 return .captureFailed(error)
             }
-        case let .copy(revision), let .retryCopy(revision):
+        case let .copy(revision), let .retryCopy(revision), let .save(revision), let .retrySave(revision):
             guard !inProgress.contains(revision.captureID) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(revision.captureID) else { return .rejected(.discardedCapture) }
             guard images[revision.captureID] != nil || delivered.contains(revision.captureID) else {
@@ -110,9 +115,18 @@ actor CaptureLifecycleCoordinator {
             guard revision.number == 1 else { return .rejected(.staleRevision) }
             guard !delivered.contains(revision.captureID) else { return .rejected(.alreadyDelivered) }
             guard let image = images[revision.captureID] else { return .rejected(.unknownCapture) }
-            if case .retryCopy = command {
-                guard failedDelivery.contains(revision.captureID) else { return .rejected(.retryNotAvailable) }
-            } else if failedDelivery.contains(revision.captureID) {
+            let saving: Bool
+            let retrying: Bool
+            switch command {
+            case .save: saving = true; retrying = false
+            case .retrySave: saving = true; retrying = true
+            case .retryCopy: saving = false; retrying = true
+            default: saving = false; retrying = false
+            }
+            let previouslyFailed = saving ? failedSave.contains(revision.captureID) : failedDelivery.contains(revision.captureID)
+            if retrying {
+                guard previouslyFailed else { return .rejected(.retryNotAvailable) }
+            } else if previouslyFailed {
                 return .rejected(.retryRequired)
             }
             let delivery: DeliveryOutcome
@@ -126,11 +140,29 @@ actor CaptureLifecycleCoordinator {
                 copyCommits[revision.captureID] = commit
                 if commit == .committed { finalized.insert(revision.captureID) }
             }
+            if saving {
+                let delivery: SaveDeliveryOutcome
+                switch await exporter?.export(AuthorizedFinalization(revision: revision, pngData: image.pngData)) ?? .failure(.unavailable) {
+                case let .success(receipt):
+                    delivery = .saved(receipt)
+                    delivered.insert(revision.captureID)
+                    failedSave.remove(revision.captureID)
+                    failedDelivery.remove(revision.captureID)
+                    pendingBytes -= image.pngData.count
+                    images.removeValue(forKey: revision.captureID)
+                case let .failure(error):
+                    delivery = .failed(error)
+                    failedSave.insert(revision.captureID)
+                }
+                inProgress.remove(revision.captureID)
+                return .save(SaveOutcome(revision: revision, commit: commit, delivery: delivery))
+            }
             switch await clipboard.write(ClipboardImage(pngData: image.pngData)) {
             case let .success(receipt):
                 delivery = .copied(receipt)
                 delivered.insert(revision.captureID)
                 failedDelivery.remove(revision.captureID)
+                failedSave.remove(revision.captureID)
                 pendingBytes -= image.pngData.count
                 images.removeValue(forKey: revision.captureID)
             case let .failure(error):

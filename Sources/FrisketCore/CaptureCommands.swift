@@ -19,6 +19,8 @@ public enum CaptureCommand: Sendable {
     case captureFullScreen(CaptureID, maximumBytes: Int)
     case copy(CaptureRevision)
     case retryCopy(CaptureRevision)
+    case save(CaptureRevision)
+    case retrySave(CaptureRevision)
     case dismiss(CaptureRevision)
     case discard(CaptureID)
 }
@@ -52,6 +54,7 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case pending(CaptureRevision)
     case discarded(CaptureID)
     case copy(CopyOutcome)
+    case save(SaveOutcome)
     case finalized(CaptureRevision, CommitOutcome)
     case captureFailed(CaptureSourceFailure)
     case rejected(CommandRejection)
@@ -64,10 +67,10 @@ public struct CaptureCommandLayer: Sendable {
 
     public init(source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
-                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil) {
+                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil, exporter: (any CaptureExport)? = nil) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
-                                                  pendingByteLimit: pendingByteLimit, history: history)
+                                                  pendingByteLimit: pendingByteLimit, history: history, exporter: exporter)
     }
 
     public func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {

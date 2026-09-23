@@ -260,3 +260,45 @@ uses the same in-worktree caches and
 Xcode toolchain as the full `sh scripts/test-core.sh` run. Original ticket 06
 History-unavailable descriptions above remain applicable when no `CaptureHistory`
 is injected. The app now injects the lazy disk store.
+
+## Ticket 11 Save interface
+
+`execute(.save(revision))` and `execute(.retrySave(revision))` return
+`.save(SaveOutcome)` with the revision, History `commit`, and file `delivery`
+reported separately. Save uses the same coordinator branch and retained commit
+result as Copy. Only delivery is retried; successful or failed History commits
+are not repeated. Invalid/stale/in-flight commands are rejected before delivery.
+Copy and Save have separate retry eligibility. A committed capture cannot be
+pending-discarded after export failure; Dismiss retains that single History item.
+History failure does not block export and the app presents an acknowledgment
+notice when delivery succeeds without History.
+
+The `CaptureExport` adapter accepts only `AuthorizedFinalization`. Its PNG bytes
+are the coordinator's frozen output (currently the unedited revision; future
+editor rendering must supply its flattened result there). `PNGFileExporter`
+creates the selected directory on delivery, writes a separate exclusively
+created PNG, and never opens/moves a History image. `ExportFilenamePolicy` uses
+`Frisket-<capture UUID>-r<revision>.png`, followed by `-2`, `-3`, etc. on collisions;
+exclusive creation prevents races from overwriting existing files or symlinks.
+After 10,000 occupied candidates, delivery reports unavailable. Failed writes
+remove only the file created by that attempt. Exports are not registered with
+History; retention/deletion operate on app-owned data only.
+
+`ExportFolderPolicy.assess` is pure core policy over path/access/resource facts.
+The disk adapter resolves existing ancestors (including symlinks with missing
+children), accounts for case-insensitive volumes, refuses History itself and
+its descendants, and refuses unwritable/non-directory destinations. It checks
+again on every delivery, including retries. iCloud detection combines the
+`~/Library/Mobile Documents` location with `isUbiquitousItem` on ancestors.
+Settings uses the same assessment and warns before accepting an iCloud folder.
+No diagnostic carries a filename/path; Save extends the existing closed enums.
+
+The exporter lives in the existing filesystem-capable `StorageAdapter/` and
+requires the same finalization capability as History. No static guard exception
+was added, and `HistoryStore` recovery internals were not changed.
+
+Focused verification: `sh scripts/test-core.sh --filter
+'SaveCommandsTests|ExportFolderPolicyTests'`. Tests use synthetic PNGs, real
+SQLite/files in temporary directories, and one held delivery stand-in to test
+in-flight command gating. See [manual checks](manual-checks/11-save-and-settings.md)
+for the runtime items that remain pending.
