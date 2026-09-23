@@ -11,7 +11,7 @@ import sys
 import time
 
 from baseline import (condition_issues, format_report, idle_metrics, latency_metrics,
-                      parse_app_log, parse_gpu, parse_sample)
+                      parse_app_log, parse_app_row, parse_gpu, parse_sample)
 
 ROOT = Path(__file__).resolve().parents[2]
 PROBE = ROOT / ".build/performance/probe"
@@ -64,10 +64,16 @@ def save(path, document):
 def cool_down():
     # No measurement interval begins until five uninterrupted nominal minutes pass.
     start = time.monotonic()
-    while time.monotonic() - start < 300:
-        require_good()
-        time.sleep(5)
-    return require_good()
+    last_wall, last_mono = time.time(), start
+    while True:
+        result = require_good()
+        wall, mono = time.time(), time.monotonic()
+        if mono - last_mono > 15 or abs((wall - last_wall) - (mono - last_mono)) > 2:
+            raise ValueError("sleep, clock discontinuity, or stalled sampler; restart session")
+        last_wall, last_mono = wall, mono
+        if mono - start >= 300:
+            return result
+        time.sleep(min(5, 300 - (mono - start)))
 
 
 def idle(args):
@@ -149,9 +155,13 @@ def app_latency(args):
     record = {"schema": 1, "kind": "latency", "method": "app-monotonic",
               "metadata": metadata("frisket"), "status": "partial", "runs": []}
     save(args.output, record)
+    accepted_log = ""
     for index in range(20):
         input(f"Frisket run {index + 1}/20: press Return to begin cool-down. ")
         checks = [cool_down()]
+        contents = args.log.read_text() if args.log.exists() else ""
+        if contents != accepted_log:
+            raise ValueError("app log changed before ARMED; restart session")
         print("ARMED: human triggers one synthetic capture; waiting for app log.", flush=True)
         deadline = time.monotonic() + 60
         while True:
@@ -162,12 +172,8 @@ def app_latency(args):
             if len(rows) > index + 1:
                 raise ValueError("extra app captures; restart session")
             if len(rows) == index + 1:
-                row = json.loads(rows[-1])
-                if set(row) != {"run", "start_ns", "end_ns"} or row["run"] != index + 1:
-                    raise ValueError("invalid app log schema or run number")
-                interval = dict(start_low_ns=row["start_ns"], start_high_ns=row["start_ns"],
-                                end_low_ns=row["end_ns"], end_high_ns=row["end_ns"])
-                latency_metrics(interval)
+                interval = parse_app_row(rows[-1], index + 1)
+                accepted_log = "".join(contents.splitlines(keepends=True)[:index + 1])
                 break
             if time.monotonic() > deadline:
                 raise ValueError("app log timed out")

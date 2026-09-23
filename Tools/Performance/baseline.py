@@ -52,21 +52,23 @@ def latency_metrics(interval):
             "error_ms": (high - low) / 2}
 
 
+def parse_app_row(line, expected_run):
+    row = json.loads(line)
+    if not isinstance(row, dict) or set(row) != {"run", "start_ns", "end_ns"}:
+        raise ValueError("app log schema is run/start_ns/end_ns only")
+    if type(row["run"]) is not int or row["run"] != expected_run:
+        raise ValueError("app log run numbers must be 1 through 20 in order")
+    interval = {"start_low_ns": row["start_ns"], "start_high_ns": row["start_ns"],
+                "end_low_ns": row["end_ns"], "end_high_ns": row["end_ns"]}
+    latency_metrics(interval)
+    return interval
+
+
 def parse_app_log(contents):
-    rows = [json.loads(line) for line in contents.splitlines() if line.strip()]
+    rows = [line for line in contents.splitlines() if line.strip()]
     if len(rows) != 20:
         raise ValueError("app log must contain exactly 20 rows")
-    intervals = []
-    for i, row in enumerate(rows, 1):
-        if not isinstance(row, dict) or set(row) != {"run", "start_ns", "end_ns"}:
-            raise ValueError("app log schema is run/start_ns/end_ns only")
-        if type(row["run"]) is not int or row["run"] != i:
-            raise ValueError("app log run numbers must be 1 through 20 in order")
-        interval = {"start_low_ns": row["start_ns"], "start_high_ns": row["start_ns"],
-                    "end_low_ns": row["end_ns"], "end_high_ns": row["end_ns"]}
-        latency_metrics(interval)
-        intervals.append(interval)
-    return intervals
+    return [parse_app_row(line, i) for i, line in enumerate(rows, 1)]
 
 
 def format_report(metadata, idle_runs, latency_runs, method, dry_run=False):

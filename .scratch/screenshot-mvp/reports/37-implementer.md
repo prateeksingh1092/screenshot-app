@@ -21,3 +21,12 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer bash Tools/Performance/
 It builds unsigned under `.build/`, preserving the reference clone. Signing remains separate.
 
 Pending for Prateek: follow `docs/manual-checks/37-performance-baselines.md`; approve launches/captures, confirm GPU, resolve no-image-storage routes, calibrate latency, and collect 20-run baselines. Snapzy persists captures even with Auto-save off, so its latency command refuses execution. Screenshot's no-storage thumbnail route also remains unverified.
+
+## Fix pass
+
+- Fixed pre-ARMED capture acceptance: orchestration rejects log changes before each arming, including partial next rows. Regression tests exercise `app_latency`.
+- Fixed cooldown continuity: sampling gaps over 15 seconds or wall/monotonic divergence over 2 seconds abort, including stalls during the final condition probe.
+- Fixed parser duplication: live validation and completed-log parsing share `parse_app_row`; boolean run numbers are rejected immediately.
+- No review findings remain open. Each finding was reproduced red, then fixed green through public interfaces with synthetic system boundaries.
+- Verification: **13 Python tests passed; 16 root Swift tests passed**, including six repository checks and 21 fixtures. Used pinned Xcode and the documented in-worktree caches; x86_64 only, arm64 not executed.
+- Ticket status and checkboxes unchanged; no staging or commits. `.build/snapzy-baseline/` left untouched. Live baselines remain pending.
