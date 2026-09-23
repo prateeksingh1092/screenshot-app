@@ -12,3 +12,7 @@
 - [ ] Vision use is recorded in test results.
 
 ## Comments
+
+### 2026-09-22 — coordinator note
+
+Decision 48: port the adapted stitcher from `Trials/StitcherTrial/`, keeping its BSD-3 notices and provenance, and add Snapzy to the third-party notices for the product.
