@@ -4,7 +4,7 @@
 
 **Blocked by:** 06, 07
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/08-real-area-capture`)
 
 - [ ] The app is a development build with the `.debug` bundle identifier, its own storage root, and its own permission identity; every app-owned path derives from the bundle identifier.
 - [ ] One Carbon hot key starts capture; no event taps and no global mouse monitors while idle (static check).
