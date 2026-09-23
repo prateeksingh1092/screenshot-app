@@ -4,7 +4,7 @@
 
 **Blocked by:** 09
 
-**Status:** in-progress (branch `ticket/12-drag-handoff`)
+**Status:** resolved (tested on `main` at `7870570`; Finder/Trash manual pending)
 
 - [ ] Drag uses a file promise of the rendered revision with a copy-only operation, through the shared finalization policy.
 - [ ] Each staging file stays until the promise's write completion has returned and the drag session has ended, then is deleted; leftovers are removed by the launch sweep.

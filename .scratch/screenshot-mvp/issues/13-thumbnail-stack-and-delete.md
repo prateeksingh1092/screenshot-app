@@ -4,7 +4,7 @@
 
 **Blocked by:** 09
 
-**Status:** in-progress (branch `ticket/13-thumbnail-stack-and-delete`)
+**Status:** resolved (tested on `main` at `7870570`; VoiceOver/overflow manual pending)
 
 - [ ] Thumbnails live in a non-activating panel on the capture display and appear over full-screen Spaces.
 - [ ] Delete capture discards the Pending capture and writes nothing.
