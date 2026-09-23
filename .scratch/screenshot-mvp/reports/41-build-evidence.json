@@ -1,0 +1,398 @@
+{
+  "after": {
+    "appTarget": {
+      "buildConfigurationList": "00000000000000000000000B",
+      "buildPhases": [
+        "000000000000000000000006",
+        "000000000000000000000007",
+        "000000000000000000000008"
+      ],
+      "buildRules": [],
+      "dependencies": [
+        "000000000000000000000021"
+      ],
+      "fileSystemSynchronizedGroups": [
+        "000000000000000000000025"
+      ],
+      "isa": "PBXNativeTarget",
+      "name": "Frisket",
+      "productName": "Frisket",
+      "productReference": "000000000000000000000005",
+      "productType": "com.apple.product-type.application"
+    },
+    "bundleFiles": [
+      "Contents/Info.plist",
+      "Contents/MacOS/Frisket",
+      "Contents/PkgInfo"
+    ],
+    "bundleInfo": {
+      "BuildMachineOSBuild": "25G229",
+      "CFBundleDevelopmentRegion": "en",
+      "CFBundleDisplayName": "Frisket",
+      "CFBundleExecutable": "Frisket",
+      "CFBundleIdentifier": "io.github.prateeksingh1092.frisket.debug",
+      "CFBundleInfoDictionaryVersion": "6.0",
+      "CFBundleName": "Frisket",
+      "CFBundlePackageType": "APPL",
+      "CFBundleShortVersionString": "0.1.0",
+      "CFBundleSupportedPlatforms": [
+        "MacOSX"
+      ],
+      "CFBundleVersion": "8",
+      "DTCompiler": "com.apple.compilers.llvm.clang.1_0",
+      "DTPlatformBuild": "25F70",
+      "DTPlatformName": "macosx",
+      "DTPlatformVersion": "26.5",
+      "DTSDKBuild": "25F70",
+      "DTSDKName": "macosx26.5",
+      "DTXcode": "2650",
+      "DTXcodeBuild": "17F42",
+      "LSMinimumSystemVersion": "26.0",
+      "LSUIElement": true,
+      "NSHighResolutionCapable": true,
+      "NSPrincipalClass": "NSApplication"
+    },
+    "configurations": {
+      "00000000000000000000000C": {
+        "buildSettings": {
+          "ARCHS": "x86_64",
+          "CLANG_ENABLE_MODULES": "YES",
+          "ENABLE_USER_SCRIPT_SANDBOXING": "NO",
+          "MACOSX_DEPLOYMENT_TARGET": "26.0",
+          "ONLY_ACTIVE_ARCH": "YES",
+          "SDKROOT": "macosx26.5",
+          "SWIFT_VERSION": "6.0"
+        },
+        "isa": "XCBuildConfiguration",
+        "name": "Development"
+      },
+      "00000000000000000000000D": {
+        "buildSettings": {
+          "CODE_SIGN_ENTITLEMENTS": "Frisket/Frisket.entitlements",
+          "CODE_SIGN_IDENTITY": "Apple Development",
+          "CODE_SIGN_INJECT_BASE_ENTITLEMENTS": "NO",
+          "CODE_SIGN_STYLE": "Manual",
+          "DEBUG_INFORMATION_FORMAT": "dwarf",
+          "DEVELOPMENT_TEAM": "9M43Q952NK",
+          "ENABLE_APP_SANDBOX": "NO",
+          "ENABLE_DEBUG_DYLIB": "NO",
+          "ENABLE_HARDENED_RUNTIME": "YES",
+          "GENERATE_INFOPLIST_FILE": "NO",
+          "INFOPLIST_FILE": "Frisket/Info.plist",
+          "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/../Frameworks",
+          "PRODUCT_BUNDLE_IDENTIFIER": "io.github.prateeksingh1092.frisket.debug",
+          "PRODUCT_NAME": "Frisket",
+          "SWIFT_OPTIMIZATION_LEVEL": "-Onone"
+        },
+        "isa": "XCBuildConfiguration",
+        "name": "Development"
+      },
+      "000000000000000000000023": {
+        "buildSettings": {
+          "DEFINES_MODULE": "YES",
+          "PRODUCT_MODULE_NAME": "FrisketCore",
+          "PRODUCT_NAME": "FrisketCore",
+          "SKIP_INSTALL": "YES",
+          "SWIFT_INSTALL_OBJC_HEADER": "NO",
+          "SWIFT_OPTIMIZATION_LEVEL": "-Onone"
+        },
+        "isa": "XCBuildConfiguration",
+        "name": "Development"
+      }
+    },
+    "coreLink": {
+      "fileRef": "000000000000000000000020",
+      "isa": "PBXBuildFile"
+    },
+    "coreTarget": {
+      "buildConfigurationList": "000000000000000000000022",
+      "buildPhases": [
+        "000000000000000000000024"
+      ],
+      "buildRules": [],
+      "dependencies": [],
+      "fileSystemSynchronizedGroups": [
+        "00000000000000000000001E"
+      ],
+      "isa": "PBXNativeTarget",
+      "name": "FrisketCore",
+      "productName": "FrisketCore",
+      "productReference": "000000000000000000000020",
+      "productType": "com.apple.product-type.library.static"
+    },
+    "dependency": {
+      "isa": "PBXTargetDependency",
+      "target": "00000000000000000000001F"
+    },
+    "frameworks": {
+      "buildActionMask": "2147483647",
+      "files": [
+        "000000000000000000000016"
+      ],
+      "isa": "PBXFrameworksBuildPhase",
+      "runOnlyForDeploymentPostprocessing": "0"
+    },
+    "intendedEntitlements": {},
+    "objectVersion": "77",
+    "shellPhases": {
+      "000000000000000000000006": {
+        "alwaysOutOfDate": "1",
+        "buildActionMask": "2147483647",
+        "files": [],
+        "inputPaths": [],
+        "isa": "PBXShellScriptBuildPhase",
+        "name": "Reject Event Taps and Global Monitors",
+        "outputPaths": [],
+        "runOnlyForDeploymentPostprocessing": "0",
+        "shellPath": "/bin/sh",
+        "shellScript": "set -eu\n/usr/bin/python3 \"$SRCROOT/Checks/check_repository.py\" --root \"$SRCROOT\" --check input-monitoring\n"
+      }
+    },
+    "sources": {
+      "Frisket": [
+        "Frisket/Adapters/AreaCaptureSource.swift",
+        "Frisket/Adapters/PasteboardAdapter.swift",
+        "Frisket/Adapters/ScreenCapturePlatform.swift",
+        "Frisket/Adapters/SelectionOverlay.swift",
+        "Frisket/Adapters/ThumbnailImage.swift",
+        "Frisket/AppIdentity.swift",
+        "Frisket/CarbonHotKey.swift",
+        "Frisket/FrisketApp.swift",
+        "Frisket/ThumbnailPanel.swift"
+      ],
+      "FrisketCore": [
+        "Sources/FrisketCore/CaptureCommands.swift",
+        "Sources/FrisketCore/CaptureDelivery.swift",
+        "Sources/FrisketCore/CaptureLifecycleCoordinator.swift",
+        "Sources/FrisketCore/Diagnostics.swift",
+        "Sources/FrisketCore/FrisketCore.swift",
+        "Sources/FrisketCore/Stitcher/ScrollingCaptureStitcher.swift",
+        "Sources/FrisketCore/Stitcher/Stitcher.swift"
+      ]
+    }
+  },
+  "baseline": {
+    "appTarget": {
+      "buildConfigurationList": "00000000000000000000000B",
+      "buildPhases": [
+        "000000000000000000000006",
+        "000000000000000000000007",
+        "000000000000000000000008"
+      ],
+      "buildRules": [],
+      "dependencies": [
+        "000000000000000000000021"
+      ],
+      "isa": "PBXNativeTarget",
+      "name": "Frisket",
+      "productName": "Frisket",
+      "productReference": "000000000000000000000005",
+      "productType": "com.apple.product-type.application"
+    },
+    "bundleFiles": [
+      "Contents/Info.plist",
+      "Contents/MacOS/Frisket",
+      "Contents/PkgInfo"
+    ],
+    "bundleInfo": {
+      "BuildMachineOSBuild": "25G229",
+      "CFBundleDevelopmentRegion": "en",
+      "CFBundleDisplayName": "Frisket",
+      "CFBundleExecutable": "Frisket",
+      "CFBundleIdentifier": "io.github.prateeksingh1092.frisket.debug",
+      "CFBundleInfoDictionaryVersion": "6.0",
+      "CFBundleName": "Frisket",
+      "CFBundlePackageType": "APPL",
+      "CFBundleShortVersionString": "0.1.0",
+      "CFBundleSupportedPlatforms": [
+        "MacOSX"
+      ],
+      "CFBundleVersion": "8",
+      "DTCompiler": "com.apple.compilers.llvm.clang.1_0",
+      "DTPlatformBuild": "25F70",
+      "DTPlatformName": "macosx",
+      "DTPlatformVersion": "26.5",
+      "DTSDKBuild": "25F70",
+      "DTSDKName": "macosx26.5",
+      "DTXcode": "2650",
+      "DTXcodeBuild": "17F42",
+      "LSMinimumSystemVersion": "26.0",
+      "LSUIElement": true,
+      "NSHighResolutionCapable": true,
+      "NSPrincipalClass": "NSApplication"
+    },
+    "configurations": {
+      "00000000000000000000000C": {
+        "buildSettings": {
+          "ARCHS": "x86_64",
+          "CLANG_ENABLE_MODULES": "YES",
+          "ENABLE_USER_SCRIPT_SANDBOXING": "NO",
+          "MACOSX_DEPLOYMENT_TARGET": "26.0",
+          "ONLY_ACTIVE_ARCH": "YES",
+          "SDKROOT": "macosx26.5",
+          "SWIFT_VERSION": "6.0"
+        },
+        "isa": "XCBuildConfiguration",
+        "name": "Development"
+      },
+      "00000000000000000000000D": {
+        "buildSettings": {
+          "CODE_SIGN_ENTITLEMENTS": "Frisket/Frisket.entitlements",
+          "CODE_SIGN_IDENTITY": "Apple Development",
+          "CODE_SIGN_INJECT_BASE_ENTITLEMENTS": "NO",
+          "CODE_SIGN_STYLE": "Manual",
+          "DEBUG_INFORMATION_FORMAT": "dwarf",
+          "DEVELOPMENT_TEAM": "9M43Q952NK",
+          "ENABLE_APP_SANDBOX": "NO",
+          "ENABLE_DEBUG_DYLIB": "NO",
+          "ENABLE_HARDENED_RUNTIME": "YES",
+          "GENERATE_INFOPLIST_FILE": "NO",
+          "INFOPLIST_FILE": "Frisket/Info.plist",
+          "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/../Frameworks",
+          "PRODUCT_BUNDLE_IDENTIFIER": "io.github.prateeksingh1092.frisket.debug",
+          "PRODUCT_NAME": "Frisket",
+          "SWIFT_OPTIMIZATION_LEVEL": "-Onone"
+        },
+        "isa": "XCBuildConfiguration",
+        "name": "Development"
+      },
+      "000000000000000000000023": {
+        "buildSettings": {
+          "DEFINES_MODULE": "YES",
+          "PRODUCT_MODULE_NAME": "FrisketCore",
+          "PRODUCT_NAME": "FrisketCore",
+          "SKIP_INSTALL": "YES",
+          "SWIFT_INSTALL_OBJC_HEADER": "NO",
+          "SWIFT_OPTIMIZATION_LEVEL": "-Onone"
+        },
+        "isa": "XCBuildConfiguration",
+        "name": "Development"
+      }
+    },
+    "coreLink": {
+      "fileRef": "000000000000000000000020",
+      "isa": "PBXBuildFile"
+    },
+    "coreTarget": {
+      "buildConfigurationList": "000000000000000000000022",
+      "buildPhases": [
+        "000000000000000000000024"
+      ],
+      "buildRules": [],
+      "dependencies": [],
+      "fileSystemSynchronizedGroups": [
+        "00000000000000000000001E"
+      ],
+      "isa": "PBXNativeTarget",
+      "name": "FrisketCore",
+      "productName": "FrisketCore",
+      "productReference": "000000000000000000000020",
+      "productType": "com.apple.product-type.library.static"
+    },
+    "dependency": {
+      "isa": "PBXTargetDependency",
+      "target": "00000000000000000000001F"
+    },
+    "frameworks": {
+      "buildActionMask": "2147483647",
+      "files": [
+        "000000000000000000000016"
+      ],
+      "isa": "PBXFrameworksBuildPhase",
+      "runOnlyForDeploymentPostprocessing": "0"
+    },
+    "intendedEntitlements": {},
+    "objectVersion": "77",
+    "shellPhases": {
+      "000000000000000000000006": {
+        "alwaysOutOfDate": "1",
+        "buildActionMask": "2147483647",
+        "files": [],
+        "inputPaths": [],
+        "isa": "PBXShellScriptBuildPhase",
+        "name": "Reject Event Taps and Global Monitors",
+        "outputPaths": [],
+        "runOnlyForDeploymentPostprocessing": "0",
+        "shellPath": "/bin/sh",
+        "shellScript": "set -eu\n/usr/bin/python3 \"$SRCROOT/Checks/check_repository.py\" --root \"$SRCROOT\" --check input-monitoring\n"
+      }
+    },
+    "sources": {
+      "Frisket": [
+        "Frisket/Adapters/AreaCaptureSource.swift",
+        "Frisket/Adapters/PasteboardAdapter.swift",
+        "Frisket/Adapters/ScreenCapturePlatform.swift",
+        "Frisket/Adapters/SelectionOverlay.swift",
+        "Frisket/Adapters/ThumbnailImage.swift",
+        "Frisket/AppIdentity.swift",
+        "Frisket/CarbonHotKey.swift",
+        "Frisket/FrisketApp.swift",
+        "Frisket/ThumbnailPanel.swift"
+      ],
+      "FrisketCore": [
+        "Sources/FrisketCore/CaptureCommands.swift",
+        "Sources/FrisketCore/CaptureDelivery.swift",
+        "Sources/FrisketCore/CaptureLifecycleCoordinator.swift",
+        "Sources/FrisketCore/Diagnostics.swift",
+        "Sources/FrisketCore/FrisketCore.swift",
+        "Sources/FrisketCore/Stitcher/ScrollingCaptureStitcher.swift",
+        "Sources/FrisketCore/Stitcher/Stitcher.swift"
+      ]
+    }
+  },
+  "buildCommand": "xcodebuild -project Frisket.xcodeproj -scheme Frisket -configuration Development -destination 'platform=macOS,arch=x86_64' -derivedDataPath .build/DerivedData CODE_SIGNING_ALLOWED=NO build",
+  "buildsSucceeded": [
+    "before",
+    "after (clean)",
+    "probe",
+    "final"
+  ],
+  "checkerRed": [
+    "Frisket/Adapters/AreaCaptureSource.swift: explicit app-source reference; use the synchronized Frisket folder",
+    "Frisket/Adapters/PasteboardAdapter.swift: explicit app-source reference; use the synchronized Frisket folder",
+    "Frisket/Adapters/ScreenCapturePlatform.swift: explicit app-source reference; use the synchronized Frisket folder",
+    "Frisket/Adapters/SelectionOverlay.swift: explicit app-source reference; use the synchronized Frisket folder",
+    "Frisket/Adapters/ThumbnailImage.swift: explicit app-source reference; use the synchronized Frisket folder",
+    "Frisket/AppIdentity.swift: explicit app-source reference; use the synchronized Frisket folder",
+    "Frisket/CarbonHotKey.swift: explicit app-source reference; use the synchronized Frisket folder",
+    "Frisket/FrisketApp.swift: explicit app-source reference; use the synchronized Frisket folder",
+    "Frisket/ThumbnailPanel.swift: explicit app-source reference; use the synchronized Frisket folder"
+  ],
+  "cleanBuildAfterEdit": true,
+  "entitlementLimitation": "Unsigned builds: empty intended entitlements and hardened-runtime setting verified; signed entitlement embedding/runtime flags not exercised.",
+  "finalAfterProbeRemovalEqualsAfter": true,
+  "guardPhaseExecutedInEveryBuild": true,
+  "probe": {
+    "emptyFileCompiled": true,
+    "file": "Frisket/Ticket41SourceProbe.swift",
+    "fileAndStaleObjectRemoved": true,
+    "projectSHA256BeforeAndAfter": "c253266a45421ee0e015f9286532a907cf8c0c067ea69a614959251b85b73d74",
+    "sourceList": [
+      "Frisket/Adapters/AreaCaptureSource.swift",
+      "Frisket/Adapters/PasteboardAdapter.swift",
+      "Frisket/Adapters/ScreenCapturePlatform.swift",
+      "Frisket/Adapters/SelectionOverlay.swift",
+      "Frisket/Adapters/ThumbnailImage.swift",
+      "Frisket/AppIdentity.swift",
+      "Frisket/CarbonHotKey.swift",
+      "Frisket/FrisketApp.swift",
+      "Frisket/ThumbnailPanel.swift",
+      "Frisket/Ticket41SourceProbe.swift"
+    ]
+  },
+  "rawEvidenceDirectory": ".build/ticket-41-evidence/",
+  "rootTests": {
+    "command": "swift test --disable-sandbox --disable-keychain --disable-xctest --cache-path .build/cache --scratch-path .build --config-path .build/config --security-path .build/security",
+    "exitCode": 0,
+    "fixtureCasesPassed": 28,
+    "repositoryCheckCasesPassed": 8,
+    "skippedOptInTests": [
+      "fullSizeCaptureFitsPhysicalFootprintBudget",
+      "recordedScrollSequences",
+      "visionAssistedAlignmentProbe"
+    ],
+    "summary": "Test run with 58 tests in 8 suites passed"
+  },
+  "structureCheck": "PASS: exactly 18 explicit app source objects removed, 2 synchronized-folder objects added, 3 membership objects updated; every other object unchanged; objectVersion 77.",
+  "toolchain": "/Applications/Xcode.app/Contents/Developer"
+}

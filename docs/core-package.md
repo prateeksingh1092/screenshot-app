@@ -64,7 +64,7 @@ It returns zero on success and a diagnostic plus nonzero exit on failure.
 The same checks can run independently while the Swift Testing runner is blocked:
 
 ```sh
-for check in dependencies imports identity provenance diagnostics capture-memory input-monitoring; do
+for check in dependencies imports identity provenance diagnostics capture-memory input-monitoring app-sources; do
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /usr/bin/python3 \
     Checks/check_repository.py --root . --check "$check" || exit
 done
@@ -80,6 +80,10 @@ done
   lookalike, binary, system, plugin, and macro dependency routes are rejected.
   If `Package.resolved` exists, every pin must also be the approved source;
   unsupported lockfile formats fail. GRDB is not added by this ticket.
+- **App sources:** parse `Frisket.xcodeproj/project.pbxproj` with macOS `plutil`
+  and reject explicit Swift file references under `Frisket/`, resolving nested
+  project groups and source-root paths. This guards the synchronized-folder
+  workflow; the unsigned build verifies actual target membership.
 - **Imports:** all Swift files under `Sources/` are core. AppKit and SwiftUI
   imports are forbidden, including attributed, scoped and conditional imports.
   GRDB imports and qualified types are confined to

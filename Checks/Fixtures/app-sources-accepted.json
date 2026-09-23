@@ -1,0 +1,7 @@
+{
+  "check": "app-sources",
+  "repositoryFiles": {
+    "Frisket.xcodeproj/project.pbxproj": "{ objects = { project = { isa = PBXProject; mainGroup = root; }; root = { isa = PBXGroup; children = (app, core, product, test); sourceTree = \"<group>\"; }; app = { isa = PBXFileSystemSynchronizedRootGroup; path = Frisket; sourceTree = SOURCE_ROOT; exceptions = (exceptions); }; exceptions = { isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (Info.plist, Frisket.entitlements); target = target; }; target = { isa = PBXNativeTarget; fileSystemSynchronizedGroups = (app); }; core = { isa = PBXFileSystemSynchronizedRootGroup; path = Sources/FrisketCore; sourceTree = SOURCE_ROOT; }; product = { isa = PBXFileReference; explicitFileType = wrapper.application; path = Frisket.app; sourceTree = BUILT_PRODUCTS_DIR; }; test = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/AppTests.swift; sourceTree = SOURCE_ROOT; }; }; rootObject = project; }"
+  },
+  "expected": []
+}

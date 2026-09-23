@@ -1,0 +1,10 @@
+{
+  "check": "app-sources",
+  "repositoryFiles": {
+    "Frisket.xcodeproj/project.pbxproj": "{ objects = { project = { isa = PBXProject; mainGroup = root; }; root = { isa = PBXGroup; children = (direct, app); sourceTree = \"<group>\"; }; direct = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = \"Frisket/App.swift\"; sourceTree = SOURCE_ROOT; }; app = { isa = PBXGroup; path = Frisket; children = (adapters); sourceTree = \"<group>\"; }; adapters = { isa = PBXGroup; path = Adapters; children = (nested); sourceTree = \"<group>\"; }; nested = { isa = PBXFileReference; path = Capture.swift; sourceTree = \"<group>\"; }; }; rootObject = project; }"
+  },
+  "expected": [
+    "Frisket/Adapters/Capture.swift: explicit app-source reference; use the synchronized Frisket folder",
+    "Frisket/App.swift: explicit app-source reference; use the synchronized Frisket folder"
+  ]
+}

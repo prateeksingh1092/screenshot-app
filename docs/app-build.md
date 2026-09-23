@@ -2,7 +2,11 @@
 
 `Frisket.xcodeproj` is authored directly, with one shared `Frisket` scheme and
 one `Development` configuration. No project generator or added dependency is
-needed. The AppKit/SwiftUI adapters compile in the app target. Its static
+needed. The app target uses a synchronized `Frisket/` folder: adding or removing
+app Swift source files needs no project-file edit. `Info.plist` and
+`Frisket.entitlements` are excluded from target membership and remain inputs
+through their existing build-setting paths, so they are not copied as resources.
+The AppKit/SwiftUI adapters compile in the app target. Its static
 `FrisketCore` dependency compiles the **same** `Sources/FrisketCore/` directory
 as the Swift package, using an Xcode synchronized source group (future source
 files are included automatically). Lifecycle policy remains in that directory.
