@@ -4,7 +4,7 @@
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/13-thumbnail-stack-and-delete`)
 
 - [ ] Thumbnails live in a non-activating panel on the capture display and appear over full-screen Spaces.
 - [ ] Delete capture discards the Pending capture and writes nothing.

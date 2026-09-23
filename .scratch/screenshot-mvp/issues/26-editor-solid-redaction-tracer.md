@@ -4,7 +4,7 @@
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/26-editor-solid-redaction-tracer`)
 
 - [ ] The editor edits a document (base image, Solid redactions); the renderer is a pure function from document to bitmap.
 - [ ] Solid redaction is its own element type: fixed colour, full opacity, no corner radius or stroke, copy blend, no antialiasing, rectangle snapped outward to whole output pixels.

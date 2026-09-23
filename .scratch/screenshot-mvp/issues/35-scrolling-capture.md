@@ -4,7 +4,7 @@
 
 **Blocked by:** 09, 34
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/35-scrolling-capture`)
 
 - [ ] Manual scrolling only; no Accessibility permission (decision 32).
 - [ ] The pending original is held as compressed strips in memory; frames are released promptly.
