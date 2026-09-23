@@ -7,7 +7,11 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import unicodedata
+
+TRIAL_ROOT = "Trials/StitcherTrial"
+TEST_ROOTS = ("Tests/", f"{TRIAL_ROOT}/Tests/")
 
 
 def dependency_issues(manifest, resolved=None):
@@ -98,7 +102,7 @@ def swift_code(text):
 def import_issues(files):
     issues = []
     for path, text in sorted(files.items()):
-        if not path.startswith("Sources/") or not path.endswith(".swift"):
+        if not path.startswith(("Sources/", f"{TRIAL_ROOT}/Sources/")) or not path.endswith(".swift"):
             continue
         code = swift_code(text).replace("`", "")
         imports = re.findall(r'\bimport\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(\w+)', code)
@@ -176,7 +180,18 @@ def provenance_issues(files, entries):
 
 def check_fixture(path):
     fixture = json.loads(path.read_text())
-    if fixture["check"] == "dependencies":
+    if "repositoryFiles" in fixture:
+        # Exercise the real on-disk inventory, not just the individual scanners.
+        scratch = path.resolve().parents[2] / ".build" / "check-fixtures"
+        scratch.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as directory:
+            root = pathlib.Path(directory)
+            for name, text in fixture["repositoryFiles"].items():
+                destination = root / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(text)
+            actual = repository_issues(root, fixture["check"])
+    elif fixture["check"] == "dependencies":
         actual = dependency_issues(fixture["manifest"], fixture.get("resolved"))
     elif fixture["check"] == "imports":
         actual = import_issues(fixture["files"])
@@ -194,7 +209,13 @@ def product_files(root):
     # Planning/reference material and checker fixtures are not product inputs.
     # Tests are included for port attribution, but excluded from identity scrub.
     paths = [root / "Package.swift"]
-    for directory in ("Sources", "Frisket", "Resources", "Tests"):
+    # The isolated stitcher trial is attributed and scrubbed like product code.
+    # Enumerate its inputs explicitly: its nested .build cache is not source.
+    for name in (f"{TRIAL_ROOT}/Package.swift", f"{TRIAL_ROOT}/LICENSE"):
+        if (root / name).exists():
+            paths.append(root / name)
+    for directory in ("Sources", "Frisket", "Resources", "Tests",
+                      f"{TRIAL_ROOT}/Sources", f"{TRIAL_ROOT}/Tests", f"{TRIAL_ROOT}/Resources"):
         folder = root / directory
         if folder.exists():
             paths.extend(sorted(path for path in folder.rglob("*") if path.is_file()))
@@ -209,11 +230,12 @@ def product_files(root):
 
 def dumped_manifest(root):
     scratch = root / ".build" / "repository-checks"
-    environment = dict(os.environ, DEVELOPER_DIR="/Library/Developer/CommandLineTools")
+    environment = dict(os.environ)
+    environment.setdefault("DEVELOPER_DIR", "/Applications/Xcode.app/Contents/Developer")
     environment["CLANG_MODULE_CACHE_PATH"] = str(root / ".build" / "clang-cache")
     environment["SWIFTPM_MODULECACHE_OVERRIDE"] = str(root / ".build" / "module-cache")
     command = [
-        "/Library/Developer/CommandLineTools/usr/bin/swift", "package", "--package-path", str(root),
+        "/usr/bin/xcrun", "swift", "package", "--package-path", str(root),
         "--disable-sandbox", "--disable-keychain", "--disable-netrc",
         "--cache-path", str(root / ".build" / "cache"),
         "--scratch-path", str(scratch), "--config-path", str(root / ".build" / "config"),
@@ -235,7 +257,7 @@ def repository_issues(root, check):
     if check == "imports":
         return import_issues(files)
     if check == "identity":
-        return identity_issues({path: text for path, text in files.items() if not path.startswith("Tests/")})
+        return identity_issues({path: text for path, text in files.items() if not path.startswith(TEST_ROOTS)})
     entries = json.loads((root / "docs" / "ported-files.json").read_text())
     return provenance_issues(files, entries)
 
