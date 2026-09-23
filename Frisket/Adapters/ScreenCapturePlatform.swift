@@ -58,22 +58,10 @@ import UniformTypeIdentifiers
               NSScreen.screens.contains(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == request.displayID }) else {
             throw CapturePlatformError.unavailable
         }
-        let ownApplications = available.applications.filter { $0.bundleIdentifier == request.excludingBundleIdentifier }
-        // Fail closed: never capture if we cannot positively exclude this process.
-        guard ownApplications.contains(where: { $0.processID == ProcessInfo.processInfo.processIdentifier }) else {
-            throw CapturePlatformError.unavailable
-        }
-        let filter = SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
-        let config = SCStreamConfiguration()
-        config.sourceRect = request.sourceRect
-        config.width = request.pixelWidth
-        config.height = request.pixelHeight
-        config.showsCursor = false
-        config.capturesAudio = false
-        config.captureMicrophone = false
-        config.ignoreShadowsDisplay = true
-        config.colorSpaceName = CGColorSpace.sRGB
-        config.captureResolution = .best
+        let filter = try ScreenCapturePolicy.filter(display: display, content: available,
+                                                   excluding: request.excludingBundleIdentifier)
+        let config = ScreenCapturePolicy.configuration(sourceRect: request.sourceRect,
+                                                       pixelWidth: request.pixelWidth, pixelHeight: request.pixelHeight)
         // Own-app filtering remains the safety mechanism even if a window-server update lags.
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         let bytes = NSMutableData()

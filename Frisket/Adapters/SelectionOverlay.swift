@@ -89,7 +89,7 @@ import FrisketCore
         super.init(frame: CGRect(origin: .zero, size: screen.frame.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Select capture area. Drag; Shift locks an axis, Option grows from centre, Space moves, arrows nudge one pixel. Return captures. Escape cancels.")
+        setAccessibilityLabel("Select capture area. Drag; Shift locks an axis, Option grows from centre, Space moves, arrows nudge one pixel. Shift-arrow resizes one pixel: right/up grows, left/down shrinks. Return captures. Escape cancels.")
     }
     required init?(coder: NSCoder) { nil }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
@@ -111,7 +111,7 @@ import FrisketCore
         let outline = NSBezierPath(rect: selection.insetBy(dx: 0.5 / scale, dy: 0.5 / scale))
         outline.lineWidth = 1 / scale
         outline.stroke()
-        let message = "Shift locks axis · Option centres · Space moves · Arrows nudge · Return captures · Esc cancels"
+        let message = "Shift locks axis · Option centres · Space moves · Arrows nudge · Shift-arrows resize · Return captures · Esc cancels"
         message.draw(at: CGPoint(x: 24, y: 24), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
         if let magnifier {
             magnifier.draw(at: CGPoint(x: pointer.x - displayFrame.minX, y: pointer.y - displayFrame.minY), in: bounds)
@@ -174,13 +174,20 @@ import FrisketCore
             updateModifiers(event)
             updateGeometry()
             return
-        case 123: geometry.nudge(dx: -1, dy: 0)
-        case 124: geometry.nudge(dx: 1, dy: 0)
-        case 125: geometry.nudge(dx: 0, dy: -1)
-        case 126: geometry.nudge(dx: 0, dy: 1)
+        case 123: adjustSelection(dx: -1, dy: 0, event: event)
+        case 124: adjustSelection(dx: 1, dy: 0, event: event)
+        case 125: adjustSelection(dx: 0, dy: -1, event: event)
+        case 126: adjustSelection(dx: 0, dy: 1, event: event)
         default: super.keyDown(with: event); return
         }
         needsDisplay = true
+    }
+    private func adjustSelection(dx: Int, dy: Int, event: NSEvent) {
+        if event.modifierFlags.contains(.shift) {
+            geometry.resize(dw: dx, dh: dy)
+        } else {
+            geometry.nudge(dx: dx, dy: dy)
+        }
     }
     override func keyUp(with event: NSEvent) {
         guard event.keyCode == 49 else { super.keyUp(with: event); return }

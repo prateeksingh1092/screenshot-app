@@ -34,11 +34,19 @@ display (negative coordinates).
    Release Space without releasing the mouse; resizing resumes without a
    jump. Repeat with Option held and with Shift held. Press/release Space
    repeatedly and confirm key repeat does not reset the movement anchor.
+   Lock horizontally with Shift, hold Space, release and re-press Shift,
+   then release Space. Move vertically: a fresh vertical lock must be chosen.
 5. Before dragging, use each **arrow** to nudge the default rectangle by one
-   device pixel (1 point at 1×, 0.5 point at 2×). Confirm arrows also translate
-   while Shift is held. During a drag nudge, then continue dragging: the
-   nudge must persist. At each display edge, repeated nudges stop without
-   shrinking the rectangle. Return accepts; mouse release accepts a nonzero
+   device pixel (1 point at 1×, 0.5 point at 2×). Use **Shift-arrow** to resize
+   by one device pixel: right/up grows width/height, left/down shrinks it.
+   The bottom-left corner stays fixed; dimensions stop at one device pixel
+   and the display boundary. During forward and reverse drags, nudge or
+   Shift-arrow resize, then continue dragging: the adjustment must persist.
+   Repeat resizing with Option and Space held. A zero-area drag at the
+   top/right boundary moves inward when resized to make room for one pixel.
+   At each display edge, repeated plain-arrow nudges stop without shrinking
+   the rectangle. Choose dimensions and capture using only the keyboard.
+   Return accepts; mouse release accepts a nonzero
    dragged area. A zero-area click must not capture.
 6. Keep the helper active and press **⌃⌥⌘4**, then **Esc** before dragging.
    Only the overlay closes: the helper remains open and its app stays active.

@@ -3,6 +3,49 @@ import FrisketCore
 import Testing
 
 @Suite struct SelectionGeometryTests {
+    @Test(arguments: [1.0, 2.0]) func keyboardResizesByDevicePixelsWithoutMovingTheOrigin(scale: Double) {
+        var selection = SelectionGeometry(displayFrame: CGRect(x: -800, y: -200, width: 800, height: 600), scale: scale)
+        selection.resize(dw: 1, dh: -1)
+        #expect(selection.rect == (scale == 1
+            ? CGRect(x: -560, y: 10, width: 321, height: 179)
+            : CGRect(x: -560, y: 10, width: 320.5, height: 179.5)))
+        selection.resize(dw: -1, dh: 1)
+        #expect(selection.rect == CGRect(x: -560, y: 10, width: 320, height: 180))
+        selection.resize(dw: 4000, dh: 4000)
+        #expect(selection.rect == CGRect(x: -560, y: 10, width: 560, height: 390))
+        selection.resize(dw: -4000, dh: -4000)
+        #expect(selection.rect == (scale == 1
+            ? CGRect(x: -560, y: 10, width: 1, height: 1)
+            : CGRect(x: -560, y: 10, width: 0.5, height: 0.5)))
+    }
+
+    @Test(arguments: [1.0, 2.0]) func keyboardResizeCanGrowAZeroAreaDragAtTheDisplayCorner(scale: Double) {
+        var selection = SelectionGeometry(displayFrame: CGRect(x: 0, y: 0, width: 800, height: 600), scale: scale)
+        let pointer = CGPoint(x: 800, y: 600)
+        selection.begin(at: pointer)
+        selection.resize(dw: 1, dh: 1)
+        let expected = scale == 1
+            ? CGRect(x: 799, y: 599, width: 1, height: 1)
+            : CGRect(x: 799.5, y: 599.5, width: 0.5, height: 0.5)
+        #expect(selection.rect == expected)
+        selection.update(to: pointer)
+        #expect(selection.rect == expected)
+    }
+
+    @Test(arguments: [false, true]) func keyboardResizePersistsWhenTheDragResumes(reversed: Bool) {
+        var selection = SelectionGeometry(displayFrame: CGRect(x: 0, y: 0, width: 800, height: 600), scale: 2)
+        selection.begin(at: reversed ? CGPoint(x: 200, y: 180) : CGPoint(x: 100, y: 100))
+        let pointer = reversed ? CGPoint(x: 100, y: 100) : CGPoint(x: 200, y: 180)
+        selection.update(to: pointer)
+        selection.update(to: pointer, modifiers: [.shift])
+        selection.resize(dw: 1, dh: 1)
+        selection.update(to: pointer, modifiers: [.shift])
+        #expect(selection.rect == CGRect(x: 100, y: 100, width: 100.5, height: 80.5))
+        selection.update(to: CGPoint(x: pointer.x + 10, y: pointer.y), modifiers: [.shift])
+        #expect(selection.rect == CGRect(x: reversed ? 110 : 100, y: 100,
+                                         width: reversed ? 90.5 : 110.5, height: 80.5))
+    }
+
     @Test(arguments: [1.0, 2.0]) func defaultKeyboardSelectionIsPixelAligned(scale: Double) {
         var selection = SelectionGeometry(displayFrame: CGRect(x: 0, y: 0, width: 801, height: 601), scale: scale)
         #expect(selection.rect == (scale == 1
@@ -79,6 +122,21 @@ import Testing
             : CGRect(x: 100, y: 100, width: 100, height: 250)))
         selection.update(to: CGPoint(x: 280, y: 350))
         #expect(selection.rect == CGRect(x: 100, y: 100, width: 180, height: 250))
+    }
+
+    @Test func shiftCanChooseANewAxisAfterBeingReleasedAndRepressedDuringSpace() {
+        var selection = SelectionGeometry(displayFrame: CGRect(x: 0, y: 0, width: 800, height: 600), scale: 1)
+        selection.begin(at: CGPoint(x: 100, y: 100))
+        selection.update(to: CGPoint(x: 200, y: 180))
+        selection.update(to: CGPoint(x: 250, y: 190), modifiers: [.shift])
+        #expect(selection.rect == CGRect(x: 100, y: 100, width: 150, height: 80))
+        selection.update(to: CGPoint(x: 250, y: 190), modifiers: [.shift, .space])
+        selection.update(to: CGPoint(x: 280, y: 220), modifiers: [.space])
+        selection.update(to: CGPoint(x: 280, y: 220), modifiers: [.shift, .space])
+        selection.update(to: CGPoint(x: 280, y: 220), modifiers: [.shift])
+        #expect(selection.rect == CGRect(x: 130, y: 130, width: 150, height: 80))
+        selection.update(to: CGPoint(x: 280, y: 250), modifiers: [.shift])
+        #expect(selection.rect == CGRect(x: 130, y: 130, width: 150, height: 110))
     }
 
     @Test func optionGrowsSymmetricallyAndStopsAtNearestDisplayEdge() {

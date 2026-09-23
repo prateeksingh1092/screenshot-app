@@ -20,3 +20,13 @@ xcodebuild -project Frisket.xcodeproj -scheme Frisket -configuration Development
 ```
 
 Prateek's pending checks are in `docs/manual-checks/19-selection-precision.md`: synthetic-pattern magnifier fidelity, every modifier and combinations, Esc without activation, overlay-free output, 1×/2× and negative-coordinate displays, unplugging, and Spaces. No app launch, screen capture, clipboard, signing, installation, or network operation was performed.
+
+## Fix pass
+
+- **Keyboard resizing — fixed.** Shift-arrow now resizes by one device pixel through `SelectionGeometry.resize(dw:dh:)`; plain arrows still nudge. Resizing respects display/minimum-size limits and rebases active drags. Updated overlay hints, accessibility instructions, and the manual checklist.
+- **Axis lock after Space — fixed.** Releasing Shift during Space clears the old lock. The reviewed release/re-press sequence now allows a fresh vertical axis after Space ends.
+- **Duplication nit — fixed.** `ScreenCapturePolicy` shares own-app exclusion and common capture configuration between the magnifier and final capture, preserving their existing settings and bounds.
+
+Four regression tests were added red → green through public geometry interfaces. Geometry: **12 tests, 19 cases passed**. Root `swift test`: **70 reported, 67 passed, 3 opt-in probes skipped**, across 9 suites; all **8 repository checks and 28 checker fixtures passed**. Unsigned x86_64 `xcodebuild` **succeeded** with `CODE_SIGNING_ALLOWED=NO`, the required `DEVELOPER_DIR`, and in-worktree caches. arm64 and manual runtime checks remain unexecuted.
+
+No findings left open. Nothing staged or committed; ticket status and checkboxes unchanged.

@@ -19,22 +19,10 @@ import CoreVideo
         guard width > 0, height > 0, width * height * 4 <= 128 * 1024 * 1024 else {
             throw PreviewError.unavailable
         }
-        let ownApplications = content.applications.filter { $0.bundleIdentifier == bundleIdentifier }
-        guard ownApplications.contains(where: { $0.processID == ProcessInfo.processInfo.processIdentifier }) else {
-            throw PreviewError.unavailable
-        }
-        let filter = SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
-        let configuration = SCStreamConfiguration()
-        configuration.sourceRect = CGRect(origin: .zero, size: screen.frame.size)
-        configuration.width = Int(width)
-        configuration.height = Int(height)
+        let filter = try ScreenCapturePolicy.filter(display: display, content: content, excluding: bundleIdentifier)
+        let configuration = ScreenCapturePolicy.configuration(sourceRect: CGRect(origin: .zero, size: screen.frame.size),
+                                                              pixelWidth: Int(width), pixelHeight: Int(height))
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.showsCursor = false
-        configuration.capturesAudio = false
-        configuration.captureMicrophone = false
-        configuration.ignoreShadowsDisplay = true
-        configuration.colorSpaceName = CGColorSpace.sRGB
-        configuration.captureResolution = .best
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
         guard image.width == Int(width), image.height == Int(height) else { throw PreviewError.unavailable }
         return SelectionMagnifier(image: image, scale: scale)

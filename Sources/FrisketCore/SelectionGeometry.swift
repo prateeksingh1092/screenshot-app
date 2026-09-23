@@ -49,6 +49,11 @@ public struct SelectionGeometry: Sendable {
     public mutating func update(to point: CGPoint, modifiers: Modifiers = []) {
         guard anchor != nil else { return }
         let pointer = clamped(point)
+        // Modifier releases still count while Space temporarily owns movement.
+        if !modifiers.contains(.shift) {
+            shiftOrigin = nil
+            horizontalLock = nil
+        }
         if modifiers.contains(.space) {
             if spaceOrigin == nil { spaceOrigin = (pointer, rect) }
             if let origin = spaceOrigin {
@@ -72,9 +77,6 @@ public struct SelectionGeometry: Sendable {
                     if horizontalLock { point.y = origin.y } else { point.x = origin.x }
                 }
             }
-        } else {
-            shiftOrigin = nil
-            horizontalLock = nil
         }
         endpoint = point
         if modifiers.contains(.option) {
@@ -99,6 +101,35 @@ public struct SelectionGeometry: Sendable {
         pointerOffset.y += delta.y
         if let origin = spaceOrigin {
             spaceOrigin = (origin.point, origin.rect.offsetBy(dx: delta.x, dy: delta.y))
+        }
+    }
+
+    /// Resize by device pixels, keeping the bottom-left origin fixed and at
+    /// least one pixel per dimension, within the origin display. A zero-area
+    /// drag on the top/right boundary moves inward to make room for that pixel.
+    public mutating func resize(dw: Int, dh: Int) {
+        let before = rect
+        rect.origin.x = min(rect.minX, display.maxX - 1 / scale)
+        rect.origin.y = min(rect.minY, display.maxY - 1 / scale)
+        rect.size.width = min(max(rect.width + CGFloat(dw) / scale, 1 / scale), display.maxX - rect.minX)
+        rect.size.height = min(max(rect.height + CGFloat(dh) / scale, 1 / scale), display.maxY - rect.minY)
+        // Keep the drag's anchor and endpoint at their relative positions in
+        // the resized rectangle, including reverse and centre-anchored drags.
+        func rebased(_ point: CGPoint, zeroFraction: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + (before.width > 0 ? (point.x - before.minX) / before.width : zeroFraction) * rect.width,
+                    y: rect.minY + (before.height > 0 ? (point.y - before.minY) / before.height : zeroFraction) * rect.height)
+        }
+        if let point = anchor { anchor = rebased(point, zeroFraction: 0) }
+        if let point = endpoint {
+            let next = rebased(point, zeroFraction: 1)
+            let dx = next.x - point.x, dy = next.y - point.y
+            endpoint = next
+            pointerOffset.x += dx
+            pointerOffset.y += dy
+            if let origin = shiftOrigin { shiftOrigin = CGPoint(x: origin.x + dx, y: origin.y + dy) }
+        }
+        if let origin = spaceOrigin {
+            spaceOrigin = (origin.point, CGRect(origin: origin.rect.origin, size: rect.size))
         }
     }
 
