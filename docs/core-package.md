@@ -127,6 +127,14 @@ diagnostics in JSON. Each of the original four checks was first exercised with a
 fixture before its implementation. The Swift Testing target runs both the
 repository checks and these fixtures with the Xcode toolchain.
 
+Ticket 37 adds `performanceToolingSatisfiesOfflineChecks` to the Swift Testing
+suite. It runs the standard-library Python tests in `Tools/Performance/` without
+app launches, network or capture. Standalone: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+/usr/bin/python3 -B -m unittest discover -s Tools/Performance -p 'test_*.py'`.
+The native probe is built separately by `bash Tools/Performance/build-probe.sh`.
+Measurement gates, definitions, commands, and the ticket 38 log interface are in
+[the ticket 37 operator runbook](manual-checks/37-performance-baselines.md).
+
 For this trial the upstream files had descriptive banners, not per-file licence
 text. The complete upstream BSD licence is prepended, each original banner is
 preserved, and `licenseHeader` records both. `originalSHA256` records each
