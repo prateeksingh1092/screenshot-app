@@ -1,4 +1,5 @@
 import AppKit
+import FrisketCore
 @preconcurrency import ScreenCaptureKit
 import QuartzCore
 import ImageIO
@@ -7,9 +8,12 @@ import UniformTypeIdentifiers
 @MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
     private let overlay = SelectionOverlay()
     private var content: Task<ShareableSnapshot, Error>?
+    private var areaLayout: DisplaySelectionSession?
     private(set) var captureDisplayID: UInt32?
 
     func prefetchShareableContent() {
+        areaLayout = nil
+        captureDisplayID = nil
         // Started on shortcut/menu invocation, before waiting for selection.
         content = Task {
             ShareableSnapshot(try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true))
@@ -17,26 +21,28 @@ import UniformTypeIdentifiers
     }
 
     func selectArea() async -> AreaSelection? {
-        // A single pointer-position read, not a monitor. Selection remains on this display.
+        // One pointer read, not a monitor. A drag may start on any connected display.
         let pointer = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main else { return nil }
-        let originFrame = screen.frame
-        let originScale = screen.backingScaleFactor
-        let originNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-        // Sample only at invocation, while the overlay (including magnifier) is hidden.
-        // The preview's pixels never become a pending capture or reach storage.
+        let screens = NSScreen.screens
+        let displays = screens.compactMap(\.selectionDisplay)
+        guard !displays.isEmpty else { return nil }
+        areaLayout = DisplaySelectionSession(displays: displays, pointer: pointer)
+        // Prepare all previews before ANY overlay is visible. No screen pixels
+        // are sampled on hover, on a Space switch, or while selection is active.
         hideSelection()
-        var magnifier: SelectionMagnifier?
+        var magnifiers: [UInt32: SelectionMagnifier] = [:]
         if let content, let identifier = Bundle.main.bundleIdentifier,
            let available = try? await content.value.content {
-            magnifier = try? await SelectionMagnifier.prepare(on: screen, content: available, excluding: identifier)
+            for screen in screens {
+                guard let display = screen.selectionDisplay else { continue }
+                magnifiers[display.id] = try? await SelectionMagnifier.prepare(on: screen, content: available,
+                                                                            excluding: identifier)
+            }
         }
-        // A display change while preparing must not open a stale selection panel.
-        guard let currentScreen = NSScreen.screens.first(where: {
-            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber) == originNumber
-                && $0.frame == originFrame && $0.backingScaleFactor == originScale
-        }) else { return nil }
-        let selection = await overlay.select(on: currentScreen, magnifier: magnifier)
+        // A change on ANY display during preparation invalidates the whole layout.
+        areaLayout?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
+        guard areaLayout?.isCancelled == false else { return nil }
+        let selection = await overlay.select(displays: displays, pointer: pointer, magnifiers: magnifiers)
         captureDisplayID = selection?.displayID
         return selection
     }
@@ -60,11 +66,14 @@ import UniformTypeIdentifiers
     func finishCapture() {
         content?.cancel()
         content = nil
+        areaLayout = nil
     }
 
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
         guard let content else { throw CapturePlatformError.unavailable }
         let available = try await content.value.content
+        areaLayout?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
+        guard areaLayout?.isCancelled != true else { throw CapturePlatformError.unavailable }
         guard let display = available.displays.first(where: { $0.displayID == request.displayID }),
               NSScreen.screens.contains(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == request.displayID }) else {
             throw CapturePlatformError.unavailable
@@ -75,6 +84,9 @@ import UniformTypeIdentifiers
                                                        pixelWidth: request.pixelWidth, pixelHeight: request.pixelHeight)
         // Own-app filtering remains the safety mechanism even if a window-server update lags.
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        // Discard in-flight pixels if the layout changed while ScreenCaptureKit awaited.
+        areaLayout?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
+        guard areaLayout?.isCancelled != true else { throw CapturePlatformError.unavailable }
         let bytes = NSMutableData()
         guard let encoder = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil) else {
             throw CapturePlatformError.unavailable

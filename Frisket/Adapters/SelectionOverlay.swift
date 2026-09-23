@@ -6,87 +6,126 @@ import FrisketCore
     override var canBecomeMain: Bool { false }
 }
 
+extension NSScreen {
+    var selectionDisplay: SelectionDisplay? {
+        guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+        return SelectionDisplay(id: number.uint32Value, frame: frame, scale: backingScaleFactor)
+    }
+}
+
 /// Window-local input only. No event monitor is installed, even during selection.
 @MainActor final class SelectionOverlay {
-    private var panel: SelectionPanel?
+    private var panels: [UInt32: SelectionPanel] = [:]
     private var completion: CheckedContinuation<AreaSelection?, Never>?
-    private var screen: NSScreen?
+    fileprivate var session: DisplaySelectionSession?
 
-    init() {
-        NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged),
-                                              name: NSApplication.didChangeScreenParametersNotification, object: nil)
-    }
-
-    func select(on screen: NSScreen, magnifier: SelectionMagnifier? = nil) async -> AreaSelection? {
-        self.screen = screen
+    func select(displays: [SelectionDisplay], pointer: CGPoint,
+                magnifiers: [UInt32: SelectionMagnifier]) async -> AreaSelection? {
+        guard completion == nil, !displays.isEmpty else { return nil }
+        session = DisplaySelectionSession(displays: displays, pointer: pointer)
         return await withCheckedContinuation { continuation in
             completion = continuation
-            let panel = SelectionPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
-                                       backing: .buffered, defer: false)
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.level = .screenSaver
-            panel.hasShadow = false
-            panel.hidesOnDeactivate = false
-            panel.becomesKeyOnlyIfNeeded = false
-            panel.acceptsMouseMovedEvents = true
-            panel.isReleasedWhenClosed = false
-            panel.isRestorable = false
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            let view = SelectionView(screen: screen, magnifier: magnifier) { [weak self] rect in
-                self?.finish(rect)
+            NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged),
+                name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(spaceChanged),
+                name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+            for display in displays {
+                let panel = SelectionPanel(contentRect: display.frame, styleMask: [.borderless, .nonactivatingPanel],
+                                           backing: .buffered, defer: false)
+                panel.isOpaque = false
+                panel.backgroundColor = .clear
+                panel.level = .screenSaver
+                panel.hasShadow = false
+                panel.hidesOnDeactivate = false
+                panel.becomesKeyOnlyIfNeeded = false
+                panel.acceptsMouseMovedEvents = true
+                panel.isReleasedWhenClosed = false
+                panel.isRestorable = false
+                panel.animationBehavior = .none
+                panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications,
+                                            .stationary, .ignoresCycle]
+                let view = SelectionView(display: display, magnifier: magnifiers[display.id], overlay: self)
+                panel.contentView = view
+                panels[display.id] = panel
+                panel.orderFrontRegardless()
             }
-            panel.contentView = view
-            self.panel = panel
-            panel.makeKeyAndOrderFront(nil)
-            panel.makeFirstResponder(view)
+            focusOrigin()
         }
     }
 
-    func hide() {
-        panel?.orderOut(nil)
-        panel?.contentView = nil // Release the magnifier snapshot before final capture.
-        panel = nil
+    /// Also completes a suspended selection if its caller explicitly hides it.
+    func hide() { finish(accept: false) }
+
+    fileprivate func redraw() {
+        for panel in panels.values { panel.contentView?.needsDisplay = true }
     }
 
-    private func finish(_ rect: CGRect?) {
+    fileprivate func focusOrigin() {
+        guard let id = session?.originDisplay?.id, let panel = panels[id] else { return }
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(panel.contentView)
+    }
+
+    fileprivate func finish(accept: Bool) {
+        // Re-read before accepting, even if AppKit's change notification is queued.
+        session?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
         var selection: AreaSelection?
-        if let rect, let screen, let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
-            selection = AreaSelection(displayID: number.uint32Value, displayFrame: screen.frame,
-                                      rect: rect,
-                                      scale: screen.backingScaleFactor)
+        if accept, let display = session?.originDisplay, let rect = session?.acceptedRect {
+            selection = AreaSelection(displayID: display.id, displayFrame: display.frame, rect: rect, scale: display.scale)
         }
-        hide()
+        // Tear down EVERY panel and frozen preview before resuming the pixel source.
+        for panel in panels.values {
+            panel.orderOut(nil)
+            panel.contentView = nil
+        }
+        panels.removeAll()
+        NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.removeObserver(self, name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        session = nil
         let continuation = completion
         completion = nil
-        screen = nil
         continuation?.resume(returning: selection)
     }
 
-    @objc private func displaysChanged() { if completion != nil { finish(nil) } }
+    @objc private func displaysChanged() {
+        session?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
+        if session?.isCancelled == true { finish(accept: false) }
+    }
+
+    @objc private func spaceChanged() {
+        guard completion != nil else { return }
+        displaysChanged()
+        guard completion != nil else { return }
+        for panel in panels.values {
+            // A frozen image of the previous Space is no longer a useful preview.
+            (panel.contentView as? SelectionView)?.spaceChanged()
+            panel.orderFrontRegardless()
+        }
+        focusOrigin()
+    }
 }
 
 @MainActor private final class SelectionView: NSView {
-    private var geometry: SelectionGeometry
+    private unowned let overlay: SelectionOverlay
+    private let displayID: UInt32
     private let displayFrame: CGRect
     private let scale: CGFloat
-    private let magnifier: SelectionMagnifier?
+    private var magnifier: SelectionMagnifier?
     private var pointer: CGPoint
     private var dragging = false
     private var spaceHeld = false
     private var modifiers: SelectionGeometry.Modifiers = []
-    private let completion: (CGRect?) -> Void
     override var acceptsFirstResponder: Bool { true }
     override var needsPanelToBecomeKey: Bool { true }
 
-    init(screen: NSScreen, magnifier: SelectionMagnifier?, completion: @escaping (CGRect?) -> Void) {
-        displayFrame = screen.frame
-        scale = screen.backingScaleFactor
-        geometry = SelectionGeometry(displayFrame: screen.frame, scale: screen.backingScaleFactor)
+    init(display: SelectionDisplay, magnifier: SelectionMagnifier?, overlay: SelectionOverlay) {
+        self.overlay = overlay
+        displayID = display.id
+        displayFrame = display.frame
+        scale = display.scale
         pointer = NSEvent.mouseLocation
         self.magnifier = magnifier
-        self.completion = completion
-        super.init(frame: CGRect(origin: .zero, size: screen.frame.size))
+        super.init(frame: CGRect(origin: .zero, size: display.frame.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Select capture area. Drag; Shift locks an axis, Option grows from centre, Space moves, arrows nudge one pixel. Shift-arrow resizes one pixel: right/up grows, left/down shrinks. Return captures. Escape cancels.")
@@ -102,9 +141,14 @@ import FrisketCore
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let selection = geometry.rect.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
         NSColor.black.withAlphaComponent(0.24).setFill()
         bounds.fill()
+        guard overlay.session?.originDisplay?.id == displayID, let rect = overlay.session?.rect else {
+            "Selection stays on its starting display · Esc cancels".draw(at: CGPoint(x: 24, y: 24),
+                withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
+            return
+        }
+        let selection = rect.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
         NSColor.clear.setFill()
         selection.fill(using: .copy)
         NSColor.white.setStroke()
@@ -121,6 +165,14 @@ import FrisketCore
         }
     }
 
+    func spaceChanged() {
+        magnifier = nil
+        dragging = false
+        spaceHeld = false
+        modifiers = []
+        needsDisplay = true
+    }
+
     private func point(_ event: NSEvent) -> CGPoint {
         let local = convert(event.locationInWindow, from: nil)
         return CGPoint(x: local.x + displayFrame.minX, y: local.y + displayFrame.minY)
@@ -132,7 +184,7 @@ import FrisketCore
         if spaceHeld { modifiers.insert(.space) }
     }
     private func updateGeometry() {
-        if dragging { geometry.update(to: pointer, modifiers: modifiers) }
+        if dragging { overlay.session?.update(to: pointer, modifiers: modifiers) }
         needsDisplay = true
     }
     override func mouseMoved(with event: NSEvent) {
@@ -141,10 +193,15 @@ import FrisketCore
     }
     override func mouseDown(with event: NSEvent) {
         pointer = point(event)
+        guard overlay.session?.begin(at: pointer) == true else {
+            overlay.focusOrigin()
+            return
+        }
         dragging = true
         updateModifiers(event)
-        geometry.begin(at: pointer)
         updateGeometry()
+        overlay.redraw()
+        overlay.focusOrigin()
     }
     override func mouseDragged(with event: NSEvent) {
         pointer = point(event)
@@ -158,16 +215,16 @@ import FrisketCore
         acceptSelection()
     }
     private func acceptSelection() {
-        if geometry.rect.width >= 1 / scale, geometry.rect.height >= 1 / scale { completion(geometry.rect) }
+        if overlay.session?.acceptedRect != nil { overlay.finish(accept: true) }
     }
     override func flagsChanged(with event: NSEvent) {
         updateModifiers(event)
         updateGeometry()
     }
-    override func cancelOperation(_ sender: Any?) { completion(nil) }
+    override func cancelOperation(_ sender: Any?) { overlay.finish(accept: false) }
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 53: completion(nil); return
+        case 53: overlay.finish(accept: false); return
         case 36, 76: acceptSelection(); return
         case 49:
             spaceHeld = true
@@ -184,9 +241,9 @@ import FrisketCore
     }
     private func adjustSelection(dx: Int, dy: Int, event: NSEvent) {
         if event.modifierFlags.contains(.shift) {
-            geometry.resize(dw: dx, dh: dy)
+            overlay.session?.resize(dw: dx, dh: dy)
         } else {
-            geometry.nudge(dx: dx, dy: dy)
+            overlay.session?.nudge(dx: dx, dy: dy)
         }
     }
     override func keyUp(with event: NSEvent) {

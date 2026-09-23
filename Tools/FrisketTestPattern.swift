@@ -1,4 +1,4 @@
-// Synthetic-only manual fixture. --show launches a window only when the operator requests it.
+// Synthetic-only manual fixture. Show modes launch windows only at the operator's request.
 import AppKit
 import ImageIO
 
@@ -8,6 +8,10 @@ import ImageIO
 
 @MainActor private final class PatternView: NSView {
     override var acceptsFirstResponder: Bool { true }
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        needsDisplay = true
+    }
     override func draw(_ dirtyRect: NSRect) {
         NSColor(srgbRed: 0.15, green: 0.15, blue: 0.15, alpha: 1).setFill()
         bounds.fill()
@@ -54,16 +58,19 @@ import ImageIO
             }
             return
         }
-        guard args.count == 2, ["--show", "--show-all"].contains(args[1]) else {
-            fputs("Usage: FrisketTestPattern --show | --show-all | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
+        guard args.count == 2, ["--show", "--show-all", "--show-full-screen"].contains(args[1]) else {
+            fputs("Usage: FrisketTestPattern --show | --show-all | --show-full-screen | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
             exit(2)
         }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
+        let fullScreen = args[1] == "--show-full-screen"
         let screens = args[1] == "--show-all" ? NSScreen.screens : NSScreen.main.map { [$0] } ?? []
         guard !screens.isEmpty else { exit(1) }
         let windows = screens.map { screen in
-            let window = PatternWindow(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            let window = PatternWindow(contentRect: screen.frame,
+                styleMask: fullScreen ? [.titled, .closable, .resizable] : [.borderless], backing: .buffered, defer: false)
+            if fullScreen { window.collectionBehavior = [.fullScreenPrimary] }
             window.colorSpace = .sRGB
             window.isReleasedWhenClosed = false
             window.title = "Frisket Synthetic Test Pattern"
@@ -74,6 +81,7 @@ import ImageIO
             return window
         }
         app.activate(ignoringOtherApps: true)
+        if fullScreen { windows.first?.toggleFullScreen(nil) }
         withExtendedLifetime(windows) { app.run() }
     }
 
