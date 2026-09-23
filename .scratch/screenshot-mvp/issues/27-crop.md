@@ -4,12 +4,12 @@
 
 **Blocked by:** 26
 
-**Status:** in-progress (branch `ticket/27-crop`)
+**Status:** resolved (tested on `main` at `5a287b9`; crop VoiceOver/canvas manual pending)
 
-- [ ] Redaction rectangles are snapped outward to whole output pixels after crop and scale.
-- [ ] Pre-crop display frames are discarded right after cropping.
-- [ ] Canary cases cover 1x and 2x sources, fractional rectangles, and crop across every available output.
-- [ ] Seam 2 render-equivalence and frozen-snapshot cases.
+- [x] Redaction rectangles are snapped outward to whole output pixels after crop and scale.
+- [x] Pre-crop display frames are discarded right after cropping.
+- [x] Canary cases cover 1x and 2x sources, fractional rectangles, and crop across every available output.
+- [x] Seam 2 render-equivalence and frozen-snapshot cases.
 
 ## Comments
 
@@ -24,3 +24,5 @@ Report: [27-implementer.md](../reports/27-implementer.md). Seam 2 covers crop+re
 ### 2026-09-23 — review
 
 In-chat review vs `226ff32`: [27-code-review.md](../reviews/27-code-review.md). No blocking findings.
+
+- **Integration:** `integrate/27` fast-forwarded `main` to `5a287b9`. Outward snap after crop and scale, 1×/2× canaries on every output, and seam 2 equivalence/snapshot are automated. Root `swift test`: 257 tests in 37 suites passed. Unsigned x86_64 `xcodebuild` succeeded. x86_64 only; arm64 not executed. Coordinator chat after Codex/Other Models limits. Manual crop canvas/VoiceOver remain for Prateek.
