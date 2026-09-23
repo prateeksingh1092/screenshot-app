@@ -14,8 +14,9 @@ HASH = re.compile(r"^[0-9a-f]{40}$")
 
 
 def command(args):
+    # Universal codesign with a just-unlocked keychain can exceed 30s.
     return subprocess.check_output([str(a) for a in args], text=True, stderr=subprocess.STDOUT,
-                                   timeout=30)
+                                   timeout=120)
 
 
 def parse_signature(text):
@@ -36,7 +37,8 @@ def parse_signature(text):
 def sign(app):
     app = Path(app)
     entitlements = Path(__file__).resolve().parents[2] / "Frisket" / "Frisket.entitlements"
-    command(["/usr/bin/codesign", "--force", "--sign", "Apple Development",
+    command(["/usr/bin/codesign", "--force", "--sign",
+             "2A936C7DA44D2BCCB78B9446289BC73FB53B295D",
              "--options", "runtime", "--timestamp=none",
              "--entitlements", entitlements, app])
 

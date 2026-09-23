@@ -24,11 +24,14 @@ x86_64 only; arm64 not executed.
   External 1× display, TCC state account, VoiceOver, two signed rebuilds.
 - Every earlier manual checklist that decision 49 left for Prateek.
 - Live performance vs ratified targets (tickets 37/38). Placeholders stand.
-- Universal signed Release labelled "arm64 built and signed, never executed".
-  Unsigned Release compiled on this host: `lipo` reports `x86_64 arm64`,
-  identifier `io.github.prateeksingh1092.frisket`. `codesign` with the
-  existing Apple Development identity timed out (keychain prompt). The
-  bundle was not launched or copied to `~/Applications`. arm64 not executed.
 - Codex assessment of this report.
+
+## C3 label (after keychain unlock)
+
+`arm64 built and signed, never executed`. Architectures `arm64`+`x86_64`.
+Identifier `io.github.prateeksingh1092.frisket`. Team `9M43Q952NK`. CDHash
+`c273fe80a1c0fe7cc1fbf6e0f818cd8cce93772d`. `distributed: false`.
+`arm64_executed: false`. `codesign --verify --strict` passed. Not launched,
+not installed, not distributed.
 
 Nothing in this draft is a distribution or Apple-silicon runtime claim.
