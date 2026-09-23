@@ -98,20 +98,41 @@ public struct DocumentAnnotation: Equatable, Sendable {
     }
 }
 
+/// A pixel-sampling annotation effect. It is never a redaction: it has no fill,
+/// opacity, or radius, and it reads only the already-redacted composite.
+public struct DocumentEffect: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+        case blur(x: Double, y: Double, width: Double, height: Double)
+        case magnify(x: Double, y: Double, width: Double, height: Double)
+    }
+
+    public let kind: Kind
+
+    public init?(_ kind: Kind) {
+        switch kind {
+        case let .blur(x, y, width, height), let .magnify(x, y, width, height):
+            guard [x, y, width, height].allSatisfy(\.isFinite), width > 0, height > 0 else { return nil }
+        }
+        self.kind = kind
+    }
+}
+
 /// Everything the editor changes, without the base image. `scale` is output pixels per document point.
 public struct DocumentEdits: Equatable, Sendable {
     public let scale: Double
     public var crop: DocumentCrop?
     public var redactions: [SolidRedaction]
     public var annotations: [DocumentAnnotation]
+    public var effects: [DocumentEffect]
 
     public init?(scale: Double, crop: DocumentCrop? = nil, redactions: [SolidRedaction] = [],
-                 annotations: [DocumentAnnotation] = []) {
+                 annotations: [DocumentAnnotation] = [], effects: [DocumentEffect] = []) {
         guard scale.isFinite, scale > 0 else { return nil }
         self.scale = scale
         self.crop = crop
         self.redactions = redactions
         self.annotations = annotations
+        self.effects = effects
     }
 }
 

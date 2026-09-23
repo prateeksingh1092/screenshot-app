@@ -698,3 +698,62 @@ extension EditorRedactionCommandsTests {
         fixture.expectAnnotated(try decodeSRGB(try #require(await drag.bytes().last)))
     }
 }
+
+private struct EffectCanary: Sendable, CustomTestStringConvertible {
+    let source: CanaryCase
+    var testDescription: String { "effect \(Int(source.scale))x" }
+
+    static let all = CanaryCase.all.map(EffectCanary.init)
+
+    func edits() throws -> DocumentEdits {
+        let redactions = try source.edits().redactions
+        let effects = try source.redactions.flatMap { rectangle -> [DocumentEffect] in
+            let blur = try #require(DocumentEffect(.blur(x: rectangle.x, y: rectangle.y,
+                                                         width: rectangle.width, height: rectangle.height)))
+            let magnify = try #require(DocumentEffect(.magnify(x: rectangle.x, y: rectangle.y,
+                                                               width: rectangle.width, height: rectangle.height)))
+            return [blur, magnify]
+        }
+        return try #require(DocumentEdits(scale: source.scale, redactions: redactions, effects: effects))
+    }
+}
+
+extension EditorRedactionCommandsTests {
+    @Test(arguments: EffectCanary.all)
+    private func overlappingBlurAndMagnifyCannotRevealARedactionOnAnyOutput(fixture: EffectCanary) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("History.noindex")
+        let exports = directory.appendingPathComponent("Exports")
+        let clipboard = RecordingClipboard()
+        let drag = CropDragHandoff()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+            exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
+            drag: drag, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")),
+            codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let rendered = CaptureRevision(captureID: id, number: 2)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(.done(original, try fixture.edits())) == .edited(rendered, .committed))
+
+        let entry = try #require(try await commands.historyEntries().get().first)
+        expectRedacted(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))), fixture.source)
+        let pending = try #require(await commands.image(for: rendered))
+        expectRedacted(try decodeSRGB(pending.pngData), fixture.source)
+        expectRedacted(try decodeSRGB(try #require(ThumbnailImage.make(from: pending.pngData, maximumPixelSize: 480))), fixture.source)
+        let cached = try Data(contentsOf: root.appendingPathComponent(try #require(entry.thumbnailLocation)))
+        expectRedacted(try decodeSRGB(cached), fixture.source)
+
+        #expect(await commands.execute(.copy(rendered)) == .copy(CopyOutcome(revision: rendered, commit: .committed,
+            delivery: .copied(ClipboardReceipt(changeCount: 101)))))
+        expectRedacted(try decodeSRGB(try #require(await clipboard.images.last).pngData), fixture.source)
+        guard case let .save(saved) = await commands.execute(.save(rendered)), case let .saved(receipt) = saved.delivery else {
+            Issue.record("Effect Save should succeed"); return
+        }
+        expectRedacted(try decodeSRGB(try Data(contentsOf: exports.appendingPathComponent(receipt.filename))), fixture.source)
+        #expect(await commands.execute(.drag(rendered, .copy)) == .drag(DragOutcome(revision: rendered, commit: .committed, delivery: .copied)))
+        expectRedacted(try decodeSRGB(try #require(await drag.bytes().last)), fixture.source)
+    }
+}

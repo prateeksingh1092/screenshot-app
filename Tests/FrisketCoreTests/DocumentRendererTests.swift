@@ -241,13 +241,66 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         #expect(DocumentAnnotation(.arrow(x0: 1, y0: 1, x1: 1, y1: 1)) == nil)
         #expect(DocumentAnnotation(.text(x: 0, y: 0, characters: "!@#")) == nil)
     }
+
+    @Test func magnifyDoublesPixelsFromTheSnappedOrigin() throws {
+        let base = try picture([
+            "a...",
+            "....",
+            "....",
+            "...."
+        ])
+        let effect = try #require(DocumentEffect(.magnify(x: 0, y: 0, width: 4, height: 4)))
+        #expect(try render(base, effects: [effect]) == picture([
+            "aa..",
+            "aa..",
+            "....",
+            "...."
+        ]))
+    }
+
+    @Test func blurAveragesAThreeByThreeWindow() throws {
+        let base = try picture([
+            "aaa",
+            "a.a",
+            "aaa"
+        ])
+        let effect = try #require(DocumentEffect(.blur(x: 0, y: 0, width: 3, height: 3)))
+        let rendered = try render(base, effects: [effect])
+        #expect(rendered.pixel(x: 1, y: 1) == RGBAPixel(red: 0xaf, green: 0x73, blue: 0x41, alpha: 0xff))
+    }
+
+    @Test func blurAndMagnifyOverARedactionKeepFillAndHideTheCanary() throws {
+        let base = try picture([
+            "aaaaa",
+            "aaaaa",
+            "aaaaa",
+            "aaaaa",
+            "aaaaa"
+        ])
+        let blur = try #require(DocumentEffect(.blur(x: 0, y: 0, width: 5, height: 5)))
+        let magnify = try #require(DocumentEffect(.magnify(x: 0, y: 0, width: 5, height: 5)))
+        #expect(try render(base, [(0, 0, 5, 5)], effects: [blur, magnify]) == picture([
+            "#####",
+            "#####",
+            "#####",
+            "#####",
+            "#####"
+        ]))
+    }
+
+    @Test func effectGeometryIsRejectedWhenItCannotSampleARegion() {
+        #expect(DocumentEffect(.blur(x: 0, y: 0, width: 0, height: 1)) == nil)
+        #expect(DocumentEffect(.magnify(x: 1, y: 1, width: -1, height: 1)) == nil)
+    }
 }
 
 private func render(_ base: Bitmap, scale: Double = 1, crop: (Double, Double, Double, Double)? = nil,
                     _ rectangles: [(Double, Double, Double, Double)] = [],
-                    annotations: [DocumentAnnotation] = []) throws -> Bitmap {
+                    annotations: [DocumentAnnotation] = [],
+                    effects: [DocumentEffect] = []) throws -> Bitmap {
     let redactions = try rectangles.map { try #require(SolidRedaction(x: $0.0, y: $0.1, width: $0.2, height: $0.3)) }
     let cropRect = try crop.map { try #require(DocumentCrop(x: $0.0, y: $0.1, width: $0.2, height: $0.3)) }
-    let edits = try #require(DocumentEdits(scale: scale, crop: cropRect, redactions: redactions, annotations: annotations))
+    let edits = try #require(DocumentEdits(scale: scale, crop: cropRect, redactions: redactions,
+                                           annotations: annotations, effects: effects))
     return DocumentRenderer.render(EditorDocument(base: base, edits: edits))
 }

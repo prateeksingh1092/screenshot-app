@@ -102,12 +102,12 @@ import FrisketCore
         self.base = base
         self.edits = edits
         self.finish = finish
-        tools = [SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool]
+        tools = [SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
         documentSize = CGSize(width: Double(base.width) / scale, height: Double(base.height) / scale)
         canvas = EditorCanvasView(documentSize: documentSize)
         let visible = (screen ?? NSScreen.main)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
         let barHeight: CGFloat = 56
-        let size = CGSize(width: min(max(documentSize.width, 720), visible.width * 0.85),
+        let size = CGSize(width: min(max(documentSize.width, 840), visible.width * 0.85),
                           height: min(max(documentSize.height, 320), visible.height * 0.85 - barHeight) + barHeight)
         window = NSWindow(contentRect: CGRect(origin: .zero, size: size),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -116,7 +116,7 @@ import FrisketCore
         window.isRestorable = false
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
-        window.minSize = CGSize(width: 720, height: 240)
+        window.minSize = CGSize(width: 840, height: 240)
         window.delegate = self
 
         let content = NSView(frame: CGRect(origin: .zero, size: size))
@@ -179,7 +179,9 @@ import FrisketCore
                                         .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
-    private var unchanged: Bool { edits.redactions.isEmpty && edits.crop == nil && edits.annotations.isEmpty }
+    private var unchanged: Bool {
+        edits.redactions.isEmpty && edits.crop == nil && edits.annotations.isEmpty && edits.effects.isEmpty
+    }
 
     private var currentDocumentSize: CGSize {
         if let crop = edits.crop {
@@ -257,7 +259,7 @@ import FrisketCore
             // Returning to the unedited capture would keep pixels the user chose to redact.
             let alert = NSAlert()
             alert.messageText = "Press Done to keep the edited capture"
-            alert.informativeText = "Closing now would discard your edits. Undo every crop, redaction, and annotation to close without changes."
+            alert.informativeText = "Closing now would discard your edits. Undo every crop, redaction, annotation, and effect to close without changes."
             alert.beginSheetModal(for: window)
             return false
         }
