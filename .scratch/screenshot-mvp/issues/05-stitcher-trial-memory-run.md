@@ -4,7 +4,7 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/05-stitcher-trial-memory`)
 
 - [ ] Frames are compared only with the previous frame; new rows go into fixed-size strips; frames are released promptly; no temporary files are written.
 - [ ] The synthetic 5120×57,600 capture completes without truncation or downscaling, with peak physical footprint under 2 GB, measured and recorded.
