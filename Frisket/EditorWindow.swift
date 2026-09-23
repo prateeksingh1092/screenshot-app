@@ -95,9 +95,10 @@ import FrisketCore
     private let doneButton = NSButton(title: "Done", target: nil, action: nil)
     private var finishing = false
     /// Close only after the command accepts the edits (or the unchanged close).
-    private var finish: ((DocumentEdits?) async -> Bool)?
+    private var finish: ((EditorLeave) async -> Bool)?
+    private var promptOpen = false
 
-    init?(base: Bitmap, scale: Double, screen: NSScreen?, finish: @escaping (DocumentEdits?) async -> Bool) {
+    init?(base: Bitmap, scale: Double, screen: NSScreen?, finish: @escaping (EditorLeave) async -> Bool) {
         guard let edits = DocumentEdits(scale: scale) else { return nil }
         self.base = base
         self.edits = edits
@@ -232,15 +233,26 @@ import FrisketCore
     }
 
     @objc private func done() {
-        end(with: edits)
+        end(.finalize(edits))
     }
 
-    private func end(with result: DocumentEdits?) {
+    func offerToLeave() {
+        window.performClose(nil)
+    }
+
+    func interruptUnansweredPrompt(_ event: EditorInterruption) {
+        guard promptOpen, let leave = EditorLeave.forInterruptedPrompt(event) else { return }
+        window.sheets.forEach { window.endSheet($0, returnCode: .abort) }
+        end(leave)
+    }
+
+    private func end(_ leave: EditorLeave) {
         guard !finishing, let finish else { return }
         finishing = true
+        promptOpen = false
         refresh()
         Task {
-            guard await finish(result) else {
+            guard await finish(leave) else {
                 finishing = false
                 refresh()
                 return
@@ -255,15 +267,32 @@ import FrisketCore
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard !finishing else { return false }
-        guard unchanged else {
-            // Returning to the unedited capture would keep pixels the user chose to redact.
-            let alert = NSAlert()
-            alert.messageText = "Press Done to keep the edited capture"
-            alert.informativeText = "Closing now would discard your edits. Undo every crop, redaction, annotation, and effect to close without changes."
-            alert.beginSheetModal(for: window)
+        if unchanged {
+            end(.finalize(nil))
             return false
         }
-        end(with: nil)
+        let alert = NSAlert()
+        alert.messageText = "Keep this edited capture?"
+        alert.informativeText = "Finalize writes the edited image to History. Delete capture discards it. Cancel keeps the editor open."
+        alert.addButton(withTitle: "Finalize")
+        alert.addButton(withTitle: "Delete Capture")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].keyEquivalent = "\r"
+        alert.buttons[0].setAccessibilityLabel("Finalize edited capture")
+        alert.buttons[1].hasDestructiveAction = true
+        alert.buttons[1].setAccessibilityLabel("Delete capture")
+        alert.buttons[2].keyEquivalent = "\u{1b}"
+        alert.buttons[2].setAccessibilityLabel("Cancel and keep the editor open")
+        promptOpen = true
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            self.promptOpen = false
+            switch response {
+            case .alertFirstButtonReturn: self.end(.finalize(self.edits))
+            case .alertSecondButtonReturn: self.end(.delete)
+            default: break
+            }
+        }
         return false
     }
 }

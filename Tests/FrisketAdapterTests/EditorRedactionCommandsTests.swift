@@ -697,6 +697,50 @@ extension EditorRedactionCommandsTests {
         #expect(await commands.execute(.drag(rendered, .copy)) == .drag(DragOutcome(revision: rendered, commit: .committed, delivery: .copied)))
         fixture.expectAnnotated(try decodeSRGB(try #require(await drag.bytes().last)))
     }
+
+    @Test func unchangedEditorLeaveFinalizesToHistory() async throws {
+        let fixture = CanaryCase.all[0]
+        let root = historyRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+            codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(EditorLeave.finalize(nil).command(for: original)) == .finalized(original, .committed))
+        #expect(try await commands.historyEntries().get().map(\.captureID) == [id])
+    }
+
+    @Test func editorDeleteDiscardsWithoutHistory() async throws {
+        let fixture = CanaryCase.all[0]
+        let root = historyRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+            codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(EditorLeave.delete.command(for: original)) == .discarded(id))
+        #expect(try await commands.historyEntries().get().isEmpty)
+        #expect(await commands.image(for: original) == nil)
+    }
+
+    @Test func logoutDuringAnUnansweredPromptDiscardsThroughTheSameCommand() async throws {
+        let fixture = CanaryCase.all[0]
+        let root = historyRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+            codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        let leave = try #require(EditorLeave.forInterruptedPrompt(.logout))
+        #expect(await commands.execute(leave.command(for: original)) == .discarded(id))
+        #expect(try await commands.historyEntries().get().isEmpty)
+    }
 }
 
 private struct EffectCanary: Sendable, CustomTestStringConvertible {

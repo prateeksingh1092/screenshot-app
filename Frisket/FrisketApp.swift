@@ -98,6 +98,8 @@ import FrisketCore
             name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
         lockCenter.addObserver(self, selector: #selector(screenUnlocked),
             name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(workspaceWillPowerOff),
+            name: NSWorkspace.willPowerOffNotification, object: nil)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
@@ -359,28 +361,43 @@ import FrisketCore
             guard let image = await commands.image(for: panel.revision),
                   let base = PNGBitmapCodec().decode(image.pngData),
                   let editor = EditorWindow(base: base, scale: Double(screen?.backingScaleFactor ?? 1), screen: screen,
-                                            finish: { [weak self] edits in await self?.finishEditing(id, edits) ?? false }) else {
+                                            finish: { [weak self] leave in await self?.finishEditing(id, leave) ?? false }) else {
                 panel.model.busy = false
                 notice("Editor unavailable", "This capture can't be edited. Copy, dismiss, or delete it instead.")
                 return
             }
-            editors[id] = editor
+            storeEditor(editor, for: id)
             editor.show()
         }
     }
 
-    private func finishEditing(_ id: CaptureID, _ edits: DocumentEdits?) async -> Bool {
+    private func finishEditing(_ id: CaptureID, _ leave: EditorLeave) async -> Bool {
         guard let panel = panels[id], let commands else { return false }
-        guard let edits else {
-            editors.removeValue(forKey: id)
+        switch leave {
+        case .finalize(nil):
+            let outcome = await commands.execute(.dismiss(panel.revision))
+            if case .finalized(_, let commit) = outcome {
+                storeEditor(nil, for: id)
+                showOversizedNotice(commit)
+                if commit == .committed { remove(id); return true }
+                panel.model.busy = false
+                panel.model.dismissFailed = true
+                return true
+            }
             panel.model.busy = false
+            notice("Could not keep the capture", "History did not accept this capture. Copy or Save it, then try again.")
+            return false
+        case .delete:
+            _ = await commands.execute(.discard(id))
+            storeEditor(nil, for: id)
+            remove(id)
             return true
-        }
+        case let .finalize(edits?):
         guard case let .edited(revision, commit, clipboardFailure) = await commands.execute(.done(panel.revision, edits)) else {
             notice("Could not finish editing", "Your edits are still open. Done could not prepare the redacted result. Retry Done to finish editing.")
             return false
         }
-        editors.removeValue(forKey: id)
+        storeEditor(nil, for: id)
         // The unedited preview must not stay on screen once the rendered revision exists.
         let screen = screens[id] ?? NSScreen.main
         guard let image = await commands.image(for: revision),
@@ -401,6 +418,7 @@ import FrisketCore
             notice("Could not replace the earlier copy", "The clipboard may still contain the original capture. Use Copy on the redacted thumbnail to replace it.")
         }
         return true
+        }
     }
 
     private func copy(_ id: CaptureID) {
@@ -537,7 +555,7 @@ import FrisketCore
     private func remove(_ id: CaptureID) {
         panels.removeValue(forKey: id)?.close()
         screens.removeValue(forKey: id)
-        editors.removeValue(forKey: id)
+        storeEditor(nil, for: id)
         arrivalOrder.removeAll { $0 == id }
         timeouts.removeValue(forKey: id)?.cancel()
         if panels.isEmpty { Task { await commands?.setThumbnailStackFocus(false) } }
@@ -627,6 +645,19 @@ import FrisketCore
         }
     }
 
+    @objc private func workspaceWillPowerOff() {
+        for editor in editors.values { editor.interruptUnansweredPrompt(.logout) }
+    }
+
+    private func storeEditor(_ editor: EditorWindow?, for id: CaptureID) {
+        if let editor { editors[id] = editor } else { editors.removeValue(forKey: id) }
+        if editors.isEmpty {
+            ProcessInfo.processInfo.enableSuddenTermination()
+        } else {
+            ProcessInfo.processInfo.disableSuddenTermination()
+        }
+    }
+
     private func connectedDisplayIDs() -> [UInt32] {
         let ids = NSScreen.screens.compactMap(displayID(of:))
         guard let main = NSScreen.main.flatMap(displayID(of:)) else { return ids }
@@ -703,7 +734,7 @@ import FrisketCore
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard editors.isEmpty else {
             reopenAfterQuit = false
-            notice("Finish editing first", "Press Done, or close the editor without changes, then quit again.")
+            for editor in editors.values { editor.offerToLeave() }
             return .terminateCancel
         }
         guard !capturing, !requestingPermission, !panels.values.contains(where: { $0.model.busy }) else {
