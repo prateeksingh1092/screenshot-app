@@ -15,4 +15,4 @@ Stopped before review. Ticket Status/checkboxes unchanged.
 
 ## Fix pass
 
-Coordinator, one pass. Delete errors stay visible after reload. An open History window refreshes when a thumbnail is finalized. Review: `.scratch/screenshot-mvp/reviews/15-code-review.md`.
+Coordinator, one pass. Delete errors stay visible after reload. An open History window refreshes when a thumbnail is finalized. Pending delivery without History still rejects `.alreadyDelivered`; finalized items re-copy/save/drag from disk. Review: `.scratch/screenshot-mvp/reviews/15-code-review.md`.

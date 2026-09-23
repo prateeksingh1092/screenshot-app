@@ -392,7 +392,7 @@ actor CaptureLifecycleCoordinator {
                     pngData = data
                     fromHistory = true
                 default:
-                    return .rejected(.unknownCapture)
+                    return .rejected(delivered.contains(id) ? .alreadyDelivered : .unknownCapture)
                 }
             }
             inProgress.insert(id)
@@ -466,11 +466,14 @@ actor CaptureLifecycleCoordinator {
                 pngData = data
                 fromHistory = true
             default:
-                return .rejected(.unknownCapture)
+                return .rejected(delivered.contains(id) ? .alreadyDelivered : .unknownCapture)
             }
         }
         let previouslyFailed = failedDeliveries[id]?.contains(kind) == true
-        if retrying {
+        if fromHistory {
+            // History delivery is a new adapter write each time; retry belongs to pending captures.
+            if retrying { return .rejected(.retryNotAvailable) }
+        } else if retrying {
             guard previouslyFailed else { return .rejected(.retryNotAvailable) }
         } else if previouslyFailed {
             return .rejected(.retryRequired)

@@ -40,8 +40,13 @@ private struct UnusedClipboard: ImageClipboard {
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == [receipt.filename])
         #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == SavePixels().bytes)
         #expect(await commands.image(for: revision) == nil)
-        #expect(await commands.execute(.save(revision)) == .rejected(.alreadyDelivered))
-        // Simulate removal of all History files: the external copy remains intact.
+        guard case let .save(again) = await commands.execute(.save(revision)),
+              case let .saved(secondReceipt) = again.delivery else { Issue.record("History Save should succeed"); return }
+        #expect(again.commit == .committed)
+        #expect(secondReceipt.filename != receipt.filename)
+        #expect(try Data(contentsOf: folder.appendingPathComponent(secondReceipt.filename)) == SavePixels().bytes)
+        #expect(try await commands.historyEntries().get().count == 1)
+        // Simulate removal of all History files: the external copies remain intact.
         try FileManager.default.removeItem(at: root.appendingPathComponent(entry.imageLocation))
         #expect(try Data(contentsOf: exported) == SavePixels().bytes)
     }
@@ -82,7 +87,7 @@ extension SaveCommandsTests {
         #expect(try await commands.historyEntries().get() == before)
         #expect(try Data(contentsOf: folder.appendingPathComponent(receipt.filename)) == SavePixels().bytes)
         #expect(await commands.image(for: revision) == nil)
-        #expect(await commands.execute(.retrySave(revision)) == .rejected(.alreadyDelivered))
+        #expect(await commands.execute(.retrySave(revision)) == .rejected(.retryNotAvailable))
         let events = await diagnostics.entries().map(\.event)
         #expect(events.contains { $0.name == .deliveryFailed && $0.operation == .save && $0.error?.domain == .fileExport })
         #expect(events.contains { $0.name == .deliverySucceeded && $0.operation == .retrySave && $0.error == nil })

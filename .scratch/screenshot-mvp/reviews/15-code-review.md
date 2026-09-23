@@ -7,7 +7,7 @@ Model: Cursor coordinator chat (Claude Opus 5.5 High). In-chat review; Other Mod
 
 - **Delete error wiped (hard, correctness):** `HistoryWindowModel.reload()` always sets `message = nil` on a successful list load. `delete()` sets "Delete failed" then calls `reload()`, so the error never stays visible.
 - **Stale History window (hard, correctness):** thumbnail dismiss/copy/save/quit refresh History Settings usage but not the open History window, so a visible window omits captures just finalized.
-- Baseline: `deliver` grew a pending-vs-history fork (divergent change / judgement). Acceptable for one command path. `historyImage` loads the full PNG per row (judgement); v1 History is bounded.
+- Baseline: `deliver` grew a pending-vs-history fork (divergent change / judgement). After a pending delivery the image is gone, so a second copy without History became `.unknownCapture` instead of `.alreadyDelivered`. Fix: History file → re-deliver; otherwise honor `delivered`. `historyImage` loads the full PNG per row (judgement); v1 History is bounded.
 
 ## Spec
 
@@ -17,4 +17,4 @@ Model: Cursor coordinator chat (Claude Opus 5.5 High). In-chat review; Other Mod
 
 ## Summary
 
-Standards: 2 hard findings (wiped delete error; stale open window). Spec: 0 blocking gaps. Worst per axis: delete error never shown; History window does not refresh when a thumbnail finalizes.
+Standards: 3 hard findings (wiped delete error; stale open window; pending re-copy without History became `.unknownCapture`). Spec: 0 blocking gaps. Worst per axis: delete error never shown; History window does not refresh when a thumbnail finalizes; second pending copy without History was not `.alreadyDelivered`.
