@@ -897,4 +897,49 @@ extension EditorRedactionCommandsTests {
                                                   delivery: .copied(ClipboardReceipt(changeCount: 2)))))
         #expect(await clipboard.texts == ["CANARY", ""])
     }
+
+    @Test func doneOnATallCaptureRedactsThroughStripEncode() async throws {
+        let width = 16, height = 96
+        let canary = RGBA(r: 0xc1, g: 0x7a, b: 0x3e, a: 0xff)
+        var bytes = [UInt8]()
+        for y in 0..<height {
+            for _ in 0..<width {
+                let colour = (40...55).contains(y) ? canary : background
+                bytes += [colour.r, colour.g, colour.b, colour.a]
+            }
+        }
+        let png = try encodeSRGB(bytes, width: width, height: height)
+        let redaction = try #require(SolidRedaction(x: 0, y: 40, width: 16, height: 16))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let rendered = CaptureRevision(captureID: id, number: 2)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(.done(original, edits)) == .edited(rendered, .notCommitted(.historyUnavailable)))
+        let output = try decodeSRGB(try #require(await commands.image(for: rendered)).pngData)
+        #expect(output.height == height)
+        for y in 40...55 {
+            for x in 0..<width {
+                #expect(output.pixels[y * width + x] == opaqueBlack)
+            }
+        }
+        #expect(output.pixels.contains(where: { $0 == canary }) == false)
+        #expect(output.pixels[0] == background)
+    }
+
+    @Test func stripPNGEncoderRoundTripsThroughTheRealCodec() throws {
+        let base = try #require(PNGBitmapCodec().decode(try encodeSRGB(
+            [0xc1, 0x7a, 0x3e, 0xff, 0x30, 0x50, 0x70, 0xff,
+             0x30, 0x50, 0x70, 0xff, 0xc1, 0x7a, 0x3e, 0xff], width: 2, height: 2)))
+        let redaction = try #require(SolidRedaction(x: 1, y: 0, width: 1, height: 1))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
+        let png = try #require(PNGBitmapCodec().encode(EditorDocument(base: base, edits: edits)))
+        let decoded = try decodeSRGB(png)
+        #expect(decoded.pixels[0] == RGBA(r: 0xc1, g: 0x7a, b: 0x3e, a: 0xff))
+        #expect(decoded.pixels[1] == opaqueBlack)
+        #expect(decoded.pixels[2] == background)
+        #expect(decoded.pixels[3] == RGBA(r: 0xc1, g: 0x7a, b: 0x3e, a: 0xff))
+    }
 }

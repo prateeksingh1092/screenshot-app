@@ -292,6 +292,37 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         #expect(DocumentEffect(.blur(x: 0, y: 0, width: 0, height: 1)) == nil)
         #expect(DocumentEffect(.magnify(x: 1, y: 1, width: -1, height: 1)) == nil)
     }
+
+    @Test func stripRenderMatchesFullRenderOnATallCanary() throws {
+        let base = try picture([
+            "a.....",
+            "..a...",
+            "....a.",
+            "a.....",
+            "..a...",
+            "....a.",
+            "a.....",
+            "..a..."
+        ])
+        let redaction = try #require(SolidRedaction(x: 2, y: 1, width: 3, height: 4))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
+        let document = EditorDocument(base: base, edits: edits)
+        let full = DocumentRenderer.render(document)
+        var rows: [Bitmap] = []
+        DocumentRenderer.forEachStrip(document, stripHeight: 3) { rows.append($0) }
+        #expect(rows.map(\.height) == [3, 3, 2])
+        #expect(DocumentRenderer.concatenate(rows) == full)
+        #expect(full.pixel(x: 2, y: 1) == SolidRedaction.fill)
+        #expect(full.pixel(x: 0, y: 0) == palette["a"])
+    }
+
+    @Test func editorProxyShrinksOnlyWhenAnEdgeExceedsTheCap() {
+        #expect(EditorProxy.displaySize(width: 40, height: 30) == (40, 30))
+        let tall = EditorProxy.displaySize(width: 5120, height: 57_600, maxEdge: 2048)
+        #expect(tall.width == 182)
+        #expect(tall.height == 2048)
+        #expect(EditorProxy.displayScale(fullWidth: 5120, proxyWidth: 182, scale: 2) == 2 * 182.0 / 5120)
+    }
 }
 
 private func render(_ base: Bitmap, scale: Double = 1, crop: (Double, Double, Double, Double)? = nil,

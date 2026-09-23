@@ -641,3 +641,20 @@ after Solid redaction. The tagged local Vision pair is
 `FRISKET_VISION_OCR=1` (`RecognizedTextVisionTests`); it records the OS
 build and requires CANARY before redaction and its absence after. See
 [manual checks](manual-checks/33-copy-recognized-text.md).
+
+## Ticket 36 editing a long scrolling capture
+
+`DocumentRenderer.forEachStrip` paints 256-row output windows (plus a one-row
+halo when effects are present) and never retains the full rendered bitmap.
+`StripPNGEncoder` writes a PNG as those strips arrive. Done calls
+`BitmapCodec.encode(pngData:edits:)` so History, Copy, and Save see the
+full-resolution result. Seam 1 canaries include a tall 16×96 case.
+
+The editor canvas uses `EditorProxy` (max edge **2048**) built from an
+ImageIO thumbnail. Edits stay in document points at the capture scale; Done
+re-renders the pending PNG at full resolution.
+
+The opt-in peak is `sh scripts/editor-memory-run.sh`. Coordinator release run:
+**5120×57,600**, 225 strips, PNG 1,180,425,795 bytes, peak physical
+footprint **586,006,528** bytes, under 2 GB. See
+[manual checks](manual-checks/36-editing-long-scrolling.md).

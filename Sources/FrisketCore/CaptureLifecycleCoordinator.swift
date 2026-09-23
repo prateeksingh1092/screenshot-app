@@ -232,8 +232,7 @@ actor CaptureLifecycleCoordinator {
             // Once redaction is submitted, a rejected render must not expose the
             // original to delivery or History. Only an accepted Done or Delete resolves it.
             if !edits.redactions.isEmpty { unfinishedRedactions.insert(id) }
-            guard let codec, let base = codec.decode(image.pngData),
-                  let pngData = codec.encode(DocumentRenderer.render(EditorDocument(base: base, edits: edits))),
+            guard let codec, let pngData = codec.encode(image.pngData, edits: edits),
                   !pngData.isEmpty else { return .rejected(.editingUnavailable) }
             guard pngData.count <= pendingByteLimit - (pendingBytes - image.pngData.count) else {
                 return .rejected(.pendingByteBudgetExceeded)
