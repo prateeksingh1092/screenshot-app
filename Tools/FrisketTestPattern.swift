@@ -54,20 +54,35 @@ import ImageIO
             }
             return
         }
-        guard args.count == 2, ["--show", "--show-all"].contains(args[1]) else {
-            fputs("Usage: FrisketTestPattern --show | --show-all | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
+        guard args.count == 2, ["--show", "--show-all", "--show-window"].contains(args[1]) else {
+            fputs("Usage: FrisketTestPattern --show | --show-all | --show-window | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
             exit(2)
         }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         let screens = args[1] == "--show-all" ? NSScreen.screens : NSScreen.main.map { [$0] } ?? []
         guard !screens.isEmpty else { exit(1) }
-        let windows = screens.map { screen in
-            let window = PatternWindow(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let windowed = args[1] == "--show-window"
+        // Two movable/minimizable synthetic windows for window-selection checks.
+        let frames: [CGRect] = windowed ? [
+            CGRect(x: screens[0].visibleFrame.minX + 80, y: screens[0].visibleFrame.minY + 80, width: 640, height: 400),
+            CGRect(x: screens[0].visibleFrame.minX + 240, y: screens[0].visibleFrame.minY + 200, width: 640, height: 400)
+        ] : screens.map(\.frame)
+        let windows = frames.map { frame in
+            let window = PatternWindow(contentRect: frame,
+                styleMask: windowed ? [.titled, .closable, .miniaturizable, .resizable] : [.borderless],
+                backing: .buffered, defer: false)
+            if windowed {
+                // Keep the pattern centred in the entire captured frame, including
+                // the titlebar, so the existing dimension/marker verifier applies.
+                window.styleMask.insert(.fullSizeContentView)
+                window.titlebarAppearsTransparent = true
+                window.collectionBehavior.insert(.fullScreenPrimary)
+            }
             window.colorSpace = .sRGB
             window.isReleasedWhenClosed = false
             window.title = "Frisket Synthetic Test Pattern"
-            let view = PatternView(frame: CGRect(origin: .zero, size: screen.frame.size))
+            let view = PatternView(frame: CGRect(origin: .zero, size: window.frame.size))
             window.contentView = view
             window.makeKeyAndOrderFront(nil)
             window.makeFirstResponder(view)

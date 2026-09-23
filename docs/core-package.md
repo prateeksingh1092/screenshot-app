@@ -272,3 +272,39 @@ and [the manual state checklist](manual-checks/23-permission-states.md).
 The app filesystem guard permits the specific recovery forms
 `NSWorkspace.shared.open` and `FileHandle.nullDevice`; fixtures still reject
 actual file writes in those same files, writable file handles, and POSIX `open`.
+
+
+## Ticket 21 window capture
+
+`captureWindow(CaptureID, maximumBytes:)` uses the optional `windowSource` on
+`CaptureCommandLayer`, sharing the permission gate, Pending capture budget,
+Copy/retry, Delete and History finalization with the other capture commands.
+A missing window source fails unavailable without falling back to area capture.
+Diagnostics use the existing closed `capture` operation.
+
+`WindowSelection(windows:ownProcessID:ownBundleIdentifier:)` is pure core policy:
+its metadata input is front-to-back, in global top-left-origin screen points.
+`candidates` excludes off-screen, minimized, nonzero-layer, own-process,
+own-bundle and unidentified-owner windows; `window(at:)` returns the frontmost
+eligible hit, preserving negative coordinates and display-spanning bounds.
+No titles or pixels enter this policy. The fixture adapter uses this same policy
+through seam 1; the live adapter intersects on-screen `SCShareableContent` with
+CoreGraphics' metadata-only on-screen z-order. SCK exposes no minimized flag;
+minimized windows are absent from this on-screen intersection, and `isActive`
+is deliberately not used (Stage Manager can make an off-screen window active).
+
+`WindowScreenCapturePlatform` awaits preparation before lazily showing temporary
+nonactivating panels on all displays. Window-local input handles hover, click,
+arrows/Tab, Return and Escape. Space/display changes cancel selection. After
+hiding and flushing the panels, it reloads the current window list and validates
+identity and eligibility. `SCContentFilter(desktopIndependentWindow:)` captures
+only the selected foreign window, excluding all Frisket panels by construction;
+no display crop or sharing flags are used. Cursor, child windows, shadows and
+audio are disabled. Native content dimensions are bounded before requesting
+pixels, and encoded PNG bytes are bounded before returning them. Permission
+and Space/display generation are checked around asynchronous capture work.
+
+The **Capture Window** menu adds no shortcut (ticket 24 owns that). Runtime
+acceptance is pending in [the synthetic-only checklist](manual-checks/21-window-capture.md).
+SDK evidence came from installed `SCShareableContent.h`, `SCStream.h` and
+`CGWindow.h`; no network research was performed.

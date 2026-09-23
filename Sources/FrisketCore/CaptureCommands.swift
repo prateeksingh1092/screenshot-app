@@ -17,6 +17,7 @@ public struct CaptureRevision: Hashable, Sendable {
 public enum CaptureCommand: Sendable {
     case capture(CaptureID, maximumBytes: Int)
     case captureFullScreen(CaptureID, maximumBytes: Int)
+    case captureWindow(CaptureID, maximumBytes: Int)
     case copy(CaptureRevision)
     case retryCopy(CaptureRevision)
     case dismiss(CaptureRevision)
@@ -64,10 +65,11 @@ public struct CaptureCommandLayer: Sendable {
     private let coordinator: CaptureLifecycleCoordinator
 
     public init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
+                windowSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
                 diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil) {
         self.diagnostics = diagnostics
-        coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
+        coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, windowSource: windowSource, clipboard: clipboard,
                                                   pendingByteLimit: pendingByteLimit, history: history)
     }
 
