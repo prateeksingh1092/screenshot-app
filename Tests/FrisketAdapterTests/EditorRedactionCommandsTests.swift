@@ -610,3 +610,91 @@ extension EditorRedactionCommandsTests {
         fixture.expectRedacted(try decodeSRGB(try #require(await drag.bytes().last)))
     }
 }
+
+private let annotationStroke = RGBA(r: 0xff, g: 0x3b, b: 0x30, a: 0xff)
+
+/// Rectangle outline in output pixels; redaction canaries stay gone, fill stays black off-stroke.
+private struct AnnotationCanary: Sendable, CustomTestStringConvertible {
+    let source: CanaryCase
+    let rectangle: (x: Double, y: Double, width: Double, height: Double)
+    let minX: Int, minY: Int, maxX: Int, maxY: Int
+    var testDescription: String { "annotation \(Int(source.scale))x" }
+
+    static let all = [
+        AnnotationCanary(source: CanaryCase.all[0], rectangle: (2, 2, 8, 6), minX: 2, minY: 2, maxX: 10, maxY: 8),
+        AnnotationCanary(source: CanaryCase.all[1], rectangle: (2, 2, 8, 6), minX: 4, minY: 4, maxX: 20, maxY: 16)
+    ]
+
+    func edits() throws -> DocumentEdits {
+        let annotation = try #require(DocumentAnnotation(.rectangle(x: rectangle.x, y: rectangle.y,
+                                                                    width: rectangle.width, height: rectangle.height)))
+        return try #require(DocumentEdits(scale: source.scale, redactions: try source.edits().redactions,
+                                          annotations: [annotation]))
+    }
+
+    func isOutline(x: Int, y: Int) -> Bool {
+        (x == minX || x == maxX - 1) && (minY..<maxY).contains(y)
+            || (y == minY || y == maxY - 1) && (minX..<maxX).contains(x)
+    }
+
+    func expectAnnotated(_ output: (width: Int, height: Int, pixels: [RGBA]),
+                         sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(output.width == source.width && output.height == source.height, sourceLocation: sourceLocation)
+        guard output.width == source.width, output.height == source.height else { return }
+        var strokeMismatches = 0, coveredMismatches = 0, canaries = 0
+        for y in 0..<source.height {
+            for x in 0..<source.width {
+                let pixel = output.pixels[y * source.width + x]
+                if source.canaries.contains(pixel) { canaries += 1 }
+                if isOutline(x: x, y: y) {
+                    strokeMismatches += pixel == annotationStroke ? 0 : 1
+                } else if source.isCovered(x: x, y: y) {
+                    coveredMismatches += pixel == opaqueBlack ? 0 : 1
+                }
+            }
+        }
+        #expect(strokeMismatches == 0, sourceLocation: sourceLocation)
+        #expect(coveredMismatches == 0, sourceLocation: sourceLocation)
+        #expect(canaries == 0, sourceLocation: sourceLocation)
+    }
+}
+
+extension EditorRedactionCommandsTests {
+    @Test(arguments: AnnotationCanary.all)
+    private func annotationsAppearOnEveryOutputWithoutWeakeningRedactions(fixture: AnnotationCanary) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("History.noindex")
+        let exports = directory.appendingPathComponent("Exports")
+        let clipboard = RecordingClipboard()
+        let drag = CropDragHandoff()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+            exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
+            drag: drag, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")),
+            codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let rendered = CaptureRevision(captureID: id, number: 2)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(.done(original, try fixture.edits())) == .edited(rendered, .committed))
+
+        let entry = try #require(try await commands.historyEntries().get().first)
+        fixture.expectAnnotated(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))))
+        let pending = try #require(await commands.image(for: rendered))
+        fixture.expectAnnotated(try decodeSRGB(pending.pngData))
+        fixture.expectAnnotated(try decodeSRGB(try #require(ThumbnailImage.make(from: pending.pngData, maximumPixelSize: 480))))
+        let cached = try Data(contentsOf: root.appendingPathComponent(try #require(entry.thumbnailLocation)))
+        fixture.expectAnnotated(try decodeSRGB(cached))
+
+        #expect(await commands.execute(.copy(rendered)) == .copy(CopyOutcome(revision: rendered, commit: .committed,
+            delivery: .copied(ClipboardReceipt(changeCount: 101)))))
+        fixture.expectAnnotated(try decodeSRGB(try #require(await clipboard.images.last).pngData))
+        guard case let .save(saved) = await commands.execute(.save(rendered)), case let .saved(receipt) = saved.delivery else {
+            Issue.record("Annotated Save should succeed"); return
+        }
+        fixture.expectAnnotated(try decodeSRGB(try Data(contentsOf: exports.appendingPathComponent(receipt.filename))))
+        #expect(await commands.execute(.drag(rendered, .copy)) == .drag(DragOutcome(revision: rendered, commit: .committed, delivery: .copied)))
+        fixture.expectAnnotated(try decodeSRGB(try #require(await drag.bytes().last)))
+    }
+}

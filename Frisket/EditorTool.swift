@@ -41,3 +41,49 @@ import FrisketCore
         return true
     }
 }
+
+@MainActor final class RectangleTool: EditorTool {
+    let title = "Shape"
+    let accessibilityLabel = "Rectangle shape tool"
+    let keyEquivalent = "s"
+
+    func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
+        let originX = edits.crop?.x ?? 0
+        let originY = edits.crop?.y ?? 0
+        guard let annotation = DocumentAnnotation(.rectangle(x: min(start.x, end.x) + originX, y: min(start.y, end.y) + originY,
+                                                             width: abs(end.x - start.x), height: abs(end.y - start.y))) else { return false }
+        edits.annotations.append(annotation)
+        return true
+    }
+}
+
+@MainActor final class ArrowTool: EditorTool {
+    let title = "Arrow"
+    let accessibilityLabel = "Arrow tool"
+    let keyEquivalent = "a"
+
+    func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
+        let originX = edits.crop?.x ?? 0
+        let originY = edits.crop?.y ?? 0
+        guard let annotation = DocumentAnnotation(.arrow(x0: start.x + originX, y0: start.y + originY,
+                                                         x1: end.x + originX, y1: end.y + originY)) else { return false }
+        edits.annotations.append(annotation)
+        return true
+    }
+}
+
+@MainActor final class TextTool: EditorTool {
+    let title = "Text"
+    let accessibilityLabel = "Text label tool"
+    let keyEquivalent = "t"
+    var text: () -> String = { "A" }
+
+    func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
+        let originX = edits.crop?.x ?? 0
+        let originY = edits.crop?.y ?? 0
+        guard let annotation = DocumentAnnotation(.text(x: start.x + originX, y: start.y + originY,
+                                                        characters: text())) else { return false }
+        edits.annotations.append(annotation)
+        return true
+    }
+}
