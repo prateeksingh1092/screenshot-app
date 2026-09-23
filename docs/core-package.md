@@ -596,3 +596,14 @@ overlay, then samples that region through `ScreenCapturePolicy` and
 nonactivating panel. The automated peak is `sh scripts/scrolling-memory-run.sh`
 (opt-in, skipped by the normal suite). Live scrolling on the synthetic page is
 [the manual check](manual-checks/35-scrolling-capture.md).
+
+## Ticket 17 History database failure
+
+`historyAvailability()` reports the last open or migration outcome without
+creating History or deleting a refused database. Corrupt files, unknown
+migrations, and permission failures leave History disabled; capture, Copy,
+Save, and drag still deliver. Dismiss stays pending when the commit is
+refused. Settings and the History window show a notice, **Try Again**
+(`recoverHistory()`), and **Show History Folder**. Recovery never erases the
+database; the user can copy it out or repair it, then retry. See
+[manual checks](manual-checks/17-history-database-failure.md).

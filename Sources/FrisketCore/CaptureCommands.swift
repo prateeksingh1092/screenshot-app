@@ -184,4 +184,9 @@ extension CaptureCommandLayer {
     public func recoverHistory() async -> Result<HistoryRecoveryReport, HistoryFailure> {
         await coordinator.recoverHistory()
     }
+
+    /// Last open/migration outcome. Does not create History or erase a refused database.
+    public func historyAvailability() async -> HistoryFailure? {
+        await coordinator.historyAvailability()
+    }
 }

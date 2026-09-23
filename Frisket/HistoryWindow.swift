@@ -16,8 +16,10 @@ import FrisketCore
     @Published private(set) var rows: [Row] = []
     @Published var selected: CaptureID?
     @Published private(set) var message: String?
+    @Published private(set) var disabled = false
     @Published private(set) var busy = false
     private var commands: CaptureCommandLayer?
+    var onRevealHistory: (() -> Void)?
 
     func connect(_ commands: CaptureCommandLayer) { self.commands = commands }
 
@@ -36,10 +38,22 @@ import FrisketCore
             if selected == nil { selected = rows.first?.id }
             else if !rows.contains(where: { $0.id == selected }) { selected = rows.first?.id }
             if clearingMessage { message = nil }
-        case .failure:
+            disabled = false
+        case let .failure(failure):
             rows = []
             selected = nil
-            message = "History is unavailable."
+            disabled = true
+            message = HistoryFailureNotice.text(failure)
+        }
+    }
+
+    func retry() {
+        guard !busy, let commands else { return }
+        busy = true
+        Task {
+            _ = await commands.recoverHistory()
+            busy = false
+            await reload()
         }
     }
 
@@ -101,6 +115,14 @@ private struct HistoryWindowView: View {
             Text("Finished captures. Copy, save, drag, or delete. There is no editor.")
             if let message = model.message {
                 Text(message).foregroundStyle(.red).accessibilityLabel(message)
+            }
+            if model.disabled {
+                HStack {
+                    Button("Try Again", action: model.retry).disabled(model.busy)
+                        .accessibilityLabel("Try opening History again")
+                    Button("Show History Folder") { model.onRevealHistory?() }
+                        .accessibilityLabel("Show History folder")
+                }
             }
             List(model.rows, selection: $model.selected) { row in
                 HistoryRowView(row: row, startDrag: startDrag)
