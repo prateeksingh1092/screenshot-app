@@ -6,7 +6,8 @@ private let palette: [Character: RGBAPixel] = [
     ".": RGBAPixel(red: 0x20, green: 0x40, blue: 0x60, alpha: 0xff),
     "a": RGBAPixel(red: 0xc1, green: 0x7a, blue: 0x3e, alpha: 0xff),
     "t": RGBAPixel(red: 0x40, green: 0x10, blue: 0x08, alpha: 0x80), // premultiplied, half transparent
-    "#": RGBAPixel(red: 0, green: 0, blue: 0, alpha: 0xff)
+    "#": RGBAPixel(red: 0, green: 0, blue: 0, alpha: 0xff),
+    "*": DocumentAnnotation.stroke
 ]
 
 private func picture(_ rows: [String]) throws -> Bitmap {
@@ -156,12 +157,97 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         #expect(rendered == equivalent)
         #expect(rendered == frozen)
     }
+
+    @Test func rectangleOutlineIsNotAFilledRedaction() throws {
+        let base = try picture([
+            ".....",
+            ".....",
+            ".....",
+            ".....",
+            "....."
+        ])
+        let annotation = try #require(DocumentAnnotation(.rectangle(x: 1, y: 1, width: 3, height: 3)))
+        #expect(try render(base, annotations: [annotation]) == picture([
+            ".....",
+            ".***.",
+            ".*.*.",
+            ".***.",
+            "....."
+        ]))
+    }
+
+    @Test func horizontalArrowHasAOnePixelHead() throws {
+        let base = try picture([
+            ".....",
+            ".....",
+            ".....",
+            ".....",
+            "....."
+        ])
+        let annotation = try #require(DocumentAnnotation(.arrow(x0: 0, y0: 2, x1: 4, y1: 2)))
+        #expect(try render(base, annotations: [annotation]) == picture([
+            ".....",
+            "...*.",
+            "*****",
+            "...*.",
+            "....."
+        ]))
+    }
+
+    @Test func textUsesTheClosedBitmapFont() throws {
+        let base = try picture([
+            ".......",
+            ".......",
+            ".......",
+            ".......",
+            ".......",
+            ".......",
+            ".......",
+            "......."
+        ])
+        let annotation = try #require(DocumentAnnotation(.text(x: 0, y: 0, characters: "A")))
+        #expect(try render(base, annotations: [annotation]) == picture([
+            ".***...",
+            "*...*..",
+            "*...*..",
+            "*****..",
+            "*...*..",
+            "*...*..",
+            "*...*..",
+            "......."
+        ]))
+    }
+
+    @Test func annotationsDrawAboveRedactionsWithoutClearingNeighbourFill() throws {
+        let base = try picture([
+            ".....",
+            ".....",
+            ".....",
+            ".....",
+            "....."
+        ])
+        let annotation = try #require(DocumentAnnotation(.rectangle(x: 1, y: 1, width: 3, height: 3)))
+        #expect(try render(base, [(0, 0, 5, 5)], annotations: [annotation]) == picture([
+            "#####",
+            "#***#",
+            "#*#*#",
+            "#***#",
+            "#####"
+        ]))
+    }
+
+    @Test func annotationGeometryIsRejectedWhenItCannotBeAStroke() {
+        #expect(DocumentAnnotation(.rectangle(x: 0, y: 0, width: 0, height: 1)) == nil)
+        #expect(DocumentAnnotation(.arrow(x0: 1, y0: 1, x1: 1, y1: 1)) == nil)
+        #expect(DocumentAnnotation(.text(x: 0, y: 0, characters: "!@#")) == nil)
+    }
 }
 
 private func render(_ base: Bitmap, scale: Double = 1, crop: (Double, Double, Double, Double)? = nil,
-                    _ rectangles: [(Double, Double, Double, Double)]) throws -> Bitmap {
+                    _ rectangles: [(Double, Double, Double, Double)] = [],
+                    annotations: [DocumentAnnotation] = []) throws -> Bitmap {
     let redactions = try rectangles.map { try #require(SolidRedaction(x: $0.0, y: $0.1, width: $0.2, height: $0.3)) }
     let cropRect = try crop.map { try #require(DocumentCrop(x: $0.0, y: $0.1, width: $0.2, height: $0.3)) }
-    let edits = try #require(DocumentEdits(scale: scale, crop: cropRect, redactions: redactions))
+    let edits = try #require(DocumentEdits(scale: scale, crop: cropRect, redactions: redactions, annotations: annotations))
     return DocumentRenderer.render(EditorDocument(base: base, edits: edits))
 }

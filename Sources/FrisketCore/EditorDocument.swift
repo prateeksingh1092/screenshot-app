@@ -72,17 +72,46 @@ public struct DocumentCrop: Equatable, Sendable {
     }
 }
 
+/// An annotation drawn above redactions. Stroke is a fixed opaque colour; there is
+/// no opacity, corner radius, or fill that could be mistaken for Solid redaction.
+public struct DocumentAnnotation: Equatable, Sendable {
+    public static let stroke = RGBAPixel(red: 0xff, green: 0x3b, blue: 0x30, alpha: 0xff)
+
+    public enum Kind: Equatable, Sendable {
+        case rectangle(x: Double, y: Double, width: Double, height: Double)
+        case arrow(x0: Double, y0: Double, x1: Double, y1: Double)
+        case text(x: Double, y: Double, characters: String)
+    }
+
+    public let kind: Kind
+
+    public init?(_ kind: Kind) {
+        switch kind {
+        case let .rectangle(x, y, width, height):
+            guard [x, y, width, height].allSatisfy(\.isFinite), width > 0, height > 0 else { return nil }
+        case let .arrow(x0, y0, x1, y1):
+            guard [x0, y0, x1, y1].allSatisfy(\.isFinite), !(x0 == x1 && y0 == y1) else { return nil }
+        case let .text(x, y, characters):
+            guard x.isFinite, y.isFinite, !AnnotationFont.glyphs(in: characters).isEmpty else { return nil }
+        }
+        self.kind = kind
+    }
+}
+
 /// Everything the editor changes, without the base image. `scale` is output pixels per document point.
 public struct DocumentEdits: Equatable, Sendable {
     public let scale: Double
     public var crop: DocumentCrop?
     public var redactions: [SolidRedaction]
+    public var annotations: [DocumentAnnotation]
 
-    public init?(scale: Double, crop: DocumentCrop? = nil, redactions: [SolidRedaction] = []) {
+    public init?(scale: Double, crop: DocumentCrop? = nil, redactions: [SolidRedaction] = [],
+                 annotations: [DocumentAnnotation] = []) {
         guard scale.isFinite, scale > 0 else { return nil }
         self.scale = scale
         self.crop = crop
         self.redactions = redactions
+        self.annotations = annotations
     }
 }
 

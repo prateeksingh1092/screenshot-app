@@ -4,7 +4,7 @@
 
 **Blocked by:** 26
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/28-arrows-shapes-text`)
 
 - [ ] Shapes are a separate tool from Solid redaction and can't be made into a see-through or rounded "redaction".
 - [ ] Annotations render above redactions without weakening them.
@@ -12,3 +12,16 @@
 - [ ] Tool controls have VoiceOver labels and keyboard operation.
 
 ## Comments
+
+### 2026-09-23 — coordinator
+
+Claimed on `c665f89` after ticket 27 closed. Coordinator chat implements (Codex/Other Models still limited). Branch `ticket/28-arrows-shapes-text`.
+
+### 2026-09-23 — implementer
+
+Report: [28-implementer.md](../reports/28-implementer.md). Seam 2 covers outline, arrow, letter A, and annotations above redactions. Seam 1 canaries cover every output. Manual not run. Status/checkboxes unchanged pending review.
+
+### 2026-09-23 — review
+
+In-chat review vs `c665f89`: [28-code-review.md](../reviews/28-code-review.md). No blocking findings.
+
