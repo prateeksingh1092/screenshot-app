@@ -186,10 +186,13 @@ import FrisketCore
         layoutThumbnails(cards.map(\.revision.captureID))
         for card in cards {
             let id = card.revision.captureID
-            guard let panel = panels[id] else { continue }
+            guard panels[id] != nil else { continue }
+            if card.automaticExitSuppressed {
+                timeouts.removeValue(forKey: id)?.cancel()
+                continue
+            }
             if let exit = card.dueExit {
-                // A failed commit stays visible for the user to retry; don't retry it automatically.
-                if !panel.model.dismissFailed { leave(id, by: exit) }
+                leave(id, by: exit)
             } else if timeouts[id] == nil {
                 timeouts[id] = Task { [weak self] in
                     try? await Task.sleep(until: card.expiresAt, clock: .continuous)

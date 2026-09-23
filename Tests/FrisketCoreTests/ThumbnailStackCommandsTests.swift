@@ -161,6 +161,54 @@ private actor FailingOnceClipboard: ImageClipboard {
 }
 
 extension ThumbnailStackCommandsTests {
+    @Test(arguments: [false, true])
+    func failedCopyDeliveryWaitsForExplicitRetryEvenWhenAutomaticExitsAreDue(historyUnavailable: Bool) async throws {
+        let fixture = StackFixture(clipboard: FailingOnceClipboard(), policy: ThumbnailStackPolicy(maximumCount: 1))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        if historyUnavailable { try Data("blocked history root".utf8).write(to: fixture.root) }
+        let commit: CommitOutcome = historyUnavailable ? .notCommitted(.historyUnavailable) : .committed
+        #expect(await fixture.commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
+            commit: commit, delivery: .failed(.unavailable))))
+        if historyUnavailable { try FileManager.default.removeItem(at: fixture.root) }
+        _ = try await fixture.capture()
+        fixture.clock.advance(by: .seconds(10))
+        let card = try #require(await fixture.commands.thumbnails().first { $0.revision == revision })
+        #expect(card.dueExit == nil)
+        #expect(card.automaticExitSuppressed)
+        for exit in [ThumbnailExit.timeout, .overflow] {
+            #expect(await fixture.commands.execute(.exitThumbnail(revision, exit)) == .rejected(.thumbnailExitNotDue))
+        }
+        #expect(await fixture.commands.image(for: revision)?.pngData == StackPixels.bytes)
+        #expect(try await fixture.historyIDs() == (historyUnavailable ? [] : [revision.captureID]))
+        #expect(await fixture.commands.execute(.retryCopy(revision)) == .copy(CopyOutcome(revision: revision,
+            commit: commit, delivery: .copied(ClipboardReceipt(changeCount: 2)))))
+        #expect(await fixture.commands.thumbnails().allSatisfy { $0.revision != revision })
+        #expect(try await fixture.historyIDs() == (historyUnavailable ? [] : [revision.captureID]))
+    }
+
+    @Test(arguments: [ThumbnailExit.timeout, .overflow])
+    func failedDismissalWaitsForExplicitCloseAfterHistoryRecovers(exit: ThumbnailExit) async throws {
+        let fixture = StackFixture(policy: ThumbnailStackPolicy(maximumCount: 1))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        if exit == .overflow { _ = try await fixture.capture() }
+        fixture.clock.advance(by: .seconds(10))
+        try Data("blocked history root".utf8).write(to: fixture.root)
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, exit)) ==
+            .finalized(revision, .notCommitted(.historyUnavailable)))
+        try FileManager.default.removeItem(at: fixture.root)
+        let card = try #require(await fixture.commands.thumbnails().first { $0.revision == revision })
+        #expect(card.dueExit == nil)
+        #expect(card.automaticExitSuppressed)
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, exit)) == .rejected(.thumbnailExitNotDue))
+        #expect(await fixture.commands.image(for: revision)?.pngData == StackPixels.bytes)
+        #expect(try await fixture.historyIDs().isEmpty)
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .close)) == .finalized(revision, .committed))
+        #expect(try await fixture.historyIDs() == [revision.captureID])
+        #expect(await fixture.commands.thumbnails().allSatisfy { $0.revision != revision })
+    }
+
     @Test func deleteStaysRefusedAfterACommittedCopyWhoseDeliveryFailed() async throws {
         let fixture = StackFixture(clipboard: FailingOnceClipboard())
         defer { try? FileManager.default.removeItem(at: fixture.root) }

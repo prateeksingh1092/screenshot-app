@@ -38,3 +38,13 @@ Overflow is an explicit command, so capture still never authorizes persistence. 
 He should also ratify or change the two defaults.
 
 Stopped before review. No git commands were run; the ticket's status and checkboxes are unchanged.
+
+## Fix pass
+
+Codex, 2026-09-23, following implementation workflow step 6 and the local TDD skill at the agreed seam 1.
+
+- **Defaults finding resolved:** decision 54 in the main project's decisions file already selects 4 cards / 10 seconds as working defaults, configurable through Settings later. Added the requested one-line citation in `ThumbnailStack.swift`; neither number changed. This supersedes the earlier report's request to ratify or change them; no product choice remains open for this fix pass.
+- **Retry suppression finding fixed:** the lifecycle coordinator now suppresses timeout and overflow after failed Copy delivery (whether or not History committed) and failed dismissal. It reports no due automatic exit and rejects automatic exit commands while preserving the image for an explicit action. Successful delivery, dismissal, or discard clears suppression. `ThumbnailCard.automaticExitSuppressed` lets the app cancel timers instead of repeatedly scheduling expired deadlines. `dismissFailed` remains presentation state only.
+- **TDD evidence:** observed each new regression fail before its implementation, then pass. The two parameterized tests cover failed delivery with available/unavailable History and failed timeout/overflow finalization after History recovers. Explicit Retry Copy and Close succeed; delivery retry does not repeat the History commit.
+- **Verification:** `sh scripts/test-core.sh --filter ThumbnailStackCommandsTests` passed (8 tests / 12 cases). Full `sh scripts/test-core.sh` passed (105 tests in 15 suites, including static checks; opt-in tests remain skipped). Both use the Xcode toolchain and in-worktree caches through the checked-in script. The documented app-source `swiftc -typecheck` also passed with explicit Xcode `DEVELOPER_DIR` and in-worktree caches.
+- **Limits:** no app launch, manual UI verification, or arm64 execution in this pass. No findings left open within the fix brief. No git commands, Status edits, or checkbox edits; no broad review relaunched.

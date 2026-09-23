@@ -13,6 +13,7 @@ actor CaptureLifecycleCoordinator {
     private var inProgress: Set<CaptureID> = []
     private var discarded: Set<CaptureID> = []
     private var failedDelivery: Set<CaptureID> = []
+    private var automaticExitSuppressed: Set<CaptureID> = []
     private var delivered: Set<CaptureID> = []
     private var images: [CaptureID: CaptureImage] = [:]
     // Holds exactly the captures in `images`; update both together.
@@ -42,7 +43,14 @@ actor CaptureLifecycleCoordinator {
         return images[revision.captureID]
     }
 
-    func thumbnails() -> [ThumbnailCard] { stack.cards(at: clock()) }
+    func thumbnails() -> [ThumbnailCard] {
+        stack.cards(at: clock()).map { card in
+            let suppressed = automaticExitSuppressed.contains(card.revision.captureID)
+            return ThumbnailCard(revision: card.revision, expiresAt: card.expiresAt,
+                                 dueExit: suppressed ? nil : card.dueExit,
+                                 automaticExitSuppressed: suppressed)
+        }
+    }
 
     func execute(_ command: CaptureCommand) async -> CaptureCommandOutcome {
         switch command {
@@ -67,6 +75,9 @@ actor CaptureLifecycleCoordinator {
                 images.removeValue(forKey: id)
                 stack.remove(id)
                 failedDelivery.remove(id)
+                automaticExitSuppressed.remove(id)
+            } else {
+                automaticExitSuppressed.insert(id)
             }
             inProgress.remove(id)
             return .finalized(revision, outcome)
@@ -81,6 +92,7 @@ actor CaptureLifecycleCoordinator {
             images.removeValue(forKey: id)
             stack.remove(id)
             failedDelivery.remove(id)
+            automaticExitSuppressed.remove(id)
             discarded.insert(id)
             return .discarded(id)
         case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes):
@@ -152,12 +164,14 @@ actor CaptureLifecycleCoordinator {
                 delivery = .copied(receipt)
                 delivered.insert(revision.captureID)
                 failedDelivery.remove(revision.captureID)
+                automaticExitSuppressed.remove(revision.captureID)
                 pendingBytes -= image.pngData.count
                 images.removeValue(forKey: revision.captureID)
                 stack.remove(revision.captureID)
             case let .failure(error):
                 delivery = .failed(error)
                 failedDelivery.insert(revision.captureID)
+                automaticExitSuppressed.insert(revision.captureID)
             }
             inProgress.remove(revision.captureID)
             return .copy(CopyOutcome(revision: revision, commit: commit,
@@ -166,6 +180,9 @@ actor CaptureLifecycleCoordinator {
             let id = revision.captureID
             if images[id] != nil, !inProgress.contains(id) {
                 guard revision.number == 1 else { return .rejected(.staleRevision) }
+                if exit == .timeout || exit == .overflow {
+                    guard !automaticExitSuppressed.contains(id) else { return .rejected(.thumbnailExitNotDue) }
+                }
                 guard stack.admits(exit, for: id, at: clock()) else { return .rejected(.thumbnailExitNotDue) }
             }
             switch exit.outcome {

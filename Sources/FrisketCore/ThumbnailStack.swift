@@ -12,6 +12,7 @@ public enum ThumbnailExitOutcome: Sendable { case finalizeToHistory, discard }
 public struct ThumbnailStackPolicy: Sendable {
     public let maximumCount: Int
     public let autoDismissDelay: Duration
+    // Decision 54: 4 cards / 10 seconds are working defaults, configurable through Settings later.
     public init(maximumCount: Int = 4, autoDismissDelay: Duration = .seconds(10)) {
         self.maximumCount = max(1, maximumCount)
         self.autoDismissDelay = max(.zero, autoDismissDelay)
@@ -24,10 +25,14 @@ public struct ThumbnailCard: Equatable, Sendable {
     public let expiresAt: ContinuousClock.Instant
     /// The exit the policy requires now; nil while the card may stay.
     public let dueExit: ThumbnailExit?
-    public init(revision: CaptureRevision, expiresAt: ContinuousClock.Instant, dueExit: ThumbnailExit?) {
+    /// A failed action requires an explicit user retry; do not schedule automatic exits.
+    public let automaticExitSuppressed: Bool
+    public init(revision: CaptureRevision, expiresAt: ContinuousClock.Instant, dueExit: ThumbnailExit?,
+                automaticExitSuppressed: Bool = false) {
         self.revision = revision
         self.expiresAt = expiresAt
         self.dueExit = dueExit
+        self.automaticExitSuppressed = automaticExitSuppressed
     }
 }
 
