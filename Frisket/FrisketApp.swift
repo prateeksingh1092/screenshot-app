@@ -203,7 +203,12 @@ import FrisketCore
 
     @objc private func showSettings() {
         settingsWindow?.show()
-        Task { await historySettings?.refresh() }
+        Task { await refreshHistorySurfaces() }
+    }
+
+    private func refreshHistorySurfaces() async {
+        await historySettings?.refresh()
+        await historyWindow?.model.reload()
     }
 
     @objc private func showHistory() {
@@ -390,7 +395,7 @@ import FrisketCore
                 panel.model.copyFailed = true
                 return
             }
-            await historySettings?.refresh()
+            await refreshHistorySurfaces()
             showOversizedNotice(outcome.commit)
             panel.model.historyCommitted = outcome.commit == .committed
             panel.model.editingUnavailable = outcome.commit == .notCommitted(.recoveryRequired)
@@ -454,7 +459,7 @@ import FrisketCore
                 panel.model.saveFailed = true
                 return
             }
-            await historySettings?.refresh()
+            await refreshHistorySurfaces()
             showOversizedNotice(outcome.commit)
             panel.model.historyCommitted = outcome.commit == .committed
             if case .saved = outcome.delivery {
@@ -479,7 +484,7 @@ import FrisketCore
         Task {
             switch await commands.execute(.exitThumbnail(panel.revision, exit)) {
             case .finalized(_, let commit):
-                await historySettings?.refresh()
+                await refreshHistorySurfaces()
                 showOversizedNotice(commit)
                 if commit == .committed {
                     timeouts.removeValue(forKey: id)?.cancel()
@@ -693,7 +698,7 @@ import FrisketCore
         for panel in panels.values { panel.model.busy = true }
         Task {
             let results = await commands.handleSystemEvent(.quit)
-            await historySettings?.refresh()
+            await refreshHistorySurfaces()
             for result in results {
                 if case .finalized(_, let commit) = result { showOversizedNotice(commit) }
                 if case .finalized(let revision, .committed) = result {

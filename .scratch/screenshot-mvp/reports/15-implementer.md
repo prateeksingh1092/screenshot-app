@@ -12,3 +12,7 @@ Environment: x86_64, macOS 26.7, Xcode 26.5. arm64 not executed.
 `HistoryCommandsTests` including the new slices passed. Unsigned x86_64 `xcodebuild` succeeded. Manual: `docs/manual-checks/15-history-window.md` (not run).
 
 Stopped before review. Ticket Status/checkboxes unchanged.
+
+## Fix pass
+
+Coordinator, one pass. Delete errors stay visible after reload. An open History window refreshes when a thumbnail is finalized. Review: `.scratch/screenshot-mvp/reviews/15-code-review.md`.

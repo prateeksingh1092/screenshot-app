@@ -21,7 +21,7 @@ import FrisketCore
 
     func connect(_ commands: CaptureCommandLayer) { self.commands = commands }
 
-    func reload() async {
+    func reload(clearingMessage: Bool = true) async {
         guard let commands else { return }
         switch await commands.historyItems() {
         case let .success(items):
@@ -35,7 +35,7 @@ import FrisketCore
             rows = next
             if selected == nil { selected = rows.first?.id }
             else if !rows.contains(where: { $0.id == selected }) { selected = rows.first?.id }
-            message = nil
+            if clearingMessage { message = nil }
         case .failure:
             rows = []
             selected = nil
@@ -84,8 +84,8 @@ import FrisketCore
             if case .historyDeleted = result {
                 await reload()
             } else {
+                await reload(clearingMessage: false)
                 message = "Delete failed. Try again."
-                await reload()
             }
         }
     }

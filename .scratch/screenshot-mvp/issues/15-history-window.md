@@ -21,3 +21,7 @@ Claimed on `331dd49` after ticket 14 closed. Coordinator chat implements (Codex/
 ### 2026-09-23 — implementer
 
 Report: [15-implementer.md](../reports/15-implementer.md). Seam 1 covers delete, newest-first items, copy/save/drag from disk, and interrupted-delete recovery. History window added. Manual not run. Status/checkboxes unchanged pending review.
+
+### 2026-09-23 — review and fix
+
+In-chat review vs `331dd49`: [15-code-review.md](../reviews/15-code-review.md). Fixes: keep delete errors; refresh an open History window when thumbnails finalize.
