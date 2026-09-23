@@ -20,7 +20,7 @@ private func runCheck(_ arguments: [String]) throws -> (status: Int32, output: S
     return (process.terminationStatus, String(decoding: output, as: UTF8.self))
 }
 
-@Test(arguments: ["dependencies", "imports", "identity", "provenance"])
+@Test(arguments: ["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory"])
 func repositorySatisfiesStaticChecks(check: String) throws {
     let result = try runCheck(["--root", repository.path, "--check", check])
     #expect(result.status == 0, Comment(rawValue: result.output))
@@ -31,6 +31,8 @@ func repositorySatisfiesStaticChecks(check: String) throws {
     "imports-rejected", "imports-accepted", "imports-qualified-type-rejected", "imports-interpolation-rejected",
     "identity-rejected", "identity-accepted", "identity-after-header-rejected",
     "provenance-rejected", "provenance-accepted", "provenance-tampered",
+    "diagnostics-rejected", "diagnostics-accepted", "diagnostics-collection-rejected",
+    "capture-memory-rejected", "capture-memory-accepted",
     "trial-provenance-inventory", "trial-identity-inventory", "trial-imports-inventory"
 ])
 func staticCheckFixturesHaveExpectedOutcomes(fixture: String) throws {

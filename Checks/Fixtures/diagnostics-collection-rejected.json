@@ -1,0 +1,7 @@
+{
+  "check": "diagnostics",
+  "files": {
+    "Sources/FrisketCore/Diagnostics.swift": "struct DiagnosticEvent { let fields: [String: String]; let payload = secret }"
+  },
+  "expected": ["Sources/FrisketCore/Diagnostics.swift: diagnostic payload type is not closed"]
+}

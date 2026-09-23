@@ -1,0 +1,11 @@
+{
+  "check": "capture-memory",
+  "files": {
+    "Sources/FrisketCore/BadCapture.swift": "import ScreenCaptureKit\nimport Darwin\nlet root = URL(fileURLWithPath: path)\ntry bytes.write(to: root)\nFileManager.default.createFile(atPath: path, contents: bytes)\nopen(path, 0)",
+    "Sources/FrisketCore/CaptureDelivery.swift": "protocol ImageClipboard { func write(_ image: ClipboardImage) async; func read() -> Data }\nstruct ClipboardImage { let pngData: Data; let fileLocation: String }"
+  },
+  "expected": [
+    "Sources/FrisketCore/BadCapture.swift: platform or filesystem capability in memory-only core",
+    "Sources/FrisketCore/CaptureDelivery.swift: clipboard contract must be image-only and write-only"
+  ]
+}

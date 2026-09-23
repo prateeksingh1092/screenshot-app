@@ -1,0 +1,11 @@
+{
+  "check": "diagnostics",
+  "files": {
+    "Sources/FrisketCore/Leak.swift": "import OSLog\nfunc leak(secret: String) { print(secret); NSLog(secret); Logger().error(\"secret\"); fatalError(secret) }",
+    "Sources/FrisketCore/Diagnostics.swift": "struct DiagnosticEvent { let message: String; let bytes: Data; let path: URL }"
+  },
+  "expected": [
+    "Sources/FrisketCore/Diagnostics.swift: diagnostic payload type is not closed",
+    "Sources/FrisketCore/Leak.swift: raw logging or assertion route outside closed diagnostics"
+  ]
+}
