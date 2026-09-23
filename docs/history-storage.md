@@ -126,7 +126,9 @@ remains available for fixtures and explicit lifecycle control.
 missing-image rows removed. An explicit repeat call rechecks the filesystem;
 it does not reuse a cached report. A failure disables History queries/commits
 for that store until an explicit successful recovery; capture and delivery
-continue. Recovery diagnostics accept only closed events/error codes, never
+continue. `historyAvailability()` surfaces that outcome for Settings and the
+History window. The recovery option is retry plus revealing the History folder;
+it never deletes the refused database. Recovery diagnostics accept only closed events/error codes, never
 file paths, identifiers, pixel data or underlying error strings.
 
 The sweep holds a nonblocking exclusive `flock` on an open root directory

@@ -7,10 +7,12 @@ import FrisketCore
     @Published var maximumMegabytes: Int
     @Published private(set) var usage: HistoryUsage?
     @Published private(set) var unavailable = false
+    @Published private(set) var failure: HistoryFailure?
     @Published private(set) var applying = false
     private let defaults: UserDefaults
     private var commands: CaptureCommandLayer?
     var onQuotaEviction: (() -> Void)?
+    var onRevealHistory: (() -> Void)?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -47,13 +49,47 @@ import FrisketCore
 
     func refresh() async {
         guard let commands else { return }
+        failure = await commands.historyAvailability()
+        unavailable = failure != nil
+        if unavailable {
+            usage = nil
+            return
+        }
         switch await commands.historyStatus(consumeNotice: true) {
         case .success(let status):
             usage = status
-            unavailable = false
             if status.quotaNoticePending { onQuotaEviction?() }
-        case .failure:
+        case .failure(let statusFailure):
+            failure = statusFailure
             unavailable = true
+            usage = nil
+        }
+    }
+
+    func retry() {
+        guard !applying, let commands else { return }
+        applying = true
+        Task {
+            _ = await commands.recoverHistory()
+            await refresh()
+            applying = false
+        }
+    }
+
+    var notice: String { HistoryFailureNotice.text(failure) }
+}
+
+enum HistoryFailureNotice {
+    static func text(_ failure: HistoryFailure?) -> String {
+        switch failure {
+        case .unknownMigrations:
+            return "History can't open this library because it was written by a newer version. Captures can still be copied or saved."
+        case .recoveryRequired:
+            return "History needs attention before it can save new items. Captures can still be copied or saved."
+        case .rootLocked:
+            return "History is in use by another Frisket instance. Captures can still be copied or saved."
+        default:
+            return "History is unavailable. Captures can still be copied or saved."
         }
     }
 }
@@ -69,7 +105,11 @@ struct HistorySettingsSection: View {
             Button("Apply History Limits", action: settings.apply).disabled(settings.applying)
             Text("1,000 MB = 1 GB. Oldest captures are removed first. Saved exports are kept.")
             if settings.unavailable {
-                Text("History usage is unavailable. Captures can still be copied or saved.").foregroundStyle(.red)
+                Text(settings.notice).foregroundStyle(.red)
+                Button("Try Again", action: settings.retry).disabled(settings.applying)
+                    .accessibilityLabel("Try opening History again")
+                Button("Show History Folder") { settings.onRevealHistory?() }
+                    .accessibilityLabel("Show History folder")
             } else if let usage = settings.usage {
                 Text("History uses \(ByteCountFormatter.string(fromByteCount: usage.usageBytes, countStyle: .decimal)) of \(ByteCountFormatter.string(fromByteCount: usage.limits.maximumBytes, countStyle: .decimal)).")
                 if let date = usage.lastQuotaEviction {

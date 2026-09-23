@@ -67,6 +67,11 @@ actor CaptureLifecycleCoordinator {
         return await history.recover()
     }
 
+    func historyAvailability() async -> HistoryFailure? {
+        guard let history else { return .unavailable }
+        return await history.availability()
+    }
+
     func maintainHistory(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure> {
         guard let history else { return .failure(.unavailable) }
         return await history.maintain(limits: limits)

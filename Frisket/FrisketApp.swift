@@ -27,6 +27,7 @@ import FrisketCore
     private var thumbnailSettings: ThumbnailSettings?
     private var settingsWindow: ExportSettingsWindow?
     private var historyWindow: HistoryWindow?
+    private var historyRoot: URL?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var screens: [CaptureID: NSScreen] = [:]
     private var editors: [CaptureID: EditorWindow] = [:]
@@ -44,6 +45,7 @@ import FrisketCore
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
+        historyRoot = identity.historyRoot
         let exportSettings = ExportSettings(historyRoot: identity.historyRoot)
         let historySettings = HistorySettings()
         let thumbnailSettings = ThumbnailSettings()
@@ -52,6 +54,7 @@ import FrisketCore
         historySettings.onQuotaEviction = { [weak self] in
             self?.notice("History size limit reached", "Older captures were removed from History to meet its size limit. Saved exports are unchanged. You can adjust the limit in Settings.")
         }
+        historySettings.onRevealHistory = { [weak self] in self?.revealHistoryFolder() }
         settingsWindow = ExportSettingsWindow(settings: exportSettings, history: historySettings, thumbnails: thumbnailSettings,
                                               exclusions: exclusions, shortcuts: shortcutSettings)
         let windowPlatform = WindowScreenCapturePlatform(permission: permission, bundleIdentifier: identity.bundleIdentifier,
@@ -77,10 +80,16 @@ import FrisketCore
             thumbnailSettings.connect(commands)
             let historyWindow = HistoryWindow()
             historyWindow.model.connect(commands)
+            historyWindow.model.onRevealHistory = { [weak self] in self?.revealHistoryFolder() }
             historyWindow.startDrag = { [weak self] row, view, event in
                 self?.startHistoryDrag(row, from: view, event: event)
             }
             self.historyWindow = historyWindow
+            Task {
+                if let failure = await commands.historyAvailability() {
+                    self.notice("History is off", HistoryFailureNotice.text(failure))
+                }
+            }
         }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -209,6 +218,15 @@ import FrisketCore
     private func refreshHistorySurfaces() async {
         await historySettings?.refresh()
         await historyWindow?.model.reload()
+    }
+
+    private func revealHistoryFolder() {
+        guard let root = historyRoot else { return }
+        if FileManager.default.fileExists(atPath: root.path) {
+            _ = NSWorkspace.shared.open(root)
+        } else {
+            _ = NSWorkspace.shared.open(root.deletingLastPathComponent())
+        }
     }
 
     @objc private func showHistory() {

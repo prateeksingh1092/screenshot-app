@@ -51,6 +51,7 @@ public struct AuthorizedFinalization: Sendable {
 
 public protocol CaptureHistory: Sendable {
     func recover() async -> Result<HistoryRecoveryReport, HistoryFailure>
+    func availability() async -> HistoryFailure?
     func finalize(_ request: AuthorizedFinalization) async -> CommitOutcome
     func maintain(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure>
     func status(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure>
@@ -98,6 +99,7 @@ public struct HistoryUsage: Equatable, Sendable {
 }
 
 public extension CaptureHistory {
+    func availability() async -> HistoryFailure? { .unavailable }
     func maintain(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure> { .failure(.unavailable) }
     func status(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure> { .failure(.unavailable) }
     func delete(_ id: CaptureID) async -> Result<Void, HistoryFailure> { .failure(.unavailable) }

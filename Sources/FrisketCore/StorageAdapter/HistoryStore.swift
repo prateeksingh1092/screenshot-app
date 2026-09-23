@@ -14,6 +14,7 @@ public actor HistoryStore: CaptureHistory {
     private let diagnostics: any DiagnosticSink
     private var recoveryFailure: HistoryFailure?
     private var launchRecoveryPending = false
+    private var recoveredOnce = false
     private var closed = false
     private var database: DatabaseQueue?
     private var rootLock: HistoryRootLock?
@@ -71,7 +72,14 @@ public actor HistoryStore: CaptureHistory {
         } catch { return .failure(.unavailable) }
     }
 
+    public func availability() async -> HistoryFailure? {
+        if !recoveredOnce { _ = await recover() }
+        if closed { return .unavailable }
+        return recoveryFailure
+    }
+
     public func recover() async -> Result<HistoryRecoveryReport, HistoryFailure> {
+        recoveredOnce = true
         launchRecoveryPending = false
         let result = performRecovery()
         switch result {
