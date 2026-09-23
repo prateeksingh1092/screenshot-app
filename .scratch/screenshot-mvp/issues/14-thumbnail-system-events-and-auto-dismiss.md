@@ -22,3 +22,7 @@ Decision 54 plus [54-thumbnail-defaults.md](../reports/54-thumbnail-defaults.md)
 ### 2026-09-23 — implementer
 
 Cursor coordinator chat (Claude Opus 5.5 High). Report: [14-implementer.md](../reports/14-implementer.md). Seam 1 covers never vs zero, quit, lock, unplug, crash-writes-nothing, and Settings persist mapping. Manual checklist added, not run. Status/checkboxes unchanged pending review.
+
+### 2026-09-23 — review and fix
+
+In-chat review vs `b04a53c`: [14-code-review.md](../reviews/14-code-review.md). One fix: failed quit unbusies remaining cards.
