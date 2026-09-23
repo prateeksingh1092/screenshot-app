@@ -101,6 +101,11 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - Batch integration: 2–3 reviewed-and-fixed tickets merge into one integration branch, with one full suite run. On red, fall back to one-at-a-time merging to find the culprit.
 
     This amends step 7 of `docs/agents/implementation-workflow.md`. Every other step of the Pocock loop is unchanged.
+53. **Effort mix (2026-09-23 02:42):** Prateek chose a hybrid effort level for Codex (GPT-6 Astra) and Grok 4.7. Claude Opus 5.5 stays at High.
+    - **High:** all reviews and fix passes, plus the correctness-heavy tickets 10, 16, 17, 23, 26, 29, 33 and 35.
+    - **Medium:** implementation of the interface and mechanical tickets 12, 13, 14, 15, 21, 22, 24, 25, 27, 28, 30, 31 and 38. For Codex that is `model_reasoning_effort="medium"`; for Grok, `grok-4.7-medium` (not -fast).
+    - **Unlisted tickets:** implementation stays at High.
+    - Runs already in flight are not restarted.
 : Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

@@ -51,6 +51,14 @@ Because `--force` is set, the brief also forbids:
 
 A reviewer never shares the implementer's model: Opus reviews Codex, Codex reviews Grok, and Grok reviews Opus. The fix pass is a fresh session of the implementer's model. Text output appears only at exit, so judge progress by worktree changes and elapsed time.
 
+Effort levels under decision 53:
+- **High:** every review and fix pass, and implementation of the correctness-heavy tickets 10, 16, 17, 23, 26, 29, 33 and 35.
+- **Medium:** implementation of tickets 12, 13, 14, 15, 21, 22, 24, 25, 27, 28, 30, 31 and 38. For Codex, pass `-c model_reasoning_effort='"medium"'`; for Grok, use `--model grok-4.7-medium`.
+- **High** for any ticket not listed.
+- **Opus** always runs as `claude-opus-5-5-high`.
+
+Every report and review records its model and effort level.
+
 ## Gates
 
 - Prateek approves the actions that decision 46 still gates.
