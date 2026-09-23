@@ -4,7 +4,7 @@
 
 **Blocked by:** 11, 13, 26
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/32-keyboard-and-voiceover-thumbnails`)
 
 - [ ] A global "focus thumbnails" shortcut makes the stack key temporarily; arrow keys move between cards.
 - [ ] Single keys trigger copy, save, edit, Delete capture, and dismiss.
