@@ -51,7 +51,8 @@ FORBIDDEN = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF8")
 
 
 def command(args):
-    return subprocess.check_output([str(a) for a in args], text=True, stderr=subprocess.DEVNULL,
+    # codesign -dv prints Identifier/Team/CDHash on stderr.
+    return subprocess.check_output([str(a) for a in args], text=True, stderr=subprocess.STDOUT,
                                    timeout=30)
 
 
@@ -96,7 +97,8 @@ def displays(contents):
                 continue
             pixel_width, pixel_height = parse_resolution(
                 display.get("_spdisplays_pixels") or display.get("spdisplays_pixelresolution") or "")
-            point_width, point_height = parse_resolution(display.get("spdisplays_resolution") or "")
+            point_width, point_height = parse_resolution(
+                display.get("_spdisplays_resolution") or display.get("spdisplays_resolution") or "")
             origin = ORIGIN.search(str(display.get("_spdisplays_display-origin") or ""))
             item = {
                 "index": index,
@@ -144,6 +146,7 @@ def header(app, permission, output, repository):
     if permission not in PERMISSIONS:
         raise ValueError("permission must be a closed Screen Recording state")
     app = Path(app)
+    binary = app / "Contents/MacOS/Frisket" if app.suffix == ".app" else app
     document = {
         "schema": SCHEMA,
         "kind": KIND,
@@ -152,7 +155,7 @@ def header(app, permission, output, repository):
         "os_build": command(["/usr/bin/sw_vers", "-buildVersion"]).strip(),
         "commit": require_commit(command(["/usr/bin/git", "-C", repository, "rev-parse", "HEAD"])),
         "architecture": command(["/usr/bin/uname", "-m"]).strip(),
-        "architectures": command(["/usr/bin/lipo", "-archs", app]).split(),
+        "architectures": command(["/usr/bin/lipo", "-archs", binary]).split(),
         "arm64_executed": False,
         "signature": parse_signature(command(["/usr/bin/codesign", "-dv", "--verbose=4", app])),
         "display_layout": displays(command(["/usr/sbin/system_profiler", "SPDisplaysDataType", "-json"])),

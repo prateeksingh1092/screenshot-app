@@ -20,7 +20,7 @@ class FirstRunRecordTests(unittest.TestCase):
             ("/usr/bin/sw_vers", "-buildVersion"): "25G229\n",
             ("/usr/bin/uname", "-m"): "x86_64\n",
             ("/usr/bin/git", "-C", "/repo", "rev-parse", "HEAD"): "a" * 40 + "\n",
-            ("/usr/bin/lipo", "-archs", str(self.app)): "x86_64\n",
+            ("/usr/bin/lipo", "-archs", str(self.app / "Contents/MacOS/Frisket")): "x86_64\n",
             ("/usr/bin/codesign", "-dv", "--verbose=4", str(self.app)): (
                 "Identifier=io.github.prateeksingh1092.frisket.debug\n"
                 "TeamIdentifier=9M43Q952NK\n"
@@ -32,8 +32,10 @@ class FirstRunRecordTests(unittest.TestCase):
                     "spdisplays_ndrvs": [{
                         "_name": "Color LCD",
                         "_spdisplays_pixels": "2880 x 1800",
+                        "_spdisplays_resolution": "1440 x 900 @ 60 Hz",
                         "spdisplays_resolution": "1440 x 900 @ 60 Hz",
                         "_spdisplays_display-serial-number": "SECRET123",
+                        "_spdisplays_edid": "00ffffffffffff00",
                         "spdisplays_main": "spdisplays_yes",
                         "_spdisplays_display-origin": "(-1920, 0)",
                     }]
@@ -92,6 +94,7 @@ class FirstRunRecordTests(unittest.TestCase):
         self.assertIs(display["retina"], True)
         self.assertNotIn("serial", json.dumps(document))
         self.assertNotIn("SECRET123", json.dumps(document))
+        self.assertNotIn("00ffffffffffff00", json.dumps(document))
         self.assertNotIn("png", json.dumps(document).lower())
         self.assertEqual(set(document["cases"]), set(record.CASES))
         self.assertTrue(all(result == "pending" for result in document["cases"].values()))
