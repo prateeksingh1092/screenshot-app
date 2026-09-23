@@ -161,6 +161,13 @@ permission state into ignored `.build/first-run/`. The bundled pattern is
 `Tools/FrisketTestPattern.swift` (320×180 points, display centre) with
 `--verify`. Hardware cases remain the [ticket 39 runbook](manual-checks/39-first-run.md).
 
+Ticket 40 adds `releaseProjectSatisfiesOfflineChecks`. Development stays
+native `x86_64`; Release is universal (`x86_64` + `arm64`) with the production
+bundle `io.github.prateeksingh1092.frisket`. `scripts/release-universal.sh`
+signs with the existing Apple Development identity, writes
+`arm64 built and signed, never executed`, and never installs or launches.
+v1 is not declared until Codex assesses the verification report.
+
 For the stitcher the upstream files had descriptive banners, not per-file licence
 text. The complete upstream BSD licence is prepended, each original banner is
 preserved, and `licenseHeader` records both. `originalSHA256` records each

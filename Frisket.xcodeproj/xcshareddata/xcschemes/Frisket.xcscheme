@@ -9,5 +9,5 @@
   <BuildableProductRunnable runnableDebuggingMode="0"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="000000000000000000000004" BuildableName="Frisket.app" BlueprintName="Frisket" ReferencedContainer="container:Frisket.xcodeproj"/></BuildableProductRunnable>
  </LaunchAction>
  <AnalyzeAction buildConfiguration="Development"/>
- <ArchiveAction buildConfiguration="Development" revealArchiveInOrganizer="YES"/>
+ <ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>
 </Scheme>

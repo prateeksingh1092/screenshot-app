@@ -20,3 +20,9 @@ Claimed on `bc98b39` after ticket 39 closed. Coordinator chat implements
 (Codex/Other Models still limited). Branch `ticket/40-final-acceptance`.
 Hardware first-run, ratified performance targets, a universal signed Release,
 and Codex's assessment remain open.
+
+### 2026-09-23 — implementer
+
+Report: [40-implementer.md](../reports/40-implementer.md). Release configs and
+offline tests landed. Unsigned universal binary exists; signing timed out on
+the keychain. Status/checkboxes unchanged pending review.

@@ -1,7 +1,9 @@
 # Ticket 08 development app
 
-`Frisket.xcodeproj` is authored directly, with one shared `Frisket` scheme and
-one `Development` configuration. No project generator or added dependency is
+`Frisket.xcodeproj` is authored directly, with one shared `Frisket` scheme,
+a native `Development` configuration (`ARCHS = x86_64`), and a universal
+`Release` configuration (`x86_64` + `arm64`, production bundle
+`io.github.prateeksingh1092.frisket`). No project generator or added dependency is
 needed. The app target uses a synchronized `Frisket/` folder: adding or removing
 app Swift source files needs no project-file edit. `Info.plist` and
 `Frisket.entitlements` are excluded from target membership and remain inputs
