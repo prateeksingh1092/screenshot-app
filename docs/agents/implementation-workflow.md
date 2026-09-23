@@ -10,7 +10,12 @@ How Frisket tickets are implemented under decision 46. Sources: the local `imple
 4. **Freeze.** The coordinator commits everything the implementer produced (staged, unstaged, and untracked) to the ticket branch as a review snapshot. Commits on a ticket branch are review snapshots; decision 46's "commits after review" applies to `main`. This lets `code-review` see the exact content under review via `<merge-base>...HEAD`.
 5. **Review once.** A separate fresh Codex session runs `code-review` with the merge-base as the fixed point. Every reviewer brief says: "Do not invoke `/code-review` or spawn additional agents."
 6. **Fix.** Codex validates each finding against the code. It fixes the justified ones in one pass as new commits on the ticket branch, reruns the affected checks and the full suite, and records any finding left open, with the reason. Don't relaunch broad reviews just to get zero findings. An unresolved correctness failure blocks the merge.
-7. **Integrate.** The coordinator merges the ticket branch into a fresh integration branch cut from current `main` and runs the full suite plus the static checks there. Only a green result is fast-forwarded into `main`. Integrate one ticket at a time.
+7. **Integrate.** Under decision 52, the coordinator batches 2–3 tickets that have been reviewed and fixed.
+   - Cut one `integrate/<a>-<b>[-<c>]` branch from current `main`, and merge each ticket into it with its own `--no-ff` merge.
+   - Run one full suite, the static checks, and the unsigned `xcodebuild` there.
+   - **Green:** fast-forward `main` and close each ticket.
+   - **Red:** rebuild the integration one ticket at a time to find the culprit.
+   - A ticket on the critical path never waits for a batch to fill.
 8. **Close.** The coordinator ticks the criteria and records the tested `main` commit and the verification report. It then sets `Status: resolved` and removes the worktree and the merged branches.
 
 ## Toolchain

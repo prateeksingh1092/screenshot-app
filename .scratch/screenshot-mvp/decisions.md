@@ -94,6 +94,13 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - no Apple ID or signing-identity changes;
     - no captures of real content, and no captures kept in the repo;
     - checks that need Prateek's eyes or keyboard stay pending for him.
+52. **Throughput (2026-09-23 02:40):** Prateek approved four speed-ups to cut the remaining time.
+    - Prioritise the critical path: tickets 26, 11 and 13, then 32 → 39 → 40.
+    - Allow up to three concurrent tickets per model pool.
+    - Seed each new worktree's `.build` cache from `main`.
+    - Batch integration: 2–3 reviewed-and-fixed tickets merge into one integration branch, with one full suite run. On red, fall back to one-at-a-time merging to find the culprit.
+
+    This amends step 7 of `docs/agents/implementation-workflow.md`. Every other step of the Pocock loop is unchanged.
 : Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).
