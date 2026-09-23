@@ -4,7 +4,7 @@
 
 **Blocked by:** 09, 11, 12
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/15-history-window`)
 
 - [ ] Items are finished images; there is no re-editing (decision 28).
 - [ ] Copy, drag, and export reuse the delivery adapters and never hand out app-owned files.
@@ -13,3 +13,7 @@
 - [ ] Full keyboard operation and VoiceOver labels for the list and its actions.
 
 ## Comments
+
+### 2026-09-23 — coordinator
+
+Claimed on `331dd49` after ticket 14 closed. Coordinator chat implements (Codex/Other Models still limited).
