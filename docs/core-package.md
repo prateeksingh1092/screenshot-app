@@ -272,3 +272,28 @@ and [the manual state checklist](manual-checks/23-permission-states.md).
 The app filesystem guard permits the specific recovery forms
 `NSWorkspace.shared.open` and `FileHandle.nullDevice`; fixtures still reject
 actual file writes in those same files, writable file handles, and POSIX `open`.
+
+## Ticket 35 scrolling capture
+
+`captureScrolling(CaptureID, maximumBytes:)` is seam 1. A `ScrollingFrameFeed`
+stand-in supplies manual viewports; there is no synthetic scrolling, event tap,
+or global monitor. `ScrollingCaptureSession` keeps the pending original as
+LZFSE strips plus the previous viewport, then releases each frame. Done returns
+that image through the existing thumbnail, Copy, and History commands. Cancel
+releases the reservation and keeps nothing.
+
+`ScrollingCaptureBudget.v1` sets the pixel cap to **294,912,000** (5,120 × 57,600),
+the capture ticket 34 completed at a peak physical footprint of **1,270,796,288**
+bytes, and the memory budget to **2,000,000,000** bytes, ticket 05's gate.
+A command stops earlier when retained strip bytes plus the next frame would
+exceed the reserved pending allowance (`maximumBytes`). Pixel cap and memory
+budget both stop with `ScrollingCaptureNotice.message` and keep the section
+that fit. Starting is refused with `pendingByteBudgetExceeded` when the global
+pending-byte budget cannot reserve `maximumBytes`; the feed is not called.
+
+The app menu **Capture Scrolling Page** selects a region with the existing
+overlay, then samples that region through `ScreenCapturePolicy` and
+`SCScreenshotManager.captureImage`. Live preview, Done, and Cancel are a
+nonactivating panel. The automated peak is `sh scripts/scrolling-memory-run.sh`
+(opt-in, skipped by the normal suite). Live scrolling on the synthetic page is
+[the manual check](manual-checks/35-scrolling-capture.md).

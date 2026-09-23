@@ -10,7 +10,7 @@ public enum DiagnosticErrorCode: String, Codable, Sendable {
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired
-    case permissionRequired
+    case permissionRequired, pixelCap, memoryBudget
 }
 
 public struct DiagnosticError: Equatable, Codable, Sendable {
@@ -71,7 +71,7 @@ extension DiagnosticEvent {
     init(command: CaptureCommand, outcome: CaptureCommandOutcome) {
         let operation: DiagnosticOperation
         switch command {
-        case .capture, .captureFullScreen: operation = .capture
+        case .capture, .captureFullScreen, .captureScrolling: operation = .capture
         case .copy: operation = .copy
         case .retryCopy: operation = .retryCopy
         case .discard: operation = .discard
@@ -97,6 +97,12 @@ extension DiagnosticEvent {
         case .pending:
             name = .capturePending
             error = nil
+        case let .scrollingLimited(_, notice):
+            name = .capturePending
+            error = DiagnosticError(domain: .captureSource, code: notice == .pixelCap ? .pixelCap : .memoryBudget)
+        case let .scrollingRefused(notice):
+            name = .captureFailed
+            error = DiagnosticError(domain: .captureSource, code: notice == .pixelCap ? .pixelCap : .memoryBudget)
         case .discarded:
             name = .captureDiscarded
             error = nil

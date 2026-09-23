@@ -16,6 +16,7 @@ import FrisketCore
     private let permission = ScreenCapturePermissionAdapter(access: SystemScreenRecordingAccess())
     private lazy var platform = ScreenCapturePlatform(permission: permission)
     private var commands: CaptureCommandLayer?
+    private var scrolling: ManualScrollingCapture?
     private var statusItem: NSStatusItem?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var arrivalOrder: [CaptureID] = []
@@ -30,10 +31,12 @@ import FrisketCore
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
+        let scrolling = ManualScrollingCapture(platform: platform, bundleIdentifier: identity.bundleIdentifier)
+        self.scrolling = scrolling
         commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
-            history: HistoryStore(root: identity.historyRoot))
+            history: HistoryStore(root: identity.historyRoot), scrollingFrames: scrolling, scrollingPreview: scrolling)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
@@ -41,6 +44,7 @@ import FrisketCore
         menu.delegate = self
         add("Capture Area (⌃⌥⌘4)", action: #selector(captureArea), to: menu)
         add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
+        add("Capture Scrolling Page", action: #selector(captureScrolling), to: menu)
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
         menu.addItem(.separator())
         let history = NSMenuItem(title: "Dismiss captures to keep in History", action: nil, keyEquivalent: "")
@@ -76,30 +80,25 @@ import FrisketCore
         capture(.captureFullScreen(CaptureID(), maximumBytes: 128 * 1024 * 1024))
     }
 
+    @objc private func captureScrolling() {
+        capture(.captureScrolling(CaptureID(), maximumBytes: 128 * 1024 * 1024))
+    }
+
     private func capture(_ command: CaptureCommand) {
         guard !capturing, !terminating, !requestingPermission, let commands else { return }
         if recoveryPanel?.window?.isVisible == true { recoveryPanel?.present(); return }
         capturing = true
         Task {
-            defer { capturing = false; refreshPermissionIndicator() }
+            defer { capturing = false; scrolling?.hide(); refreshPermissionIndicator() }
             let result = await commands.execute(command)
             switch result {
+            case let .scrollingLimited(revision, notice):
+                self.notice("Scrolling capture stopped", notice.message)
+                await showThumbnail(revision)
+            case let .scrollingRefused(notice):
+                self.notice("Scrolling capture stopped", notice.message)
             case let .pending(revision):
-                guard let image = await commands.image(for: revision),
-                      let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480),
-                      let screen = NSScreen.screens.first(where: {
-                          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == platform.captureDisplayID
-                      }) ?? NSScreen.main else {
-                    _ = await commands.execute(.discard(revision.captureID))
-                    notice("Preview unavailable", "The capture could not be displayed and was deleted.")
-                    return
-                }
-                let id = revision.captureID
-                let panel = ThumbnailPanel(revision: revision, preview: preview, screen: screen, offset: panels.count,
-                    copy: { [weak self] in self?.copy(id) }, discard: { [weak self] in self?.discard(id) },
-                    dismiss: { [weak self] in self?.dismiss(id) })
-                panels[id] = panel
-                arrivalOrder.append(id)
+                await showThumbnail(revision)
             case .captureFailed(.cancelled): break
             case let .permissionRequired(state):
                 showPermissionRecovery(state)
@@ -109,6 +108,25 @@ import FrisketCore
                 notice("Capture unavailable", "Copy or delete pending captures, then try again.")
             }
         }
+    }
+
+    private func showThumbnail(_ revision: CaptureRevision) async {
+        guard let commands else { return }
+        guard let image = await commands.image(for: revision),
+              let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480),
+              let screen = NSScreen.screens.first(where: {
+                  ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == platform.captureDisplayID
+              }) ?? NSScreen.main else {
+            _ = await commands.execute(.discard(revision.captureID))
+            notice("Preview unavailable", "The capture could not be displayed and was deleted.")
+            return
+        }
+        let id = revision.captureID
+        let panel = ThumbnailPanel(revision: revision, preview: preview, screen: screen, offset: panels.count,
+            copy: { [weak self] in self?.copy(id) }, discard: { [weak self] in self?.discard(id) },
+            dismiss: { [weak self] in self?.dismiss(id) })
+        panels[id] = panel
+        arrivalOrder.append(id)
     }
 
     private func copy(_ id: CaptureID) {

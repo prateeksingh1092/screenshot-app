@@ -425,6 +425,13 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
     contentSlices.reduce(0) { $0 + $1.rowCount }
   }
 
+  var pixelWidth: Int { imageWidth }
+
+  /// Compressed strips plus the one previous viewport kept for alignment.
+  var retainedByteCount: Int {
+    contentSlices.reduce(0) { $0 + $1.data.count } + (lastRaster?.pixels.count ?? 0)
+  }
+
   func start(with image: CGImage) -> ScrollingCaptureStitchUpdate? {
     guard let raster = RasterImage(cgImage: image) else { return nil }
 

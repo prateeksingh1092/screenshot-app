@@ -17,6 +17,7 @@ public struct CaptureRevision: Hashable, Sendable {
 public enum CaptureCommand: Sendable {
     case capture(CaptureID, maximumBytes: Int)
     case captureFullScreen(CaptureID, maximumBytes: Int)
+    case captureScrolling(CaptureID, maximumBytes: Int)
     case copy(CaptureRevision)
     case retryCopy(CaptureRevision)
     case dismiss(CaptureRevision)
@@ -55,6 +56,8 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case finalized(CaptureRevision, CommitOutcome)
     case captureFailed(CaptureSourceFailure)
     case permissionRequired(CapturePermissionState)
+    case scrollingLimited(CaptureRevision, ScrollingCaptureNotice)
+    case scrollingRefused(ScrollingCaptureNotice)
     case rejected(CommandRejection)
 }
 
@@ -65,10 +68,15 @@ public struct CaptureCommandLayer: Sendable {
 
     public init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
-                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil) {
+                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil,
+                scrollingFrames: (any ScrollingFrameFeed)? = nil,
+                scrollingPreview: (any ScrollingPreviewSurface)? = nil,
+                scrollingBudget: ScrollingCaptureBudget = .v1) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
-                                                  pendingByteLimit: pendingByteLimit, history: history)
+                                                  pendingByteLimit: pendingByteLimit, history: history,
+                                                  scrollingFrames: scrollingFrames, scrollingPreview: scrollingPreview,
+                                                  scrollingBudget: scrollingBudget)
     }
 
     public func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {

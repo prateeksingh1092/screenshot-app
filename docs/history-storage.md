@@ -78,6 +78,9 @@ Recovery must validate the marker, identifier, and decoded dimensions; the
 presence of a record alone is insufficient. Interrupted staging or row-less
 files are left for ticket 10; retries never overwrite an existing image.
 
+A scrolling capture's Done image is the same pending PNG. Copy and Dismiss
+finalize it through this protocol; Cancel writes nothing.
+
 A fault before the row reports not committed and retains pending bytes. A fault
 at or after `rowCommitted` reports committed even if the thumbnail is missing.
 Thumbnail failure cannot undo History. Current tests inject at every point and

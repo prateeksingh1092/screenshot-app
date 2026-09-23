@@ -5,7 +5,7 @@ import ImageIO
 import UniformTypeIdentifiers
 import FrisketCore
 
-@MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
+@MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform, ScrollingRegionCapturing {
     private lazy var overlay = SelectionOverlay()
     private let permission: ScreenCapturePermissionAdapter
     private var content: SCShareableContent?
@@ -71,7 +71,7 @@ import FrisketCore
         content = nil
     }
 
-    func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
+    func captureRegion(_ request: AreaCaptureRequest) async throws -> CGImage {
         let state = permission.refresh()
         guard state == .granted else { throw CaptureSourceFailure.permissionRequired(state) }
         guard let available = content else { throw CapturePlatformError.unavailable }
@@ -84,6 +84,7 @@ import FrisketCore
         let config = ScreenCapturePolicy.configuration(sourceRect: request.sourceRect,
                                                        pixelWidth: request.pixelWidth, pixelHeight: request.pixelHeight)
         // Own-app filtering remains the safety mechanism even if a window-server update lags.
+        // Scrolling capture samples this same region; it does not open another capture route.
         let image: CGImage
         do {
             image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
@@ -92,6 +93,11 @@ import FrisketCore
         }
         let refreshed = permission.refresh()
         guard refreshed == .granted else { throw CaptureSourceFailure.permissionRequired(refreshed) }
+        return image
+    }
+
+    func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
+        let image = try await captureRegion(request)
         let bytes = NSMutableData()
         guard let encoder = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil) else {
             throw CapturePlatformError.unavailable
