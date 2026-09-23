@@ -17,6 +17,16 @@ How Frisket tickets are implemented under decision 46. Sources: the local `imple
 
 Pass `DEVELOPER_DIR` explicitly on every command. Swift tests use Xcode 26.5's toolchain, because the Command Line Tools lack Swift Testing (decision 47).
 
+Launch Codex from Cursor without shell redirections. Pass the brief's absolute path as the prompt argument, use `-o <file>` for the final message, and request `required_permissions: ["all"]`:
+
+```sh
+codex exec -m gpt-6-astra -c model_reasoning_effort='"high"' -c sandbox_mode='"workspace-write"' \
+  -C <worktree> -o /private/tmp/screenshot-app-impl/<name>-out.md \
+  "Read the file <absolute brief path> and carry out its instructions exactly. It is your complete brief."
+```
+
+With redirections (`<`, `>` or `2>`), a command no longer matches Cursor's allowlist and falls back to Cursor's sandbox. Codex then fails with "Operation not permitted". The same applies to commands that start with a variable assignment or `sh`. Set environment variables with `export` in an earlier shell call instead. If Codex is unreachable or out of included usage, use Cursor Task subagents with the model `claude-opus-5-5-high`, and record which model produced each result.
+
 ## Gates
 
 - Prateek approves the actions that decision 46 still gates.
