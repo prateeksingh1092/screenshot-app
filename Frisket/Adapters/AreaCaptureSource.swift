@@ -6,6 +6,7 @@ struct AreaSelection {
     let displayFrame: CGRect // AppKit global points (bottom-left origin).
     let rect: CGRect
     let scale: CGFloat
+    let spaceGeneration: UInt64 // Sampled when the rectangle is accepted.
 }
 
 struct AreaCaptureRequest {
@@ -18,7 +19,10 @@ struct AreaCaptureRequest {
 
 /// The OS seam: prefetch begins synchronously; all selection paths hide before pixels.
 @MainActor protocol AreaCapturePlatform: AnyObject {
+    var spaceGeneration: UInt64 { get }
     func prefetchShareableContent()
+    func prepareSelection() async
+    func discardSelectionPreviews()
     func selectArea() async -> AreaSelection?
     func hideSelection()
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data
@@ -36,9 +40,12 @@ struct AreaCaptureRequest {
     func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
         platform.prefetchShareableContent()
         defer { platform.finishCapture() }
+        let previewGeneration = platform.spaceGeneration
+        await platform.prepareSelection()
+        if previewGeneration != platform.spaceGeneration { platform.discardSelectionPreviews() }
         let selection = await platform.selectArea()
         platform.hideSelection()
-        guard let selection else { return .failure(.cancelled) }
+        guard let selection, selection.spaceGeneration == platform.spaceGeneration else { return .failure(.cancelled) }
         let clipped = selection.rect.intersection(selection.displayFrame)
         guard !clipped.isNull, !clipped.isEmpty, selection.scale > 0 else { return .failure(.emptyImage) }
         let scale = selection.scale
@@ -55,9 +62,12 @@ struct AreaCaptureRequest {
             pixelWidth: Int(width), pixelHeight: Int(height), excludingBundleIdentifier: bundleIdentifier)
         do {
             let data = try await platform.capture(request, maximumBytes: maximumBytes)
+            // Validate at the core seam before any returned pixels can become Pending.
+            guard selection.spaceGeneration == platform.spaceGeneration else { return .failure(.cancelled) }
             guard data.count <= maximumBytes else { return .failure(.unavailable) }
             return .success(CaptureImage(pngData: data))
         } catch {
+            guard selection.spaceGeneration == platform.spaceGeneration else { return .failure(.cancelled) }
             return .failure(.unavailable)
         }
     }

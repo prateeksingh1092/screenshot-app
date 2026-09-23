@@ -21,3 +21,13 @@ xcodebuild -project Frisket.xcodeproj -scheme Frisket -configuration Development
 Prateek’s pending [manual checklist](/Users/16intelmac/Documents/Claude/Projects/screenshot-app/.worktrees/ticket-18/docs/manual-checks/18-selection-overlay-displays.md) covers Retina/external 1× displays, negative coordinates, unplugging either display, native full-screen apps, Space switches, Esc without activation, and synthetic pixel verification.
 
 Stopped before review. Nothing staged or committed; ticket status and checkboxes unchanged.
+
+## Fix pass
+
+Fixed the single should-fix: Space changes were unobserved during preview preparation and final capture. Observation now spans prefetch through capture completion. Generation checks discard invalidated previews and reject pixels if the Space changes after acceptance, returning cancellation with no Pending capture and recovering the budget. Space changes during selection preserve the rectangle.
+
+Model: **Codex GPT-6 Astra, high**.
+
+Controlled asynchronous stand-in tests reproduced both failures before the fixes and passed afterward. The focused suite passed **3 tests**, including both stable-Space and switched-Space preview cases. Root `swift test` reported **78 tests: 75 passed, 3 opt-in skips**; all eight repository static-check cases passed. The unsigned x86_64 Xcode build **succeeded** with `CODE_SIGNING_ALLOWED=NO`, the pinned `DEVELOPER_DIR`, and documented in-worktree paths. `git diff --check` passed.
+
+No review finding remains open. Actual Space/window behavior remains subject to the existing manual checklist; arm64 was not executed. Nothing staged or committed; ticket Status and checkboxes unchanged.

@@ -270,11 +270,17 @@ and 1×/2× geometry checks continue to apply.
 
 The AppKit adapter presents a nonactivating key-capable panel on every display,
 using screen-saver level and `canJoinAllSpaces`, `fullScreenAuxiliary`,
-`canJoinAllApplications`, `stationary`, and `ignoresCycle`. Display and Space
-notifications are observed only during selection. Space changes re-order all
+`canJoinAllApplications`, `stationary`, and `ignoresCycle`. Display notifications are observed during selection; Space notifications are
+observed from prefetch through capture completion. Space changes re-order all
 panels and restore the origin panel's key focus without activating Frisket;
 they invalidate frozen previews and end an interrupted drag, retaining the
-rectangle. Preview sampling happens before any panel is shown. All panels and
+rectangle. Preview sampling happens before any panel is shown. `AreaCaptureSource` compares
+the Space generation around asynchronous preparation and discards invalidated
+previews before selection. The overlay stamps the accepted rectangle with the
+current generation; the source checks it before and after final capture at the
+core seam, returning cancellation if it changed. Controlled asynchronous
+stand-ins verify preview invalidation, no Pending image after a switch during
+final capture, and budget recovery. All panels and
 view snapshots are removed before the selection continuation resumes;
 `ScreenCapturePlatform` flushes window updates before the final pixel request
 and retains own-app exclusion. Layout validation also surrounds asynchronous

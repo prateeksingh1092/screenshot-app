@@ -6,12 +6,18 @@ import ImageIO
 import UniformTypeIdentifiers
 
 @MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
+    private(set) var spaceGeneration: UInt64 = 0
     private let overlay = SelectionOverlay()
     private var content: Task<ShareableSnapshot, Error>?
     private var areaLayout: DisplaySelectionSession?
+    private var selectionPointer: CGPoint = .zero
+    private var selectionDisplays: [SelectionDisplay] = []
+    private var magnifiers: [UInt32: SelectionMagnifier] = [:]
     private(set) var captureDisplayID: UInt32?
 
     func prefetchShareableContent() {
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(spaceChanged),
+            name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         areaLayout = nil
         captureDisplayID = nil
         // Started on shortcut/menu invocation, before waiting for selection.
@@ -20,17 +26,19 @@ import UniformTypeIdentifiers
         }
     }
 
-    func selectArea() async -> AreaSelection? {
+    func prepareSelection() async {
         // One pointer read, not a monitor. A drag may start on any connected display.
         let pointer = NSEvent.mouseLocation
         let screens = NSScreen.screens
         let displays = screens.compactMap(\.selectionDisplay)
-        guard !displays.isEmpty else { return nil }
+        selectionPointer = pointer
+        selectionDisplays = displays
+        guard !displays.isEmpty else { return }
         areaLayout = DisplaySelectionSession(displays: displays, pointer: pointer)
         // Prepare all previews before ANY overlay is visible. No screen pixels
         // are sampled on hover, on a Space switch, or while selection is active.
         hideSelection()
-        var magnifiers: [UInt32: SelectionMagnifier] = [:]
+        discardSelectionPreviews()
         if let content, let identifier = Bundle.main.bundleIdentifier,
            let available = try? await content.value.content {
             for screen in screens {
@@ -39,10 +47,17 @@ import UniformTypeIdentifiers
                                                                             excluding: identifier)
             }
         }
+    }
+
+    func discardSelectionPreviews() { magnifiers.removeAll() }
+
+    func selectArea() async -> AreaSelection? {
         // A change on ANY display during preparation invalidates the whole layout.
         areaLayout?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
         guard areaLayout?.isCancelled == false else { return nil }
-        let selection = await overlay.select(displays: displays, pointer: pointer, magnifiers: magnifiers)
+        let selection = await overlay.select(displays: selectionDisplays, pointer: selectionPointer,
+                                             magnifiers: magnifiers, spaceGeneration: { self.spaceGeneration })
+        discardSelectionPreviews()
         captureDisplayID = selection?.displayID
         return selection
     }
@@ -63,10 +78,20 @@ import UniformTypeIdentifiers
         CATransaction.flush()
     }
 
+    @objc private func spaceChanged() {
+        spaceGeneration &+= 1
+        discardSelectionPreviews()
+        overlay.spaceChanged()
+    }
+
     func finishCapture() {
+        NSWorkspace.shared.notificationCenter.removeObserver(self,
+            name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         content?.cancel()
         content = nil
         areaLayout = nil
+        selectionDisplays = []
+        discardSelectionPreviews()
     }
 
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {

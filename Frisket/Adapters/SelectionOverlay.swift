@@ -16,19 +16,20 @@ extension NSScreen {
 /// Window-local input only. No event monitor is installed, even during selection.
 @MainActor final class SelectionOverlay {
     private var panels: [UInt32: SelectionPanel] = [:]
+    private var spaceGeneration: (() -> UInt64)?
     private var completion: CheckedContinuation<AreaSelection?, Never>?
     fileprivate var session: DisplaySelectionSession?
 
     func select(displays: [SelectionDisplay], pointer: CGPoint,
-                magnifiers: [UInt32: SelectionMagnifier]) async -> AreaSelection? {
+                magnifiers: [UInt32: SelectionMagnifier],
+                spaceGeneration: @escaping () -> UInt64) async -> AreaSelection? {
         guard completion == nil, !displays.isEmpty else { return nil }
+        self.spaceGeneration = spaceGeneration
         session = DisplaySelectionSession(displays: displays, pointer: pointer)
         return await withCheckedContinuation { continuation in
             completion = continuation
             NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged),
                 name: NSApplication.didChangeScreenParametersNotification, object: nil)
-            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(spaceChanged),
-                name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
             for display in displays {
                 let panel = SelectionPanel(contentRect: display.frame, styleMask: [.borderless, .nonactivatingPanel],
                                            backing: .buffered, defer: false)
@@ -70,8 +71,10 @@ extension NSScreen {
         // Re-read before accepting, even if AppKit's change notification is queued.
         session?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
         var selection: AreaSelection?
-        if accept, let display = session?.originDisplay, let rect = session?.acceptedRect {
-            selection = AreaSelection(displayID: display.id, displayFrame: display.frame, rect: rect, scale: display.scale)
+        if accept, let display = session?.originDisplay, let rect = session?.acceptedRect,
+           let spaceGeneration {
+            selection = AreaSelection(displayID: display.id, displayFrame: display.frame, rect: rect, scale: display.scale,
+                                      spaceGeneration: spaceGeneration())
         }
         // Tear down EVERY panel and frozen preview before resuming the pixel source.
         for panel in panels.values {
@@ -80,7 +83,7 @@ extension NSScreen {
         }
         panels.removeAll()
         NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.removeObserver(self, name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        spaceGeneration = nil
         session = nil
         let continuation = completion
         completion = nil
@@ -92,7 +95,7 @@ extension NSScreen {
         if session?.isCancelled == true { finish(accept: false) }
     }
 
-    @objc private func spaceChanged() {
+    func spaceChanged() {
         guard completion != nil else { return }
         displaysChanged()
         guard completion != nil else { return }

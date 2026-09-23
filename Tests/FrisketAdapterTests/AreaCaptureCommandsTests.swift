@@ -41,12 +41,15 @@ private struct FixtureSource: CapturePixelSource {
 }
 
 @MainActor private final class RecordingCapturePlatform: AreaCapturePlatform {
+    let spaceGeneration: UInt64 = 0
     var events: [String] = []
     var selection: AreaSelection? = AreaSelection(displayID: 7,
         displayFrame: CGRect(x: -800, y: -200, width: 800, height: 600),
-        rect: CGRect(x: -900, y: -100, width: 300, height: 150), scale: 2)
+        rect: CGRect(x: -900, y: -100, width: 300, height: 150), scale: 2, spaceGeneration: 0)
     var request: AreaCaptureRequest?
     func prefetchShareableContent() { events.append("prefetch") }
+    func prepareSelection() async {}
+    func discardSelectionPreviews() {}
     func selectArea() async -> AreaSelection? { events.append("select"); return selection }
     func hideSelection() { events.append("hide") }
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
@@ -93,7 +96,7 @@ extension AreaCaptureCommandsTests {
         #expect(platform.events == ["prefetch", "select", "hide", "finish"])
         #expect(destination.items.isEmpty)
         platform.selection = AreaSelection(displayID: 1, displayFrame: CGRect(x: 0, y: 0, width: 800, height: 600),
-                                           rect: CGRect(x: 20.25, y: 30.25, width: 100.5, height: 50.5), scale: 1)
+                                           rect: CGRect(x: 20.25, y: 30.25, width: 100.5, height: 50.5), scale: 1, spaceGeneration: 0)
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(CaptureRevision(captureID: id, number: 1)))
         #expect(platform.request?.sourceRect == CGRect(x: 20, y: 519, width: 101, height: 51))
     }
