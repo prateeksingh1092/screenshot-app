@@ -140,15 +140,55 @@ def diagnostic_issues(files):
 
 
 
+def swift_function_bodies(code, pattern):
+    """Bounded lexical bodies, skipping parameter defaults and nested braces."""
+    for match in re.finditer(pattern + r'\s*\(', code):
+        start = match.end()
+        depth = 1
+        while start < len(code) and depth:
+            depth += (code[start] == '(') - (code[start] == ')')
+            start += 1
+        start = code.find('{', start)
+        if start < 0:
+            continue
+        end, depth = start + 1, 1
+        while end < len(code) and depth:
+            depth += (code[end] == '{') - (code[end] == '}')
+            end += 1
+        yield code[start + 1:end - 1]
+
+
 def capture_memory_issues(files):
     issues = []
+    coordinator = "Sources/FrisketCore/CaptureLifecycleCoordinator.swift"
+    write_routes = r'\b(?:createDirectory|createFile|removeItem|FileHandle|OutputStream|fopen|open|openat|mkdir|unlink|rename)\b|\.\s*write\s*\(\s*to\s*:'
     for path, text in sorted(files.items()):
-        if not path.startswith("Sources/FrisketCore/") or not path.endswith(".swift"):
-            continue
-        # Ticket 09 owns the only future disk-capable module. Lifecycle code cannot use it directly.
-        if path.startswith("Sources/FrisketCore/StorageAdapter/"):
+        if not path.startswith(("Sources/FrisketCore/", "Frisket/")) or not path.endswith(".swift"):
             continue
         code = swift_code(text).replace("`", "")
+        if path != coordinator and re.search(r'\bAuthorizedFinalization\s*\(', code):
+            issues.append(f"{path}: finalization capability constructed outside coordinator")
+        if path == coordinator:
+            capture = re.search(r'case\s+(?:let\s+)?\.capture\b(.*?)(?=case\s+(?:let\s+)?\.(?:copy|retryCopy|dismiss|discard)\b|\Z)', code, re.S)
+            if capture and re.search(r'AuthorizedFinalization|\.\s*finalize\s*\(', capture.group(1)):
+                issues.append(f"{path}: capture cannot authorize persistence")
+        if path.startswith("Frisket/"):
+            if re.search(write_routes, code):
+                issues.append(f"{path}: app filesystem write bypasses authorized finalization")
+            continue
+        if path.startswith("Sources/FrisketCore/StorageAdapter/"):
+            if re.search(r'\b(?:CapturePixelSource|CaptureImage|original\w*|unredacted\w*)\b', code, re.I):
+                issues.append(f"{path}: storage accepts source or original pixels")
+            bodies = swift_function_bodies(code, r'\b(?:init|func\s+entries)')
+            eager = write_routes + r'|\b(?:DatabaseQueue|writableDatabase|durableWrite|cacheThumbnail|renameExclusively)\s*\('
+            if any(re.search(eager, body) for body in bodies):
+                issues.append(f"{path}: storage initialization or query may write before finalization")
+            outside_functions = code
+            for body in swift_function_bodies(code, r'\b(?:init|func\s+\w+)'):
+                outside_functions = outside_functions.replace(body, "")
+            if any(re.search(eager, value) for value in re.findall(r'\b(?:let|var)\s+\w+(?:\s*:\s*[^=;\n]+)?\s*=([^;\n}]+)', outside_functions)):
+                issues.append(f"{path}: eager storage property may write before finalization")
+            continue
         imports = re.findall(r'\bimport\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(\w+)', code)
         disk_symbols = r'\b(?:URL|NSURL|FileManager|FileHandle|OutputStream|InputStream|UserDefaults|Process|Bundle|NSFileCoordinator|StorageAdapter|GRDB|Darwin|Glibc|POSIX|fopen|freopen|open|openat|creat|fwrite|pwrite|writev|unlink|rename|mkdir|mmap)\b'
         allowed_imports = {"Foundation", "Synchronization"}

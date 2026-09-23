@@ -5,16 +5,26 @@ actor CaptureLifecycleCoordinator {
     private var pendingBytes = 0
     private let source: any CapturePixelSource
     private let clipboard: any ImageClipboard
+    private let history: (any CaptureHistory)?
+    private var finalized: Set<CaptureID> = []
+    private var copyCommits: [CaptureID: CommitOutcome] = [:]
     private var inProgress: Set<CaptureID> = []
     private var discarded: Set<CaptureID> = []
     private var failedDelivery: Set<CaptureID> = []
     private var delivered: Set<CaptureID> = []
     private var images: [CaptureID: CaptureImage] = [:]
 
-    init(source: any CapturePixelSource, clipboard: any ImageClipboard, pendingByteLimit: Int) {
+    init(source: any CapturePixelSource, clipboard: any ImageClipboard, pendingByteLimit: Int,
+         history: (any CaptureHistory)?) {
         self.pendingByteLimit = max(0, pendingByteLimit)
         self.source = source
         self.clipboard = clipboard
+        self.history = history
+    }
+
+    func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {
+        guard let history else { return .failure(.unavailable) }
+        return await history.entries()
     }
 
     func image(for revision: CaptureRevision) -> CaptureImage? {
@@ -24,6 +34,29 @@ actor CaptureLifecycleCoordinator {
 
     func execute(_ command: CaptureCommand) async -> CaptureCommandOutcome {
         switch command {
+        case let .dismiss(revision):
+            let id = revision.captureID
+            guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+            guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
+            guard images[id] != nil || finalized.contains(id) else { return .rejected(.unknownCapture) }
+            guard revision.number == 1 else { return .rejected(.staleRevision) }
+            guard !finalized.contains(id) || images[id] != nil else { return .rejected(.alreadyFinalized) }
+            guard let image = images[id] else { return .rejected(.unknownCapture) }
+            inProgress.insert(id)
+            let outcome: CommitOutcome
+            if finalized.contains(id) { outcome = .committed }
+            else {
+                outcome = await history?.finalize(AuthorizedFinalization(revision: revision, pngData: image.pngData))
+                    ?? .notCommitted(.historyUnavailable)
+            }
+            if outcome == .committed {
+                finalized.insert(id)
+                pendingBytes -= image.pngData.count
+                images.removeValue(forKey: id)
+                failedDelivery.remove(id)
+            }
+            inProgress.remove(id)
+            return .finalized(revision, outcome)
         case let .discard(id):
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
@@ -38,7 +71,7 @@ actor CaptureLifecycleCoordinator {
         case let .capture(id, maximumBytes):
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
-            guard images[id] == nil, !delivered.contains(id) else { return .rejected(.duplicateCapture) }
+            guard images[id] == nil, !delivered.contains(id), !finalized.contains(id) else { return .rejected(.duplicateCapture) }
             guard maximumBytes > 0 else { return .rejected(.invalidByteAllowance) }
             guard maximumBytes <= pendingByteLimit - pendingBytes else {
                 return .rejected(.pendingByteBudgetExceeded)
@@ -74,6 +107,15 @@ actor CaptureLifecycleCoordinator {
             }
             let delivery: DeliveryOutcome
             inProgress.insert(revision.captureID)
+            // Retrying delivery never repeats a commit, including a failed one.
+            let commit: CommitOutcome
+            if let prior = copyCommits[revision.captureID] { commit = prior }
+            else {
+                commit = await history?.finalize(AuthorizedFinalization(revision: revision, pngData: image.pngData))
+                    ?? .notCommitted(.historyUnavailable)
+                copyCommits[revision.captureID] = commit
+                if commit == .committed { finalized.insert(revision.captureID) }
+            }
             switch await clipboard.write(ClipboardImage(pngData: image.pngData)) {
             case let .success(receipt):
                 delivery = .copied(receipt)
@@ -86,7 +128,7 @@ actor CaptureLifecycleCoordinator {
                 failedDelivery.insert(revision.captureID)
             }
             inProgress.remove(revision.captureID)
-            return .copy(CopyOutcome(revision: revision, commit: .notCommitted(.historyUnavailable),
+            return .copy(CopyOutcome(revision: revision, commit: commit,
                                      delivery: delivery))
         }
     }

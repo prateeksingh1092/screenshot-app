@@ -34,7 +34,7 @@ func repositorySatisfiesStaticChecks(check: String) throws {
     "identity-rejected", "identity-accepted", "identity-after-header-rejected",
     "provenance-rejected", "provenance-accepted", "provenance-tampered", "provenance-hash-tampered",
     "diagnostics-rejected", "diagnostics-accepted", "diagnostics-collection-rejected",
-    "capture-memory-rejected", "capture-memory-accepted",
+    "capture-memory-rejected", "capture-memory-accepted", "capture-finalization-rejected", "capture-finalization-accepted",
     "stitcher-provenance-inventory", "stitcher-identity-inventory", "stitcher-imports-inventory"
 ])
 func staticCheckFixturesHaveExpectedOutcomes(fixture: String) throws {
