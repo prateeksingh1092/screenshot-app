@@ -15,6 +15,10 @@ struct AreaCaptureRequest {
     let pixelWidth: Int
     let pixelHeight: Int
     let excludingBundleIdentifier: String
+    var additionalExcludedBundleIdentifiers: Set<String> = []
+    var excludedBundleIdentifiers: Set<String> {
+        additionalExcludedBundleIdentifiers.union([excludingBundleIdentifier])
+    }
 }
 
 /// The OS seam: prefetch completes before selection; all selection paths hide before pixels.
@@ -32,9 +36,12 @@ struct AreaCaptureRequest {
 @MainActor final class AreaCaptureSource: CapturePixelSource {
     private let platform: any AreaCapturePlatform
     private let bundleIdentifier: String
-    init(platform: any AreaCapturePlatform, bundleIdentifier: String) {
+    private let exclusions: @MainActor () -> Set<String>
+    init(platform: any AreaCapturePlatform, bundleIdentifier: String,
+         exclusions: @escaping @MainActor () -> Set<String> = { [] }) {
         self.platform = platform
         self.bundleIdentifier = bundleIdentifier
+        self.exclusions = exclusions
     }
 
     func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
@@ -61,7 +68,8 @@ struct AreaCaptureRequest {
               width * height * 4 <= Double(maximumBytes) else { return .failure(.unavailable) }
         let request = AreaCaptureRequest(displayID: selection.displayID,
             sourceRect: CGRect(x: left / scale, y: top / scale, width: width / scale, height: height / scale),
-            pixelWidth: Int(width), pixelHeight: Int(height), excludingBundleIdentifier: bundleIdentifier)
+            pixelWidth: Int(width), pixelHeight: Int(height), excludingBundleIdentifier: bundleIdentifier,
+            additionalExcludedBundleIdentifiers: exclusions())
         do {
             let data = try await platform.capture(request, maximumBytes: maximumBytes)
             // Validate at the core seam before any returned pixels can become Pending.

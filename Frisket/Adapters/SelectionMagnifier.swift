@@ -9,7 +9,8 @@ import CoreVideo
     private let scale: CGFloat
 
     static func prepare(on screen: NSScreen, content: SCShareableContent,
-                        excluding bundleIdentifier: String) async throws -> SelectionMagnifier {
+                        excluding bundleIdentifier: String,
+                        additionalExclusions: Set<String> = []) async throws -> SelectionMagnifier {
         guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
               let display = content.displays.first(where: { $0.displayID == number.uint32Value }) else {
             throw PreviewError.unavailable
@@ -19,7 +20,8 @@ import CoreVideo
         guard width > 0, height > 0, width * height * 4 <= 128 * 1024 * 1024 else {
             throw PreviewError.unavailable
         }
-        let filter = try ScreenCapturePolicy.filter(display: display, content: content, excluding: bundleIdentifier)
+        let filter = try ScreenCapturePolicy.filter(display: display, content: content, excluding: bundleIdentifier,
+                                                    additionalExclusions: additionalExclusions)
         let configuration = ScreenCapturePolicy.configuration(sourceRect: CGRect(origin: .zero, size: screen.frame.size),
                                                               pixelWidth: Int(width), pixelHeight: Int(height))
         configuration.pixelFormat = kCVPixelFormatType_32BGRA

@@ -14,7 +14,8 @@ import FrisketCore
 @MainActor final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKey = CarbonHotKey()
     private let permission = ScreenCapturePermissionAdapter(access: SystemScreenRecordingAccess())
-    private lazy var platform = ScreenCapturePlatform(permission: permission)
+    private let exclusions = CaptureExclusionList(defaults: .standard)
+    private lazy var platform = ScreenCapturePlatform(permission: permission, exclusions: { [exclusions] in exclusions.bundleIdentifiers })
     private var windowPlatform: WindowScreenCapturePlatform?
     private var commands: CaptureCommandLayer?
     private var dragAdapter: FilePromiseDragAdapter?
@@ -44,14 +45,15 @@ import FrisketCore
         historySettings.onQuotaEviction = { [weak self] in
             self?.notice("History size limit reached", "Older captures were removed from History to meet its size limit. Saved exports are unchanged. You can adjust the limit in Settings.")
         }
-        settingsWindow = ExportSettingsWindow(settings: exportSettings, history: historySettings)
-        let windowPlatform = WindowScreenCapturePlatform(permission: permission, bundleIdentifier: identity.bundleIdentifier)
+        settingsWindow = ExportSettingsWindow(settings: exportSettings, history: historySettings, exclusions: exclusions)
+        let windowPlatform = WindowScreenCapturePlatform(permission: permission, bundleIdentifier: identity.bundleIdentifier,
+            exclusions: { [exclusions] in exclusions.bundleIdentifiers })
         self.windowPlatform = windowPlatform
         let dragStaging = DragStagingLifetime(directory: identity.historyRoot.appendingPathComponent("staging/drag"))
         let dragAdapter = FilePromiseDragAdapter(staging: dragStaging)
         self.dragAdapter = dragAdapter
-        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
-            fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
+        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }),
+            fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }),
             windowSource: WindowCaptureSource(platform: windowPlatform, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                 bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,

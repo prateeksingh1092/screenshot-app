@@ -8,15 +8,18 @@ import FrisketCore
 @MainActor final class WindowScreenCapturePlatform: NSObject, WindowCapturePlatform {
     private let permission: ScreenCapturePermissionAdapter
     private let bundleIdentifier: String
+    private let exclusions: @MainActor () -> Set<String>
     private lazy var overlay = WindowSelectionOverlay()
     private var content: SCShareableContent?
     private var environmentGeneration = 0
     private var selectionGeneration = 0
     private(set) var captureDisplayID: UInt32?
 
-    init(permission: ScreenCapturePermissionAdapter, bundleIdentifier: String) {
+    init(permission: ScreenCapturePermissionAdapter, bundleIdentifier: String,
+         exclusions: @escaping @MainActor () -> Set<String> = { [] }) {
         self.permission = permission
         self.bundleIdentifier = bundleIdentifier
+        self.exclusions = exclusions
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(environmentChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -51,6 +54,7 @@ import FrisketCore
         return ordered.compactMap { entry in
             guard let id = (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
                   let window = byID[id], let owner = window.owningApplication,
+                  let ownerBundle = owner.bundleIdentifier, !exclusions().contains(ownerBundle),
                   (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == owner.processID,
                   let layer = (entry[kCGWindowLayer as String] as? NSNumber)?.intValue,
                   layer == window.windowLayer else { return nil }
@@ -59,7 +63,7 @@ import FrisketCore
             // query and CG's ordered-on-screen list excludes minimized windows;
             // do not use isActive (off-screen Stage Manager windows can be active).
             return WindowCandidate(id: id, ownerProcessID: owner.processID,
-                bundleIdentifier: owner.bundleIdentifier, frame: window.frame, layer: layer,
+                bundleIdentifier: ownerBundle, frame: window.frame, layer: layer,
                 isOnScreen: onScreen, isMinimized: !onScreen)
         }
     }

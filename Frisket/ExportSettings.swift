@@ -57,6 +57,7 @@ import FrisketCore
 private struct ExportSettingsView: View {
     @ObservedObject var settings: ExportSettings
     @ObservedObject var history: HistorySettings
+    let exclusions: CaptureExclusionList
 
     var body: some View {
         Form {
@@ -82,6 +83,7 @@ private struct ExportSettingsView: View {
                 case .allowed: EmptyView()
                 }
             }
+            CaptureExclusionSettingsView(exclusions: exclusions)
         }
         .formStyle(.grouped)
         .padding()
@@ -92,8 +94,8 @@ private struct ExportSettingsView: View {
 @MainActor final class ExportSettingsWindow {
     private let window: NSWindow
 
-    init(settings: ExportSettings, history: HistorySettings) {
-        window = NSWindow(contentViewController: NSHostingController(rootView: ExportSettingsView(settings: settings, history: history)))
+    init(settings: ExportSettings, history: HistorySettings, exclusions: CaptureExclusionList) {
+        window = NSWindow(contentViewController: NSHostingController(rootView: ExportSettingsView(settings: settings, history: history, exclusions: exclusions)))
         window.title = "Frisket Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
