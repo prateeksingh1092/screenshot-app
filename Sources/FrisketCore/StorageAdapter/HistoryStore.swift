@@ -34,6 +34,7 @@ public actor HistoryStore: CaptureHistory {
 
     public func finalize(_ request: AuthorizedFinalization) -> CommitOutcome {
         var committed = false
+        var imageWriteAttempted = false
         do {
             guard let source = CGImageSourceCreateWithData(request.pngData as CFData, nil),
                   CGImageSourceGetType(source) as String? == "public.png",
@@ -51,6 +52,7 @@ public actor HistoryStore: CaptureHistory {
             let recordData = try JSONEncoder().encode(record)
             let stagingImage = root.appendingPathComponent("staging/\(identifier).png")
             let stagingRecord = root.appendingPathComponent("staging/\(identifier).finalization.json")
+            imageWriteAttempted = true
             try durableWrite(request.pngData, to: stagingImage, staged: .pngStaged, synced: .pngSynced)
             try durableWrite(recordData, to: stagingRecord, staged: .recordStaged, synced: .recordSynced)
             try renameExclusively(stagingImage, to: root.appendingPathComponent(imageLocation))
@@ -80,6 +82,9 @@ public actor HistoryStore: CaptureHistory {
         } catch {
             // A post-commit cache or injected failure cannot undo durable History.
             if committed { return .committed }
+            // Failed writes can leave authorized pixels for recovery. Do not describe
+            // that revision as safely editable: a later redaction cannot erase them.
+            if imageWriteAttempted { return .notCommitted(.recoveryRequired) }
             switch error {
             case HistoryFailure.unknownMigrations: return .notCommitted(.unknownMigrations)
             case HistoryFailure.invalidImage: return .notCommitted(.invalidImage)

@@ -286,7 +286,7 @@ extension HistoryCommandsTests {
         #expect(!FileManager.default.fileExists(atPath: root.path))
         let committed = point == .rowCommitted || point == .thumbnailCached
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision,
-            committed ? .committed : .notCommitted(.historyUnavailable)))
+            committed ? .committed : .notCommitted(.recoveryRequired)))
         #expect(try await commands.historyEntries().get().count == (committed ? 1 : 0))
         let expected: Set<String>
         switch point {

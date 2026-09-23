@@ -4,13 +4,13 @@ public enum DiagnosticEventName: String, Codable, Sendable {
     case capturePending, captureFailed, captureDiscarded, captureFinalized, finalizationFailed, deliverySucceeded, deliveryFailed, commandRejected
 }
 
-public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, discard, dismiss }
+public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, discard, dismiss, done }
 public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history }
 public enum DiagnosticErrorCode: String, Codable, Sendable {
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired
-    case permissionRequired
+    case permissionRequired, editingUnavailable
 }
 
 public struct DiagnosticError: Equatable, Codable, Sendable {
@@ -76,11 +76,15 @@ extension DiagnosticEvent {
         case .retryCopy: operation = .retryCopy
         case .discard: operation = .discard
         case .dismiss: operation = .dismiss
+        case .done: operation = .done
         }
         let name: DiagnosticEventName
         let error: DiagnosticError?
         switch outcome {
-        case let .finalized(_, commit):
+        case .edited(_, _, .some):
+            name = .deliveryFailed
+            error = DiagnosticError(domain: .clipboard, code: .unavailable)
+        case let .finalized(_, commit), let .edited(_, commit, _):
             switch commit {
             case .committed:
                 name = .captureFinalized
@@ -141,6 +145,7 @@ extension DiagnosticEvent {
             case .pendingByteBudgetExceeded: code = .pendingByteBudgetExceeded
             case .commandInProgress: code = .commandInProgress
             case .invalidByteAllowance: code = .invalidByteAllowance
+            case .editingUnavailable: code = .editingUnavailable
             }
             error = DiagnosticError(domain: .lifecycle, code: code)
         }

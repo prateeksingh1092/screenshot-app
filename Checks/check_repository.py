@@ -211,7 +211,7 @@ def capture_memory_issues(files):
             invalid_clipboard |= len(functions) != 1 or len(writes) != 1 or bool(re.search(r'\b(?:var|associatedtype)\b', body))
         for match in re.finditer(r'\bstruct\s+ClipboardImage\b[^\{]*\{([^}]+)', code):
             fields = re.findall(r'\b(?:let|var)\s+(\w+)\s*(?::\s*([\w?]+))?', match.group(1))
-            allowed = {"pngData": "Data", "currentHostOnly": "", "concealed": ""}
+            allowed = {"pngData": "Data", "currentHostOnly": "", "concealed": "", "replacing": "ClipboardReceipt?"}
             invalid_clipboard |= any(allowed.get(name) != kind for name, kind in fields)
         if invalid_clipboard:
             issues.append(f"{path}: clipboard contract must be image-only and write-only")

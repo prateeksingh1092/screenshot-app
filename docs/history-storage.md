@@ -11,6 +11,8 @@ internal and whose construction is restricted to the coordinator by the static
 check. The current unedited output is identical to the selected PNG; no separate
 original, editor document, or source frame is persisted. A future editor must
 supply its frozen rendered output at this same authorization boundary.
+Ticket 26's Done does so: the row and record carry the rendered revision
+(2 for a first edit), and a capture already committed by Copy can't be edited.
 
 Copy also finalizes before delivery, reports those outcomes separately, and
 retains the commit outcome across delivery retries. A failed clipboard delivery
@@ -59,6 +61,13 @@ requires one store instance per root and does not perform launch recovery.
 
 `HistoryCommitPoint` is the closed fault-injection list. The optional throwing
 `commitPoint` callback on the real store runs **after** each named operation:
+
+Ticket 26 distinguishes failures before image writes from interrupted writes:
+once an image write has been attempted, a pre-commit failure returns
+`recoveryRequired`. The coordinator then refuses further editing of that
+revision, because authorized pixels may already exist on disk. Recovery files
+and the file-first protocol remain intact; a successful row commit still wins
+over later cache errors.
 
 1. `pngStaged`: all PNG bytes written to an exclusive staging file.
 2. `pngSynced`: `F_FULLFSYNC` succeeded on the staging PNG.

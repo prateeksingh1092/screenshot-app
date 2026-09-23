@@ -21,6 +21,8 @@ public enum CaptureCommand: Sendable {
     case retryCopy(CaptureRevision)
     case dismiss(CaptureRevision)
     case discard(CaptureID)
+    /// Finishes an edit: renders the edits over the current revision and finalizes the result as the next revision.
+    case done(CaptureRevision, DocumentEdits)
 }
 
 public enum CommitOutcome: Equatable, Sendable {
@@ -46,13 +48,15 @@ public struct CopyOutcome: Equatable, Sendable {
     }
 }
 
-public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance }
+public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance, editingUnavailable }
 
 public enum CaptureCommandOutcome: Equatable, Sendable {
     case pending(CaptureRevision)
     case discarded(CaptureID)
     case copy(CopyOutcome)
     case finalized(CaptureRevision, CommitOutcome)
+    /// The new rendered revision replaced the pending image, whether or not History committed it.
+    case edited(CaptureRevision, CommitOutcome, clipboardFailure: ClipboardFailure? = nil)
     case captureFailed(CaptureSourceFailure)
     case permissionRequired(CapturePermissionState)
     case rejected(CommandRejection)
@@ -65,10 +69,11 @@ public struct CaptureCommandLayer: Sendable {
 
     public init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
-                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil) {
+                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil,
+                codec: (any BitmapCodec)? = nil) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
-                                                  pendingByteLimit: pendingByteLimit, history: history)
+                                                  pendingByteLimit: pendingByteLimit, history: history, codec: codec)
     }
 
     public func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {

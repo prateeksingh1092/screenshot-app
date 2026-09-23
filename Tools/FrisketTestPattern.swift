@@ -54,8 +54,18 @@ import ImageIO
             }
             return
         }
+        if args.count == 4, args[1] == "--verify-redacted", let scale = Int(args[3]), [1, 2].contains(scale) {
+            do {
+                try verifyRedacted(path: args[2], scale: scale)
+                print("PASS: red quadrant exactly opaque black, no red pixel anywhere, other quadrants and marker intact")
+            } catch {
+                fputs("FAIL: the red quadrant is not fully redacted, red remains, or other pattern pixels changed\n", stderr)
+                exit(1)
+            }
+            return
+        }
         guard args.count == 2, ["--show", "--show-all"].contains(args[1]) else {
-            fputs("Usage: FrisketTestPattern --show | --show-all | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
+            fputs("Usage: FrisketTestPattern --show | --show-all | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2 | --verify-redacted /path/to/image.png 1|2\n", stderr)
             exit(2)
         }
         let app = NSApplication.shared
@@ -106,6 +116,36 @@ import ImageIO
                     guard abs(Int(buffer[offset + channel]) - Int(expected[channel])) <= 3 else { throw Mismatch.image }
                 }
             }
+        }
+    }
+
+    /// For a 320×180-point pattern capture whose entire red quadrant was covered by Solid redaction.
+    private static func verifyRedacted(path: String, scale: Int) throws {
+        guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              image.width == 320 * scale, image.height == 180 * scale,
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { throw Mismatch.image }
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            guard let context = CGContext(data: bytes.baseAddress, width: image.width, height: image.height,
+                                          bitsPerComponent: 8, bytesPerRow: image.width * 4, space: colorSpace,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { throw Mismatch.image }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        func pixel(_ x: Int, _ y: Int) -> [UInt8] { Array(pixels[((y * image.width + x) * 4)..<((y * image.width + x) * 4 + 4)]) }
+        // Every covered pixel is exactly the fill at full opacity: no tolerance.
+        for y in 0..<(90 * scale) { for x in 0..<(160 * scale) where pixel(x, y) != [0, 0, 0, 255] { throw Mismatch.image } }
+        for y in 0..<image.height {
+            for x in 0..<image.width {
+                let value = pixel(x, y)
+                if value[0] >= 252, value[1] <= 3, value[2] <= 3 { throw Mismatch.image }
+            }
+        }
+        let intact: [(Int, Int, [UInt8])] = [(240, 30, [0, 255, 0, 255]), (40, 130, [0, 0, 255, 255]),
+                                             (240, 130, [255, 255, 255, 255]), (12, 168, [0, 0, 0, 255])]
+        for (x, y, expected) in intact {
+            let value = pixel(x * scale, y * scale)
+            for channel in 0..<4 where abs(Int(value[channel]) - Int(expected[channel])) > 3 { throw Mismatch.image }
         }
     }
 }

@@ -174,7 +174,9 @@ private-state queries.
 The unedited revision is number 1; editing is outside this ticket. A nonpositive
 session budget admits no captures, and a capture allowance must be positive.
 Failed and in-flight delivery bytes remain charged; successful delivery and
-discard release them. Completed/discarded identifier tombstones remain for the
+discard release them. With editing enabled (ticket 26), a successful Copy whose
+History commit failed before image writes retains its bytes and receipt for
+Edit, Dismiss or Delete; those bytes remain charged. Completed/discarded identifier tombstones remain for the
 session, preventing stale commands from creating another capture. This is an
 encoded-payload budget, not a bound on the capture adapter's transient decoding
 or platform allocations; ticket 08 must enforce its source allowance as well.
@@ -182,7 +184,10 @@ or platform allocations; ticket 08 must enforce its source allowance as well.
 `ImageClipboard` exposes only `write(ClipboardImage)` and returns a
 `ClipboardReceipt(changeCount:)` or a closed `ClipboardFailure`. Its payload
 contains PNG data and immutable `currentHostOnly = true` / `concealed = true`
-flags, with no file location, text alternative, or clipboard read method. The
+flags, with no file location, text alternative, or clipboard read method.
+An optional `replacing: ClipboardReceipt` restricts a write to an unchanged
+change count; the adapter checks this metadata immediately before writing.
+The
 source adapter owns PNG encoding/validity; the core transports bytes unchanged.
 Tests use synthetic byte fixtures, not platform image encoding. The receipt is
 recorded in the returned delivery outcome. Honoring pasteboard flags and the
@@ -222,8 +227,9 @@ review. No real root or clipboard is touched by the command tests.
 See [app build and signing](app-build.md). The app links a native static target
 from the exact core source directory; SwiftPM remains the automated test runner.
 `CaptureCommandLayer.image(for:)` exposes revision-bound in-memory bytes for
-thumbnail downsampling, returning nil for unknown, stale, copied or discarded
-revisions. Cancellation is a typed capture-source outcome. Lifecycle and byte
+thumbnail downsampling, returning nil for unknown, stale, released or discarded
+revisions. Editable copied captures with a pre-write History failure remain
+queryable until resolved. Cancellation is a typed capture-source outcome. Lifecycle and byte
 ownership remain in the coordinator.
 
 The app's Xcode build always runs the `input-monitoring` static check. The new
@@ -260,6 +266,53 @@ uses the same in-worktree caches and
 Xcode toolchain as the full `sh scripts/test-core.sh` run. Original ticket 06
 History-unavailable descriptions above remain applicable when no `CaptureHistory`
 is injected. The app now injects the lazy disk store.
+
+## Ticket 26 editor document, renderer and Done
+
+- **Document:** `EditorDocument(base: Bitmap, edits: DocumentEdits)`. `Bitmap` is
+  premultiplied sRGB RGBA8, rows top to bottom. `DocumentEdits` holds `scale`
+  (output pixels per document point) and the ordered `redactions`.
+  `SolidRedaction(x:y:width:height:)` is in document points from the top-left
+  and fails for non-finite or non-positive geometry. It has no colour, opacity,
+  radius or stroke to set; `SolidRedaction.fill` is opaque black.
+- **Renderer (seam 2):** `DocumentRenderer.render(_:) -> Bitmap` is pure Swift
+  (Foundation only). Each rectangle is multiplied by `scale`, snapped outward
+  (minimum edges rounded down, maximum edges up), clipped to the image in
+  floating point, and copied as fill bytes with no blending or antialiasing.
+- **Codec seam:** `BitmapCodec` converts PNG bytes to and from `Bitmap` in
+  memory. The app injects `PNGBitmapCodec` (ImageIO, fixed sRGB) through
+  `CaptureCommandLayer(…, codec:)`; without one, Done returns
+  `rejected(.editingUnavailable)`.
+- **Done (seam 1):** `execute(.done(revision, edits))` decodes the current
+  pending image, renders, encodes, and replaces the pending image with the
+  result as revision *n*+1 before any suspension. It then finalizes that
+  revision through the same `AuthorizedFinalization` boundary and returns
+  `.edited(nextRevision, commit, clipboardFailure:)`. The rendered PNG must fit
+  the remaining session byte budget before it can replace the pending image.
+  Commit failure leaves the rendered revision
+  pending for Dismiss or Copy retries. The original is unreachable either way.
+  Every command and `image(for:)` now check the current revision. A committed
+  rendered revision stays in memory for the refreshed thumbnail, then Copy
+  (reusing the commit) or Dismiss releases it. Done is refused for finalized,
+  discarded or recovery-blocked captures (no History re-editing, decision 28).
+- **Clipboard:** a copied capture remains editable only if History failed
+  before image writes. Done with Solid redactions conditionally replaces that
+  capture's earlier copy using its saved receipt, even if History is still
+  unavailable. A changed clipboard is untouched. Replacement retains PNG-only,
+  concealed and current-host-only delivery. An unavailable clipboard is reported
+  separately from the History result, with an explicit Copy action on the
+  refreshed thumbnail. Committed copies remain final and cannot be re-edited.
+- **Interrupted writes:** History reports `recoveryRequired` once an image
+  write has been attempted and finalization fails. Such revisions are frozen
+  against further editing because their authorized pixels may already exist
+  in staging or recovery files. No recovery or overwrite is attempted here.
+
+Seam 1 canary tests (`EditorRedactionCommandsTests`, adapter test target) use
+the real codec, `HistoryStore` and `ThumbnailImage` with 1× and 2× fixtures.
+They decode the History image, the History thumbnail cache, the refreshed
+on-screen thumbnail and the clipboard stand-in's bytes in fixed sRGB.
+The clipboard adapter is exercised with change-count metadata and synthetic
+AppKit items; the general pasteboard is never touched by these tests.
 
 ## Ticket 23 permission gate
 

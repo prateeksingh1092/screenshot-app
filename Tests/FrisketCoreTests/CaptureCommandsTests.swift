@@ -320,6 +320,22 @@ extension CaptureCommandsTests {
 }
 
 extension CaptureCommandsTests {
+    @Test func doneWithoutAnEditingCodecIsRefusedAndKeepsThePendingCaptureUnchanged() async throws {
+        let log = LocalDiagnosticLog()
+        let clipboard = RecordingClipboard()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([23, 24])),
+                                            clipboard: clipboard, pendingByteLimit: 16, diagnostics: log)
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+        _ = await commands.execute(.capture(revision.captureID, maximumBytes: 2))
+        let redaction = try #require(SolidRedaction(x: 0, y: 0, width: 1, height: 1))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
+        #expect(await commands.execute(.done(revision, edits)) == .rejected(.editingUnavailable))
+        #expect(await commands.image(for: revision)?.pngData == Data([23, 24]))
+        #expect(await clipboard.images.isEmpty)
+        #expect(await log.entries().last?.event == DiagnosticEvent(name: .commandRejected, operation: .done,
+            error: DiagnosticError(domain: .lifecycle, code: .editingUnavailable)))
+    }
+
     @Test func pendingImageQueryIsRevisionBoundAndReleasesAfterCopyOrDiscard() async {
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([21, 22])),
                                             clipboard: RecordingClipboard(), pendingByteLimit: 16)

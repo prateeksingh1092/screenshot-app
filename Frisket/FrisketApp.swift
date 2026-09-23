@@ -18,6 +18,8 @@ import FrisketCore
     private var commands: CaptureCommandLayer?
     private var statusItem: NSStatusItem?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
+    private var screens: [CaptureID: NSScreen] = [:]
+    private var editors: [CaptureID: EditorWindow] = [:]
     private var arrivalOrder: [CaptureID] = []
     private var capturing = false
     private var terminating = false
@@ -33,7 +35,7 @@ import FrisketCore
         commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
-            history: HistoryStore(root: identity.historyRoot))
+            history: HistoryStore(root: identity.historyRoot), codec: PNGBitmapCodec())
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
@@ -95,10 +97,8 @@ import FrisketCore
                     return
                 }
                 let id = revision.captureID
-                let panel = ThumbnailPanel(revision: revision, preview: preview, screen: screen, offset: panels.count,
-                    copy: { [weak self] in self?.copy(id) }, discard: { [weak self] in self?.discard(id) },
-                    dismiss: { [weak self] in self?.dismiss(id) })
-                panels[id] = panel
+                screens[id] = screen
+                panels[id] = makePanel(id, revision: revision, preview: preview, screen: screen, offset: panels.count)
                 arrivalOrder.append(id)
             case .captureFailed(.cancelled): break
             case let .permissionRequired(state):
@@ -107,6 +107,62 @@ import FrisketCore
                 notice("Capture unavailable", "A disconnected display or an oversized capture can prevent capture. Try again with a smaller area.")
             default:
                 notice("Capture unavailable", "Copy or delete pending captures, then try again.")
+            }
+        }
+    }
+
+    private func makePanel(_ id: CaptureID, revision: CaptureRevision, preview: CGImage, screen: NSScreen, offset: Int) -> ThumbnailPanel {
+        ThumbnailPanel(revision: revision, preview: preview, screen: screen, offset: offset,
+            copy: { [weak self] in self?.copy(id) }, discard: { [weak self] in self?.discard(id) },
+            dismiss: { [weak self] in self?.dismiss(id) }, edit: { [weak self] in self?.edit(id) })
+    }
+
+    private func edit(_ id: CaptureID) {
+        guard !terminating, editors[id] == nil, let panel = panels[id], !panel.model.busy, let commands else { return }
+        panel.model.busy = true
+        Task {
+            let screen = screens[id]
+            guard let image = await commands.image(for: panel.revision),
+                  let base = PNGBitmapCodec().decode(image.pngData),
+                  let editor = EditorWindow(base: base, scale: Double(screen?.backingScaleFactor ?? 1), screen: screen,
+                                            finish: { [weak self] edits in self?.finishEditing(id, edits) }) else {
+                panel.model.busy = false
+                notice("Editor unavailable", "This capture can't be edited. Copy, dismiss, or delete it instead.")
+                return
+            }
+            editors[id] = editor
+            editor.show()
+        }
+    }
+
+    private func finishEditing(_ id: CaptureID, _ edits: DocumentEdits?) {
+        editors.removeValue(forKey: id)
+        guard let panel = panels[id], let commands else { return }
+        guard let edits else { panel.model.busy = false; return }
+        Task {
+            guard case let .edited(revision, commit, clipboardFailure) = await commands.execute(.done(panel.revision, edits)) else {
+                panel.model.busy = false
+                notice("Could not finish editing", "The capture is unchanged. Edit it again, or dismiss it to keep it in History.")
+                return
+            }
+            // The unedited preview must not stay on screen once the rendered revision exists.
+            let screen = screens[id] ?? NSScreen.main
+            guard let image = await commands.image(for: revision),
+                  let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480), let screen else {
+                remove(id)
+                if case .finalized(_, .committed) = await commands.execute(.dismiss(revision)) { return }
+                notice("Preview unavailable", "The redacted capture couldn't be shown or kept in History.")
+                return
+            }
+            panel.close()
+            let refreshed = makePanel(id, revision: revision, preview: preview, screen: screen,
+                                      offset: arrivalOrder.firstIndex(of: id) ?? 0)
+            refreshed.model.historyCommitted = commit == .committed
+            refreshed.model.editingUnavailable = commit == .notCommitted(.recoveryRequired)
+            refreshed.model.dismissFailed = commit != .committed
+            panels[id] = refreshed
+            if clipboardFailure != nil {
+                notice("Could not replace the earlier copy", "The clipboard may still contain the original capture. Use Copy on the redacted thumbnail to replace it.")
             }
         }
     }
@@ -122,12 +178,19 @@ import FrisketCore
                 return
             }
             panel.model.historyCommitted = outcome.commit == .committed
+            panel.model.editingUnavailable = outcome.commit == .notCommitted(.recoveryRequired)
             if case .copied = outcome.delivery {
-                if case .notCommitted = outcome.commit {
-                    // Keep the failure visible until acknowledged, even though delivery succeeded.
-                    notice("Could not keep in History", "The capture was copied to the clipboard, but could not be kept in History.")
+                if outcome.commit == .notCommitted(.recoveryRequired) {
+                    notice("History needs recovery", "The capture was copied, but History could not finish keeping it. This capture cannot be edited.")
+                    remove(id)
+                } else if case .notCommitted = outcome.commit {
+                    panel.model.copiedWhilePending = true
+                    panel.model.copyFailed = false
+                    panel.model.dismissFailed = true
+                    notice("Could not keep in History", "The capture was copied. You can still edit it, retry Dismiss, or delete it.")
+                } else {
+                    remove(id)
                 }
-                remove(id)
             } else {
                 panel.model.copyFailed = true
                 panel.model.dismissFailed = !panel.model.historyCommitted
@@ -139,11 +202,13 @@ import FrisketCore
         guard !terminating, let panel = panels[id], !panel.model.busy, let commands else { return }
         panel.model.busy = true
         Task {
-            if case .finalized(_, .committed) = await commands.execute(.dismiss(panel.revision)) {
+            let result = await commands.execute(.dismiss(panel.revision))
+            if case .finalized(_, .committed) = result {
                 panel.showKeptInHistory()
                 try? await Task.sleep(for: .seconds(1.2))
                 remove(id)
             } else {
+                if case .finalized(_, .notCommitted(.recoveryRequired)) = result { panel.model.editingUnavailable = true }
                 panel.model.dismissFailed = true
                 panel.model.busy = false
             }
@@ -160,6 +225,7 @@ import FrisketCore
     }
     private func remove(_ id: CaptureID) {
         panels.removeValue(forKey: id)?.close()
+        screens.removeValue(forKey: id)
         arrivalOrder.removeAll { $0 == id }
     }
     @objc private func focusThumbnail() {
@@ -215,6 +281,11 @@ import FrisketCore
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard editors.isEmpty else {
+            reopenAfterQuit = false
+            notice("Finish editing first", "Press Done, or close the editor without changes, then quit again.")
+            return .terminateCancel
+        }
         guard !capturing, !requestingPermission, !panels.values.contains(where: { $0.model.busy }) else {
             reopenAfterQuit = false
             notice("Finish the current action", "Cancel selection with Escape or wait for Copy, then quit again.")

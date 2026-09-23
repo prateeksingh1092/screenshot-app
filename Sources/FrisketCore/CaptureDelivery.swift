@@ -20,7 +20,12 @@ public struct ClipboardImage: Equatable, Sendable {
     public let pngData: Data
     public let currentHostOnly = true
     public let concealed = true
-    public init(pngData: Data) { self.pngData = pngData }
+    /// Metadata-only guard for replacing this app's earlier copy. Nil means an explicit Copy.
+    public let replacing: ClipboardReceipt?
+    public init(pngData: Data, replacing: ClipboardReceipt? = nil) {
+        self.pngData = pngData
+        self.replacing = replacing
+    }
 }
 
 public struct ClipboardReceipt: Equatable, Sendable {
@@ -28,9 +33,10 @@ public struct ClipboardReceipt: Equatable, Sendable {
     public init(changeCount: Int) { self.changeCount = changeCount }
 }
 
-public enum ClipboardFailure: Error, Equatable, Sendable { case unavailable }
+public enum ClipboardFailure: Error, Equatable, Sendable { case unavailable, changed }
 
-/// Write only. Adapters must honor both privacy flags and return the write's change count.
+/// Write only. Adapters must honor the privacy flags and conditional replacement receipt,
+/// comparing change-count metadata immediately before writing without reading clipboard content.
 public protocol ImageClipboard: Sendable {
     func write(_ image: ClipboardImage) async -> Result<ClipboardReceipt, ClipboardFailure>
 }
