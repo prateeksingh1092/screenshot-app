@@ -4,7 +4,7 @@
 
 **Blocked by:** 26
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/30-editor-close-quit-logout`)
 
 - [ ] Closing with edits asks Finalize (Return, default), Delete capture (destructive, never default), or Cancel (Esc).
 - [ ] Closing without edits finalizes to History (decision 44).
@@ -13,3 +13,16 @@
 - [ ] Seam 1 tests cover each path.
 
 ## Comments
+
+### 2026-09-23 — coordinator
+
+Claimed on `d0190eb` after ticket 29 closed. Coordinator chat implements (Codex/Other Models still limited). Branch `ticket/30-editor-close-quit-logout`.
+
+### 2026-09-23 — implementer
+
+Report: [30-implementer.md](../reports/30-implementer.md). Unchanged close finalizes; edited close offers Finalize / Delete / Cancel; logout during the prompt discards. Manual not run. Status/checkboxes unchanged pending review.
+
+### 2026-09-23 — review
+
+In-chat review vs `d0190eb`: [30-code-review.md](../reviews/30-code-review.md). No blocking findings.
+
