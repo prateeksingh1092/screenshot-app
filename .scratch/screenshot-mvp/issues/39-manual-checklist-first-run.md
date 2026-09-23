@@ -4,10 +4,10 @@
 
 **Blocked by:** 18, 19, 20, 21, 23, 24, 32
 
-**Status:** in-progress (branch `ticket/39-manual-checklist-first-run`)
+**Status:** resolved (harness tested on `main` at `9810f19`; hardware first-run pending)
 
-- [ ] A bundled test-pattern window at known coordinates and a script that checks output dimensions and marker pixels.
-- [ ] Each run records date, OS build, commit, architectures and code signature, display layout, and permission state, with no personal pixels.
+- [x] A bundled test-pattern window at known coordinates and a script that checks output dimensions and marker pixels.
+- [x] Each run records date, OS build, commit, architectures and code signature, display layout, and permission state, with no personal pixels.
 - [ ] Cases: every Screen Recording state; the built-in Retina plus the external 1x display, including negative coordinates and unplug mid-selection; overlays over full-screen apps and across Space switches; Esc without activation; Full Keyboard Access and VoiceOver on all thumbnail actions; each default shortcut triggering one tool; a permission grant surviving two rebuilds.
 - [ ] Prateek performs or approves the hardware steps; results are recorded.
 
@@ -30,3 +30,14 @@ Status/checkboxes unchanged pending review.
 In-chat review vs `9575f6f`: [39-code-review.md](../reviews/39-code-review.md).
 Justified fixes: capture `codesign` stderr, `lipo` the Mach-O, and read
 `_spdisplays_resolution`.
+
+- **Integration:** `integrate/39` fast-forwarded `main` to `9810f19`.
+  `Tools/FirstRun/record.py` writes a pixel-free header; live run against
+  `~/Applications/Frisket.app` recorded macOS 26.7 (25G229), x86_64, team
+  `9M43Q952NK`, one built-in Retina 3584×2240 / 1792×1120, 21 cases pending.
+  `FrisketTestPattern` remains the 320×180 centred verifier. Root `swift test`:
+  292 tests in 43 suites passed. Unsigned x86_64 `xcodebuild` succeeded
+  (`CODE_SIGNING_ALLOWED=NO`). x86_64 only; arm64 not executed. Coordinator
+  chat after Codex/Other Models limits. Hardware cases in
+  [39-first-run.md](../../../docs/manual-checks/39-first-run.md) remain for
+  Prateek (external 1× display, TCC states, VoiceOver, two rebuilds).
