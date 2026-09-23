@@ -105,4 +105,4 @@ report nor passing tests records acceptance of the recommendation.
 
 ## Coordinator evidence: Vision outside the sandbox (2026-09-22 23:28)
 
-The Cursor coordinator ran `sh Trials/StitcherTrial/scripts/vision-probe.sh` outside Codex's sandbox, with Xcode 26.5 on x86_64, macOS 26.7 (25G229). `visionAssistedAlignmentProbe()` passed in 0.586 s. The probe requires `usedVisionEstimate == true`, so a pixel fallback can't pass it. The -6662 buffer-allocation failures seen in tickets 04 and 05 are specific to Codex's sandbox; Vision-assisted alignment works on this Mac. arm64 was not executed.
+The Cursor coordinator ran `sh Trials/StitcherTrial/scripts/vision-probe.sh` outside Codex's sandbox, with Xcode 26.5 on x86_64, macOS 26.7 (25G229). `visionAssistedAlignmentProbe()` passed in 0.586 s. The probe requires `usedVisionEstimate == true`, so a pixel fallback can't pass it. The -6662 buffer-allocation failures seen in tickets 04 and 05 occurred inside Codex's sandbox and did not recur outside it; the cause hasn't been isolated. Vision-assisted alignment works on this Mac outside the sandbox. arm64 was not executed.
