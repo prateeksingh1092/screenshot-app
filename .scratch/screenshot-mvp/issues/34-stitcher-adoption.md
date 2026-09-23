@@ -4,7 +4,7 @@
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/34-stitcher-adoption`)
 
 - [ ] The stitcher is a pure function from frame sequence to image, with static header and footer detection and alignment scoring; it writes no temporary files.
 - [ ] Either path passes the same tests: synthetic frames with byte-exact expectations; a few recorded real scroll sequences (no personal content, provenance documented) checking height tolerance and no duplicated bands; the 5120×57,600 run under 2 GB.
