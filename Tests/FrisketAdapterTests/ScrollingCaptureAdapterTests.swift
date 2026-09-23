@@ -32,7 +32,7 @@ import Testing
     func prefetchShareableContent() async throws {}
     func selectArea() async -> AreaSelection? {
         AreaSelection(displayID: 7, displayFrame: CGRect(x: 0, y: 0, width: 80, height: 40),
-                      rect: CGRect(x: 0, y: 0, width: 4, height: 2), scale: 1)
+                      rect: CGRect(x: 0, y: 0, width: 4, height: 2), scale: 1, spaceGeneration: 0)
     }
     func hideSelection() { didHideSelection = true }
     func finishCapture() {}
