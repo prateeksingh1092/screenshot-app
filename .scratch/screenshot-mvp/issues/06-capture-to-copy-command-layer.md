@@ -2,7 +2,7 @@
 
 **What to build:** in the core package, a capture command produces a Pending capture from a fixture pixel source and a Copy command delivers it to a recording clipboard stand-in, all through the command layer and the Capture lifecycle coordinator. Verified entirely by `swift test`, no app or Xcode needed.
 
-**Blocked by:** 02
+**Blocked by:** 02, 03 (ticket 02 found the Command Line Tools lack the Swift Testing module; running tests needs Xcode's toolchain)
 
 **Status:** ready-for-agent
 

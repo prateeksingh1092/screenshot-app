@@ -71,6 +71,7 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
 44. **Exit outcomes (confirmed 2026-09-22 during ticket review):** closing the editor without edits finalizes to History; thumbnail timeout, swipe, close, overflow, and Esc finalize to History; Delete capture discards; quit finalizes unedited thumbnails; unplugging a display moves its thumbnail to a remaining display; screen lock leaves it pending.
 45. **Ticket breakdown:** the 40 tickets in `issues/` were approved as drafted (granularity and blocking edges), after Codex's assessment.
 46. **Autonomous implementation (2026-09-22 21:51):** Prateek asked for autonomous execution. Codex (GPT-6 Astra, high) writes all code; the Cursor agent coordinates, runs independent tickets in parallel when dependencies allow, and checks Pocock adherence (implement → tdd → code-review → commit). In-plan builds, tests, and commits after review are approved under this grant. Still gated on Prateek: Apple ID, keychain, or signing-identity changes; capturing real screen content; clipboard use; installs; any paid usage.
+47. **Xcode version (2026-09-22):** pin Xcode 26.5 (17F42, macOS SDK 26.5, Swift 6.3.2), installed from the Mac App Store, instead of the planned 26.6. Revisit 26.6 later. Swift tests run with Xcode's toolchain via `DEVELOPER_DIR`, because the Command Line Tools lack Swift Testing (found in ticket 02).
 
 ## Evaluation update: Xcode question resolved narrowly
 

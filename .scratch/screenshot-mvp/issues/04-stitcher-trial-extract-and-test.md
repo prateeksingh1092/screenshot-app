@@ -2,7 +2,7 @@
 
 **What to build:** Snapzy's scrolling stitcher, copied from the read-only reference clone, compiles on its own in a scratch package and its deterministic tests pass on this Intel Mac as Swift Testing tests.
 
-**Blocked by:** 02
+**Blocked by:** 02, 03 (ticket 02 found the Command Line Tools lack the Swift Testing module; running tests needs Xcode's toolchain)
 
 **Status:** ready-for-agent
 
