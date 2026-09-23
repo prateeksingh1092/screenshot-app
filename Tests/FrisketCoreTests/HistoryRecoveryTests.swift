@@ -402,14 +402,17 @@ extension HistoryRecoveryTests {
         let id = CaptureID()
         try killAtCommitPoint(.rowCommitted, root: root, id: id)
         let log = LocalDiagnosticLog()
-        let commands = recoveryCommands(HistoryStore.launch(root: root, diagnostics: log))
+        // Crash-helper rows are stamped 1970. Keep them past the default 30-day
+        // window so this launch-gate case is not also an age-eviction case.
+        let commands = recoveryCommands(HistoryStore.launch(root: root,
+            limits: HistoryLimits(retentionDays: 40_000), diagnostics: log))
         #expect(try await commands.historyEntries().get().map(\.captureID) == [id])
         #expect(try await commands.historyEntries().get().map(\.captureID) == [id])
         #expect(await log.entries().map(\.event) == [DiagnosticEvent(name: .historyRecovered, operation: .launchRecovery)])
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
-        _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
+        #expect(await commands.execute(.capture(revision.captureID, maximumBytes: 1024)) == .pending(revision))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
-        #expect(try await commands.historyEntries().get().count == 2)
+        #expect(try await commands.historyEntries().get().map(\.captureID) == [id, revision.captureID])
         #expect(await log.entries().count == 1)
     }
 

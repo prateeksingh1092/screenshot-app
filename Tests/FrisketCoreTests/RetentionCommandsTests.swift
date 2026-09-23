@@ -265,7 +265,7 @@ extension RetentionCommandsTests {
         let layer = commands(store)
         let revision = await capture(layer)
         #expect(await layer.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
-            commit: .notCommitted(.historyUnavailable), delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+            commit: .notCommitted(.recoveryRequired), delivery: .copied(ClipboardReceipt(changeCount: 1)))))
         #expect(try await layer.historyEntries().get().isEmpty)
     }
 
@@ -297,7 +297,7 @@ extension RetentionCommandsTests {
             if point == .pngSynced { throw EvictionStop.interrupted }
         }))
         let revision = await capture(layer!)
-        #expect(await layer!.execute(.dismiss(revision)) == .finalized(revision, .notCommitted(.historyUnavailable)))
+        #expect(await layer!.execute(.dismiss(revision)) == .finalized(revision, .notCommitted(.recoveryRequired)))
         _ = try await layer!.historyStatus().get()
         layer = nil
         let reopened = commands(HistoryStore(root: root))
