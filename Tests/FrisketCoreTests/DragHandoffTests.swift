@@ -54,7 +54,12 @@ actor RecordingDragHandoff: DragHandoff {
         recordedBytes.append(image.pngData)
         switch order {
         case .writeThenSession:
-            try await events.promiseWriteReturned()
+            do { try await events.promiseWriteReturned() }
+            catch {
+                // AppKit can still end the session after the write event faults.
+                await events.dragSessionEnded()
+                throw error
+            }
             if let afterFirstEvent { await afterFirstEvent() }
             await events.dragSessionEnded()
         case .sessionThenWrite:
@@ -203,7 +208,8 @@ extension DragHandoffTests {
         #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == source.bytes)
         let staged = try stagedDragFiles(root: root)
         #expect(staged.count == 1)
-        #expect(try Data(contentsOf: staged[0]) == source.bytes)
+        let stagedFile = try #require(staged.first)
+        #expect(try Data(contentsOf: stagedFile) == source.bytes)
         #expect(await commands.image(for: revision)?.pngData == source.bytes)
         if point == .dragStaged {
             #expect(await handoff.operations().isEmpty)

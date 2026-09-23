@@ -33,9 +33,9 @@ public actor DragStagingLifetime: DragCopyStaging {
 
     public func promiseWriteReturned(_ id: DragStagingID) async throws {
         guard var copy = staged[id.rawValue], !copy.writeReturned else { return }
+        try commitPoint(.dragPromiseWritten)
         copy.writeReturned = true
         staged[id.rawValue] = copy
-        try commitPoint(.dragPromiseWritten)
         removeIfFinished(id.rawValue)
     }
 

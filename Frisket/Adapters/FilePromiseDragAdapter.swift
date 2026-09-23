@@ -10,20 +10,29 @@ import FrisketCore
         }
     }
 
-    private let staging: DragStagingLifetime
+    private let writeCopy: @Sendable (Data, URL) async throws -> Void
+    private var provider: NSFilePromiseProvider?
     private var active: Active?
     private var queuedWrite: (URL, @Sendable (Error?) -> Void)?
-    private var queuedSessionEnd = false
+    private var queuedSessionEnd: NSDragOperation?
     private var accepting = false
 
-    public init(staging: DragStagingLifetime) { self.staging = staging }
+    public init(staging: DragStagingLifetime) {
+        writeCopy = { try await staging.writePromiseCopy($0, to: $1) }
+    }
+
+    // Filesystem boundary injection for deterministic in-flight write tests.
+    init(writeCopy: @escaping @Sendable (Data, URL) async throws -> Void) {
+        self.writeCopy = writeCopy
+    }
 
     @discardableResult func beginSession(from view: NSView, event: NSEvent, image: NSImage?) -> Bool {
         guard active == nil else { return false }
         accepting = true
         queuedWrite = nil
-        queuedSessionEnd = false
+        queuedSessionEnd = nil
         let provider = NSFilePromiseProvider(fileType: "public.png", delegate: self)
+        self.provider = provider
         let item = NSDraggingItem(pasteboardWriter: provider)
         item.setDraggingFrame(view.bounds, contents: image)
         view.beginDraggingSession(with: [item], event: event, source: self)
@@ -37,7 +46,10 @@ import FrisketCore
             queuedWrite.1(promiseError())
             self.queuedWrite = nil
         }
-        if let active, active.resumed, active.sessionHandled { self.active = nil }
+        if let active, active.resumed, active.sessionHandled {
+            self.active = nil
+            provider = nil
+        }
     }
 
     public func deliver(_ operation: DragFileOperation, image: DragImage, events: any DragCopyEvents) async throws -> DragDelivery {
@@ -48,9 +60,10 @@ import FrisketCore
             current.completion = queuedWrite.1
             self.queuedWrite = nil
         }
-        if queuedSessionEnd {
+        if let queuedSessionEnd {
             current.sessionEnded = true
-            queuedSessionEnd = false
+            current.sessionAccepted = queuedSessionEnd == .copy
+            self.queuedSessionEnd = nil
         }
         active = current
         return try await withCheckedThrowingContinuation { continuation in
@@ -64,7 +77,7 @@ import FrisketCore
     }
 
     public nonisolated func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        MainActor.assumeIsolated { self.noteSessionEnded() }
+        MainActor.assumeIsolated { _ = self.noteSessionEnded(operation: operation) }
     }
 
     public func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String) -> String {
@@ -78,7 +91,7 @@ import FrisketCore
         MainActor.assumeIsolated { self.notePromiseDestination(url, completion: completionHandler) }
     }
 
-    private func notePromiseDestination(_ url: URL, completion: @escaping @Sendable (Error?) -> Void) {
+    func notePromiseDestination(_ url: URL, completion: @escaping @Sendable (Error?) -> Void) {
         guard accepting || active != nil else {
             completion(promiseError())
             return
@@ -92,41 +105,54 @@ import FrisketCore
         }
     }
 
-    private func noteSessionEnded() {
+    @discardableResult func noteSessionEnded(operation: NSDragOperation) -> Task<Void, Never>? {
         if let active {
             active.sessionEnded = true
-            Task { await self.pump(active) }
+            active.sessionAccepted = operation == .copy
+            return Task { await self.pump(active) }
         } else if accepting {
-            queuedSessionEnd = true
+            queuedSessionEnd = operation
         }
+        return nil
     }
 
     private func pump(_ active: Active) async {
-        if let url = active.destination, let completion = active.completion, !active.writeHandled {
-            active.writeHandled = true
+        // Callback tasks can reenter while a write or lifetime event is suspended.
+        // Starting an operation prevents duplicates; only its return permits delivery.
+        if let url = active.destination, let completion = active.completion, !active.writeStarted {
+            active.writeStarted = true
             var failed = false
-            do { try await staging.writePromiseCopy(active.image.pngData, to: url) }
+            do { try await writeCopy(active.image.pngData, url) }
             catch { failed = true }
             active.writeFailed = failed
             completion(failed ? promiseError() : nil)
             do { try await active.events.promiseWriteReturned() }
             catch {
+                active.writeHandled = true
                 resume(active, throwing: error)
                 return
             }
+            active.writeHandled = true
         }
-        if active.sessionEnded && !active.sessionHandled {
-            active.sessionHandled = true
+        if active.sessionEnded && !active.sessionStarted {
+            active.sessionStarted = true
             await active.events.dragSessionEnded()
+            active.sessionHandled = true
         }
         finishIfReady(active)
     }
 
     private func finishIfReady(_ active: Active) {
-        guard !active.resumed else { return }
+        guard !active.resumed else {
+            if active.sessionHandled {
+                self.active = nil
+                provider = nil
+            }
+            return
+        }
         if active.writeHandled && active.sessionHandled {
             resume(active, returning: active.writeFailed ? .failed : .copied)
-        } else if active.sessionHandled && active.destination == nil {
+        } else if active.sessionHandled && !active.sessionAccepted && active.destination == nil {
             resume(active, returning: .failed)
         }
     }
@@ -134,13 +160,20 @@ import FrisketCore
     private func resume(_ active: Active, returning delivery: DragDelivery) {
         guard let continuation = active.continuation, !active.resumed else { return }
         active.resumed = true
-        if active.sessionHandled { self.active = nil }
+        if active.sessionHandled {
+            self.active = nil
+            provider = nil
+        }
         continuation.resume(returning: delivery)
     }
 
     private func resume(_ active: Active, throwing error: Error) {
         guard let continuation = active.continuation, !active.resumed else { return }
         active.resumed = true
+        if active.sessionHandled {
+            self.active = nil
+            provider = nil
+        }
         continuation.resume(throwing: error)
     }
 
@@ -154,7 +187,10 @@ import FrisketCore
         var destination: URL?
         var completion: (@Sendable (Error?) -> Void)?
         var sessionEnded = false
+        var sessionAccepted = false
+        var writeStarted = false
         var writeHandled = false
+        var sessionStarted = false
         var sessionHandled = false
         var writeFailed = false
         var resumed = false
