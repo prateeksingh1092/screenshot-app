@@ -20,13 +20,14 @@ private func runCheck(_ arguments: [String]) throws -> (status: Int32, output: S
     return (process.terminationStatus, String(decoding: output, as: UTF8.self))
 }
 
-@Test(arguments: ["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory", "input-monitoring"])
+@Test(arguments: ["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory", "input-monitoring", "app-sources"])
 func repositorySatisfiesStaticChecks(check: String) throws {
     let result = try runCheck(["--root", repository.path, "--check", check])
     #expect(result.status == 0, Comment(rawValue: result.output))
 }
 
 @Test(arguments: [
+    "app-sources-rejected", "app-sources-accepted",
     "input-hot-key-duplicate-rejected", "input-hot-key-single-accepted",
     "input-monitoring-rejected", "input-monitoring-accepted", "dependencies-rejected", "dependencies-accepted", "dependencies-lockfile-rejected",
     "imports-rejected", "imports-accepted", "imports-qualified-type-rejected", "imports-interpolation-rejected",

@@ -190,6 +190,39 @@ def input_monitoring_issues(files):
     return issues
 
 
+def app_source_issues(root):
+    # Parse the project rather than depending on Xcode's formatting or comments.
+    project_path = root / "Frisket.xcodeproj" / "project.pbxproj"
+    result = subprocess.run(
+        ["/usr/bin/plutil", "-convert", "json", "-o", "-", str(project_path)],
+        capture_output=True, text=True, timeout=30
+    )
+    if result.returncode:
+        raise ValueError(result.stderr.strip() or result.stdout.strip())
+    project = json.loads(result.stdout)
+    objects = project["objects"]
+    paths = set()
+
+    def visit(identifier, parent, ancestors):
+        if identifier in ancestors:
+            raise ValueError("cyclic project group")
+        item = objects[identifier]
+        tree = item.get("sourceTree", "<group>")
+        if tree not in {"<group>", "SOURCE_ROOT"}:
+            return
+        base = pathlib.PurePosixPath() if tree == "SOURCE_ROOT" else parent
+        path = pathlib.PurePosixPath(os.path.normpath(base / item.get("path", "")))
+        if (item["isa"] == "PBXFileReference" and path.parts[:1] == ("Frisket",)
+                and path.suffix == ".swift"):
+            paths.add(path.as_posix())
+        for child in item.get("children", []):
+            visit(child, path, ancestors | {identifier})
+
+    visit(objects[project["rootObject"]]["mainGroup"], pathlib.PurePosixPath(), set())
+    return [f"{path}: explicit app-source reference; use the synchronized Frisket folder"
+            for path in sorted(paths)]
+
+
 def upstream_identity(text):
     normalized = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().casefold()
     normalized = " ".join(normalized.split())
@@ -324,6 +357,8 @@ def dumped_manifest(root):
 
 
 def repository_issues(root, check):
+    if check == "app-sources":
+        return app_source_issues(root)
     if check == "dependencies":
         lockfile = root / "Package.resolved"
         resolved = json.loads(lockfile.read_text()) if lockfile.exists() else None
@@ -348,7 +383,7 @@ if __name__ == "__main__":
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--fixture", type=pathlib.Path)
     mode.add_argument("--root", type=pathlib.Path)
-    parser.add_argument("--check", choices=["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory", "input-monitoring"])
+    parser.add_argument("--check", choices=["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory", "input-monitoring", "app-sources"])
     args = parser.parse_args()
     try:
         if args.fixture:
