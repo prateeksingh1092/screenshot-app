@@ -82,6 +82,8 @@ verification build. Screen Recording must already be granted
     test setup, Copy the pattern. The thumbnail remains with Copied, Edit,
     Delete and Dismiss. Edit, redact and Done without copying anything else:
     paste the result into Preview under `.build/` and run `--verify-redacted`.
+    While History remains unavailable, Edit again, cover another synthetic
+    region, and Done. The unchanged clipboard must now contain both redactions.
     Repeat, copying an unrelated synthetic text marker between Copy and Done;
     that marker must remain on the clipboard. A capture whose History write
     was interrupted cannot be edited. Automated fault-injection tests cover
@@ -89,8 +91,14 @@ verification build. Screen Recording must already be granted
 
 14. If conditional clipboard replacement fails, expect “Could not replace the
     earlier copy” and a refreshed redacted thumbnail. Explicit Copy must deliver
-    the redacted result. Memory-budget rejection must report that editing was
-    not completed, without claiming the original was redacted.
+    the redacted result. Encoding failure or memory-budget rejection must keep
+    the editor open with its redactions and undo history intact, leave thumbnail
+    actions disabled, and offer Retry Done without suggesting saving the original.
+    While Done is pending, repeated Done, Undo, canvas edits and closing must not
+    change the submitted document. After a successful retry, the editor closes
+    and every output contains the redacted result. Automated fault-injection
+    tests cover rejection and retry; this checklist does not require changing
+    the production memory budget or encoder.
 
 The editor tracer doesn't yet implement ticket 30's Finalize / Delete capture
 / Cancel prompt or quit choices, ticket 27's crop, or ticket 31's editor Copy,

@@ -125,7 +125,7 @@ import FrisketCore
             guard let image = await commands.image(for: panel.revision),
                   let base = PNGBitmapCodec().decode(image.pngData),
                   let editor = EditorWindow(base: base, scale: Double(screen?.backingScaleFactor ?? 1), screen: screen,
-                                            finish: { [weak self] edits in self?.finishEditing(id, edits) }) else {
+                                            finish: { [weak self] edits in await self?.finishEditing(id, edits) ?? false }) else {
                 panel.model.busy = false
                 notice("Editor unavailable", "This capture can't be edited. Copy, dismiss, or delete it instead.")
                 return
@@ -135,36 +135,38 @@ import FrisketCore
         }
     }
 
-    private func finishEditing(_ id: CaptureID, _ edits: DocumentEdits?) {
-        editors.removeValue(forKey: id)
-        guard let panel = panels[id], let commands else { return }
-        guard let edits else { panel.model.busy = false; return }
-        Task {
-            guard case let .edited(revision, commit, clipboardFailure) = await commands.execute(.done(panel.revision, edits)) else {
-                panel.model.busy = false
-                notice("Could not finish editing", "The capture is unchanged. Edit it again, or dismiss it to keep it in History.")
-                return
-            }
-            // The unedited preview must not stay on screen once the rendered revision exists.
-            let screen = screens[id] ?? NSScreen.main
-            guard let image = await commands.image(for: revision),
-                  let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480), let screen else {
-                remove(id)
-                if case .finalized(_, .committed) = await commands.execute(.dismiss(revision)) { return }
-                notice("Preview unavailable", "The redacted capture couldn't be shown or kept in History.")
-                return
-            }
-            panel.close()
-            let refreshed = makePanel(id, revision: revision, preview: preview, screen: screen,
-                                      offset: arrivalOrder.firstIndex(of: id) ?? 0)
-            refreshed.model.historyCommitted = commit == .committed
-            refreshed.model.editingUnavailable = commit == .notCommitted(.recoveryRequired)
-            refreshed.model.dismissFailed = commit != .committed
-            panels[id] = refreshed
-            if clipboardFailure != nil {
-                notice("Could not replace the earlier copy", "The clipboard may still contain the original capture. Use Copy on the redacted thumbnail to replace it.")
-            }
+    private func finishEditing(_ id: CaptureID, _ edits: DocumentEdits?) async -> Bool {
+        guard let panel = panels[id], let commands else { return false }
+        guard let edits else {
+            editors.removeValue(forKey: id)
+            panel.model.busy = false
+            return true
         }
+        guard case let .edited(revision, commit, clipboardFailure) = await commands.execute(.done(panel.revision, edits)) else {
+            notice("Could not finish editing", "Your edits are still open. Done could not prepare the redacted result. Retry Done to finish editing.")
+            return false
+        }
+        editors.removeValue(forKey: id)
+        // The unedited preview must not stay on screen once the rendered revision exists.
+        let screen = screens[id] ?? NSScreen.main
+        guard let image = await commands.image(for: revision),
+              let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480), let screen else {
+            remove(id)
+            if case .finalized(_, .committed) = await commands.execute(.dismiss(revision)) { return true }
+            notice("Preview unavailable", "The redacted capture couldn't be shown or kept in History.")
+            return true
+        }
+        panel.close()
+        let refreshed = makePanel(id, revision: revision, preview: preview, screen: screen,
+                                  offset: arrivalOrder.firstIndex(of: id) ?? 0)
+        refreshed.model.historyCommitted = commit == .committed
+        refreshed.model.editingUnavailable = commit == .notCommitted(.recoveryRequired)
+        refreshed.model.dismissFailed = commit != .committed
+        panels[id] = refreshed
+        if clipboardFailure != nil {
+            notice("Could not replace the earlier copy", "The clipboard may still contain the original capture. Use Copy on the redacted thumbnail to replace it.")
+        }
+        return true
     }
 
     private func copy(_ id: CaptureID) {

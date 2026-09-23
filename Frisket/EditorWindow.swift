@@ -91,10 +91,11 @@ import FrisketCore
     private let undoButton = NSButton(title: "Undo", target: nil, action: nil)
     private let closeButton = NSButton(title: "Close Without Changes", target: nil, action: nil)
     private let doneButton = NSButton(title: "Done", target: nil, action: nil)
-    /// Called once: with the edits for Done, or nil when closed without changes.
-    private var finish: ((DocumentEdits?) -> Void)?
+    private var finishing = false
+    /// Close only after the command accepts the edits (or the unchanged close).
+    private var finish: ((DocumentEdits?) async -> Bool)?
 
-    init?(base: Bitmap, scale: Double, screen: NSScreen?, finish: @escaping (DocumentEdits?) -> Void) {
+    init?(base: Bitmap, scale: Double, screen: NSScreen?, finish: @escaping (DocumentEdits?) async -> Bool) {
         guard let edits = DocumentEdits(scale: scale) else { return nil }
         self.base = base
         self.edits = edits
@@ -172,12 +173,17 @@ import FrisketCore
     private func refresh() {
         let rendered = DocumentRenderer.render(EditorDocument(base: base, edits: edits))
         canvas.rendered = PNGBitmapCodec.image(rendered).map { NSImage(cgImage: $0, size: documentSize) }
-        for button in toolButtons { button.state = button.tag == activeTool ? .on : .off }
-        undoButton.isEnabled = !undoStack.isEmpty
-        closeButton.isEnabled = edits.redactions.isEmpty
+        for button in toolButtons {
+            button.state = button.tag == activeTool ? .on : .off
+            button.isEnabled = !finishing
+        }
+        undoButton.isEnabled = !finishing && !undoStack.isEmpty
+        closeButton.isEnabled = !finishing && edits.redactions.isEmpty
+        doneButton.isEnabled = !finishing
     }
 
     private func applyDrag(from start: CGPoint, to end: CGPoint) {
+        guard !finishing else { return }
         var next = edits
         guard tools[activeTool].applyDrag(from: start, to: end, to: &next) else { return }
         undoStack.append(edits)
@@ -186,11 +192,13 @@ import FrisketCore
     }
 
     @objc private func selectTool(_ sender: NSButton) {
+        guard !finishing else { return }
         activeTool = sender.tag
         refresh()
     }
 
     @objc private func undo() {
+        guard !finishing else { return }
         guard let previous = undoStack.popLast() else { return }
         edits = previous
         refresh()
@@ -205,16 +213,25 @@ import FrisketCore
     }
 
     private func end(with result: DocumentEdits?) {
-        guard let finish else { return }
-        self.finish = nil
-        window.delegate = nil
-        window.orderOut(nil)
-        window.contentView = nil
-        canvas.rendered = nil
-        finish(result)
+        guard !finishing, let finish else { return }
+        finishing = true
+        refresh()
+        Task {
+            guard await finish(result) else {
+                finishing = false
+                refresh()
+                return
+            }
+            self.finish = nil
+            window.delegate = nil
+            window.orderOut(nil)
+            window.contentView = nil
+            canvas.rendered = nil
+        }
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !finishing else { return false }
         guard edits.redactions.isEmpty else {
             // Returning to the unedited capture would keep pixels the user chose to redact.
             let alert = NSAlert()

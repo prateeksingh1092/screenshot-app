@@ -19,6 +19,7 @@ actor CaptureLifecycleCoordinator {
     private var revisions: [CaptureID: UInt64] = [:]
     private var copyReceipts: [CaptureID: ClipboardReceipt] = [:]
     private var recoveryRequired: Set<CaptureID> = []
+    private var unfinishedRedactions: Set<CaptureID> = []
 
     init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
          clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?, codec: (any BitmapCodec)?) {
@@ -51,6 +52,7 @@ actor CaptureLifecycleCoordinator {
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
             guard images[id] != nil || finalized.contains(id) else { return .rejected(.unknownCapture) }
             guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
+            guard !unfinishedRedactions.contains(id) else { return .rejected(.editingUnavailable) }
             guard !finalized.contains(id) || images[id] != nil else { return .rejected(.alreadyFinalized) }
             guard let image = images[id] else { return .rejected(.unknownCapture) }
             inProgress.insert(id)
@@ -79,6 +81,9 @@ actor CaptureLifecycleCoordinator {
             guard !finalized.contains(id) else { return .rejected(.alreadyFinalized) }
             guard !recoveryRequired.contains(id) else { return .rejected(.editingUnavailable) }
             guard let image = images[id] else { return .rejected(.alreadyDelivered) }
+            // Once redaction is submitted, a rejected render must not expose the
+            // original to delivery or History. Only an accepted Done or Delete resolves it.
+            if !edits.redactions.isEmpty { unfinishedRedactions.insert(id) }
             guard let codec, let base = codec.decode(image.pngData),
                   let pngData = codec.encode(DocumentRenderer.render(EditorDocument(base: base, edits: edits))),
                   !pngData.isEmpty else { return .rejected(.editingUnavailable) }
@@ -91,16 +96,22 @@ actor CaptureLifecycleCoordinator {
             pendingBytes += pngData.count - image.pngData.count
             images[id] = CaptureImage(pngData: pngData)
             revisions[id] = next.number
+            unfinishedRedactions.remove(id)
             // Retry state belonged to the previous revision's Copy.
             failedDelivery.remove(id)
             copyCommits.removeValue(forKey: id)
             delivered.remove(id)
             inProgress.insert(id)
             var clipboardFailure: ClipboardFailure?
-            if !edits.redactions.isEmpty, let receipt = copyReceipts.removeValue(forKey: id) {
+            if !edits.redactions.isEmpty, let receipt = copyReceipts[id] {
                 // Do this even if History is unavailable; clipboard privacy is independent
                 // of persistence. The adapter checks and writes without a suspension.
-                if case .failure(.unavailable) = await clipboard.write(ClipboardImage(pngData: pngData, replacing: receipt)) {
+                switch await clipboard.write(ClipboardImage(pngData: pngData, replacing: receipt)) {
+                case let .success(replacement):
+                    copyReceipts[id] = replacement
+                case .failure(.changed):
+                    copyReceipts.removeValue(forKey: id)
+                case .failure(.unavailable):
                     clipboardFailure = .unavailable
                 }
             }
@@ -108,6 +119,7 @@ actor CaptureLifecycleCoordinator {
                 ?? .notCommitted(.historyUnavailable)
             if commit == .committed { finalized.insert(id) }
             if commit == .notCommitted(.recoveryRequired) { recoveryRequired.insert(id) }
+            if finalized.contains(id) || recoveryRequired.contains(id) { copyReceipts.removeValue(forKey: id) }
             inProgress.remove(id)
             return .edited(next, commit, clipboardFailure: clipboardFailure)
         case let .discard(id):
@@ -122,6 +134,7 @@ actor CaptureLifecycleCoordinator {
             failedDelivery.remove(id)
             copyReceipts.removeValue(forKey: id)
             discarded.insert(id)
+            unfinishedRedactions.remove(id)
             return .discarded(id)
         case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes):
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
@@ -168,6 +181,7 @@ actor CaptureLifecycleCoordinator {
                 return .rejected(.unknownCapture)
             }
             guard revision.number == currentRevision(revision.captureID) else { return .rejected(.staleRevision) }
+            guard !unfinishedRedactions.contains(revision.captureID) else { return .rejected(.editingUnavailable) }
             guard !delivered.contains(revision.captureID) else { return .rejected(.alreadyDelivered) }
             guard let image = images[revision.captureID] else { return .rejected(.unknownCapture) }
             if case .retryCopy = command {

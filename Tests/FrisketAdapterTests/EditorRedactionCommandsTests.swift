@@ -4,6 +4,7 @@ import Foundation
 import FrisketCore
 @testable import FrisketAdapters
 import ImageIO
+import Synchronization
 import Testing
 
 private struct RGBA: Hashable { let r, g, b, a: UInt8 }
@@ -318,6 +319,61 @@ private actor FailingOnceClipboard: ImageClipboard {
 
 private enum InterruptedCommit: Error { case stopped }
 
+/// Fault injection at the encoding boundary; subsequent attempts use the real PNG codec.
+private final class RejectOnceCodec: BitmapCodec {
+    private let attempted = Mutex(false)
+    let oversizedBytes: Int?
+    init(oversizedBytes: Int?) { self.oversizedBytes = oversizedBytes }
+    func decode(_ pngData: Data) -> Bitmap? { PNGBitmapCodec().decode(pngData) }
+    func encode(_ bitmap: Bitmap) -> Data? {
+        let first = attempted.withLock { attempted in
+            defer { attempted = true }
+            return !attempted
+        }
+        if first { return oversizedBytes.map { Data(repeating: 0, count: $0) } }
+        return PNGBitmapCodec().encode(bitmap)
+    }
+}
+
+extension EditorRedactionCommandsTests {
+    @Test(arguments: [false, true])
+    private func rejectedRedactionDoneCannotDeliverTheOriginalAndCanRetry(oversized: Bool) async throws {
+        let fixture = CanaryCase.all[0]
+        let root = historyRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let clipboard = RecordingClipboard()
+        let png = try fixture.png()
+        let limit = png.count + 1_000
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
+            clipboard: clipboard, pendingByteLimit: limit, history: HistoryStore(root: root),
+            codec: RejectOnceCodec(oversizedBytes: oversized ? limit + 1 : nil))
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
+        let edits = try fixture.edits()
+        _ = await commands.execute(.capture(id, maximumBytes: limit))
+        #expect(await commands.execute(.done(original, edits)) ==
+            .rejected(oversized ? .pendingByteBudgetExceeded : .editingUnavailable))
+
+        // A failed Done must not turn Dismiss, Copy or Quit's Dismiss into an original-pixel leak.
+        #expect(await commands.execute(.dismiss(original)) == .rejected(.editingUnavailable))
+        #expect(await commands.execute(.copy(original)) == .rejected(.editingUnavailable))
+        #expect(await commands.execute(.retryCopy(original)) == .rejected(.editingUnavailable))
+        #expect(try await commands.historyEntries().get().isEmpty)
+        #expect(await clipboard.images.isEmpty)
+
+        #expect(await commands.execute(.done(original, edits)) == .edited(rendered, .committed))
+        let entry = try #require(try await commands.historyEntries().get().first)
+        expectRedacted(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))), fixture)
+        let image = try #require(await commands.image(for: rendered))
+        expectRedacted(try decodeSRGB(try #require(ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480))), fixture)
+        guard case .copy = await commands.execute(.copy(rendered)) else {
+            Issue.record("The accepted redaction must remain deliverable")
+            return
+        }
+        expectRedacted(try decodeSRGB(try #require(await clipboard.images.last).pngData), fixture)
+    }
+}
+
 extension EditorRedactionCommandsTests {
     @Test(arguments: HistoryCommitPoint.allCases.filter { $0 != .rowCommitted && $0 != .thumbnailCached })
     private func anInterruptedHistoryWriteCannotBecomeAnEditableOriginal(point: HistoryCommitPoint) async throws {
@@ -353,6 +409,28 @@ extension EditorRedactionCommandsTests {
 }
 
 extension EditorRedactionCommandsTests {
+    @Test(arguments: CanaryCase.all) @MainActor
+    private func repeatedDoneReplacesTheEarlierCopyWhileHistoryRemainsUnavailable(fixture: CanaryCase) async throws {
+        let destination = ConditionalPasteboard()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 4_000_000, codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let first = CaptureRevision(captureID: id, number: 2)
+        let second = CaptureRevision(captureID: id, number: 3)
+        _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
+        _ = await commands.execute(.copy(original))
+        let allEdits = try fixture.edits()
+        let firstEdits = try #require(DocumentEdits(scale: fixture.scale, redactions: [allEdits.redactions[0]]))
+        #expect(await commands.execute(.done(original, firstEdits)) == .edited(first, .notCommitted(.historyUnavailable)))
+        let secondEdits = try #require(DocumentEdits(scale: fixture.scale, redactions: [allEdits.redactions[1]]))
+        #expect(await commands.execute(.done(first, secondEdits)) == .edited(second, .notCommitted(.historyUnavailable)))
+
+        #expect(destination.changeCount == 43)
+        expectRedacted(try decodeSRGB(try #require(destination.items.first?.data(forType: .png))), fixture)
+        expectRedacted(try decodeSRGB(try #require(await commands.image(for: second)).pngData), fixture)
+    }
+
     @Test @MainActor
     private func replacementFailureIsReportedAndExplicitCopyCanDeliverTheRenderedRevision() async throws {
         let fixture = CanaryCase.all[0]
