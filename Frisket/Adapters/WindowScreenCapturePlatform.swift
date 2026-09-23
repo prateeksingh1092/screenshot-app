@@ -54,7 +54,7 @@ import FrisketCore
         return ordered.compactMap { entry in
             guard let id = (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
                   let window = byID[id], let owner = window.owningApplication,
-                  let ownerBundle = owner.bundleIdentifier, !exclusions().contains(ownerBundle),
+                  !exclusions().contains(owner.bundleIdentifier),
                   (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == owner.processID,
                   let layer = (entry[kCGWindowLayer as String] as? NSNumber)?.intValue,
                   layer == window.windowLayer else { return nil }
@@ -63,7 +63,7 @@ import FrisketCore
             // query and CG's ordered-on-screen list excludes minimized windows;
             // do not use isActive (off-screen Stage Manager windows can be active).
             return WindowCandidate(id: id, ownerProcessID: owner.processID,
-                bundleIdentifier: ownerBundle, frame: window.frame, layer: layer,
+                bundleIdentifier: owner.bundleIdentifier, frame: window.frame, layer: layer,
                 isOnScreen: onScreen, isMinimized: !onScreen)
         }
     }
