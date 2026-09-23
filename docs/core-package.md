@@ -141,6 +141,15 @@ The native probe is built separately by `bash Tools/Performance/build-probe.sh`.
 Measurement gates, definitions, commands, and the ticket 38 log interface are in
 [the ticket 37 operator runbook](manual-checks/37-performance-baselines.md).
 
+Ticket 38 connects opt-in `FRISKET_CAPTURE_LATENCY=1` app stdout logging to area
+and full-screen selection acceptance and thumbnail presentation submission, using
+one monotonic nanosecond clock. The numeric JSONL rows feed ticket 37's existing
+`app-latency` and `report` commands. See the
+[Frisket measurement handoff](manual-checks/38-frisket-performance.md) for exact
+endpoints, operator commands, limitations, and the pending comparison table.
+Live baselines, low-power GPU confirmation and Prateek's target ratification
+remain pending; the 500 ms placeholder is unchanged.
+
 For the stitcher the upstream files had descriptive banners, not per-file licence
 text. The complete upstream BSD licence is prepended, each original banner is
 preserved, and `licenseHeader` records both. `originalSHA256` records each

@@ -13,6 +13,7 @@ import FrisketCore
 
 @MainActor final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKey = CarbonHotKey()
+    private let latency = CaptureLatencyLog.standardOutput()
     private let permission = ScreenCapturePermissionAdapter(access: SystemScreenRecordingAccess())
     private lazy var platform = ScreenCapturePlatform(permission: permission)
     private var commands: CaptureCommandLayer?
@@ -30,8 +31,8 @@ import FrisketCore
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
-        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
-            fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
+        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, latency: latency),
+            fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, latency: latency),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
             history: HistoryStore(root: identity.historyRoot))
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -81,7 +82,7 @@ import FrisketCore
         if recoveryPanel?.window?.isVisible == true { recoveryPanel?.present(); return }
         capturing = true
         Task {
-            defer { capturing = false; refreshPermissionIndicator() }
+            defer { latency.cancel(); capturing = false; refreshPermissionIndicator() }
             let result = await commands.execute(command)
             switch result {
             case let .pending(revision):
@@ -100,6 +101,9 @@ import FrisketCore
                     dismiss: { [weak self] in self?.dismiss(id) })
                 panels[id] = panel
                 arrivalOrder.append(id)
+                // Downsampling and orderFrontRegardless have completed. This is
+                // presentation submission, not a physical-display timestamp.
+                latency.thumbnailSubmitted()
             case .captureFailed(.cancelled): break
             case let .permissionRequired(state):
                 showPermissionRecovery(state)

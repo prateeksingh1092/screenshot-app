@@ -28,9 +28,11 @@ struct AreaCaptureRequest {
 @MainActor final class AreaCaptureSource: CapturePixelSource {
     private let platform: any AreaCapturePlatform
     private let bundleIdentifier: String
-    init(platform: any AreaCapturePlatform, bundleIdentifier: String) {
+    private let latency: CaptureLatencyLog?
+    init(platform: any AreaCapturePlatform, bundleIdentifier: String, latency: CaptureLatencyLog? = nil) {
         self.platform = platform
         self.bundleIdentifier = bundleIdentifier
+        self.latency = latency
     }
 
     func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
@@ -39,6 +41,7 @@ struct AreaCaptureRequest {
         catch let failure as CaptureSourceFailure { return .failure(failure) }
         catch { return .failure(.unavailable) }
         let selection = await platform.selectArea()
+        if selection != nil { latency?.selectionAccepted() }
         platform.hideSelection()
         guard let selection else { return .failure(.cancelled) }
         let clipped = selection.rect.intersection(selection.displayFrame)

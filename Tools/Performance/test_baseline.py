@@ -6,6 +6,33 @@ import baseline
 
 
 class BaselineTests(unittest.TestCase):
+    def test_app_report_labels_submission_instead_of_physical_visibility(self):
+        metadata = dict(date="2026-09-23", os_build="test", architecture="x86_64",
+                        tool="frisket", gpu="unknown", low_power_confirmed=False)
+        idle = dict(seconds=600, cpu_percent_one_core=0.5,
+                    package_wakeups_per_second=0.1, interrupt_wakeups_per_second=0.2,
+                    footprint_end_bytes=2097152, footprint_peak_sampled_bytes=3145728)
+        rows = ''.join('{"run":%d,"start_ns":1000000000,"end_ns":1100000000}\n' % i
+                       for i in range(1, 21))
+        report = baseline.format_report(metadata, [idle] * 20,
+                                        baseline.parse_app_log(rows), "app-monotonic")
+        self.assertIn('| latency_mid_ms | 100 | 100 |', report)
+        self.assertIn('selection acceptance to thumbnail presentation submission', report)
+        self.assertIn('Physical display presentation is not measured', report)
+        self.assertIn('low-power GPU unconfirmed', report)
+
+    def test_app_log_requires_twenty_committed_rows_without_blank_lines(self):
+        rows = ''.join(json.dumps(dict(run=i, start_ns=i * 1000000000,
+                                      end_ns=i * 1000000000 + i * 1000000)) + '\n'
+                       for i in range(1, 21))
+        metrics = [baseline.latency_metrics(row)['mid_ms']
+                   for row in baseline.parse_app_log(rows)]
+        self.assertEqual(baseline.statistics(metrics),
+                         dict(count=20, median=10.5, p95=19))
+        for bad in (rows.rstrip('\n'), '\n' + rows, rows + '\n'):
+            with self.assertRaises(ValueError):
+                baseline.parse_app_log(bad)
+
     def test_gpu_parser_distinguishes_scanout_from_render_gpu_and_drops_serials(self):
         source = {"SPDisplaysDataType": [
             {"sppci_model": "Intel UHD Graphics 630", "spdisplays_ndrvs":
@@ -45,7 +72,7 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(baseline.latency_metrics(external),
                          {"low_ms": 90, "high_ms": 110, "mid_ms": 100, "error_ms": 10})
         lines = '\n'.join(json.dumps(dict(run=i, start_ns=100, end_ns=1000100))
-                          for i in range(1, 21))
+                          for i in range(1, 21)) + '\n'
         self.assertEqual(baseline.parse_app_log(lines)[0],
                          {"start_low_ns": 100, "start_high_ns": 100,
                           "end_low_ns": 1000100, "end_high_ns": 1000100})

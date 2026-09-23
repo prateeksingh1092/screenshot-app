@@ -178,6 +178,10 @@ def capture_memory_issues(files):
             # file (including POSIX open and writable FileHandle) stay forbidden.
             storage_code = re.sub(r'\bNSWorkspace\s*\.\s*shared\s*\.\s*open\b', 'workspaceLaunch', code)
             storage_code = re.sub(r'\bFileHandle\s*\.\s*nullDevice\b', 'nullDeviceHandle', storage_code)
+            # Ticket 38's opt-in adapter emits only the closed numeric latency
+            # row to inherited stdout. It cannot open a file or accept pixels.
+            if path == "Frisket/Adapters/CaptureLatencyLog.swift":
+                storage_code = re.sub(r'\bFileHandle\s*\.\s*standardOutput\b', 'latencyOutput', storage_code)
             if re.search(write_routes, storage_code):
                 issues.append(f"{path}: app filesystem write bypasses authorized finalization")
             continue
