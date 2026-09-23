@@ -9,6 +9,37 @@ public enum ThumbnailExit: Sendable, CaseIterable {
 
 public enum ThumbnailExitOutcome: Sendable { case finalizeToHistory, discard }
 
+/// Newest-first stack order. Arrow-down is newer; arrow-up is older.
+public enum ThumbnailFocusMove: Sendable { case newer, older }
+
+public enum ThumbnailKeyCommand: Equatable, Sendable {
+    case copy, save, edit, deleteCapture, dismiss, newer, older
+}
+
+/// Single keys and arrows for a focused thumbnail. Modifier chords are ignored.
+public enum ThumbnailKeys {
+    public static func command(characters: String, keyCode: UInt16,
+                               command: Bool = false, option: Bool = false,
+                               control: Bool = false, shift: Bool = false) -> ThumbnailKeyCommand? {
+        guard !command, !option, !control, !shift else { return nil }
+        switch keyCode {
+        case 125: return .newer
+        case 126: return .older
+        case 51, 117: return .deleteCapture
+        case 53: return .dismiss
+        default: break
+        }
+        switch characters.lowercased() {
+        case "c": return .copy
+        case "s": return .save
+        case "e": return .edit
+        case "\u{1b}": return .dismiss
+        case "\u{7f}": return .deleteCapture
+        default: return nil
+        }
+    }
+}
+
 public struct ThumbnailStackPolicy: Sendable {
     public let maximumCount: Int
     public let autoDismissDelay: Duration

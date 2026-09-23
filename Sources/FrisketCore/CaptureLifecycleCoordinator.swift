@@ -29,6 +29,8 @@ actor CaptureLifecycleCoordinator {
     private var copyReceipts: [CaptureID: ClipboardReceipt] = [:]
     private var recoveryRequired: Set<CaptureID> = []
     private var unfinishedRedactions: Set<CaptureID> = []
+    private var stackFocused = false
+    private var focusedCapture: CaptureID?
     // Holds exactly the captures in `images`; update both together.
     private var stack: ThumbnailStack
     private let clock: @Sendable () -> ContinuousClock.Instant
@@ -86,11 +88,43 @@ actor CaptureLifecycleCoordinator {
         return images[revision.captureID]
     }
 
+    func setThumbnailStackFocus(_ focused: Bool) {
+        stackFocused = focused
+        focusedCapture = focused ? stack.cards(at: clock()).first?.revision.captureID : nil
+    }
+
+    func focusedThumbnail() -> CaptureRevision? {
+        guard stackFocused else { return nil }
+        let cards = stack.cards(at: clock())
+        if let id = focusedCapture, let card = cards.first(where: { $0.revision.captureID == id }) {
+            return card.revision
+        }
+        focusedCapture = cards.first?.revision.captureID
+        return cards.first?.revision
+    }
+
+    func moveThumbnailFocus(_ move: ThumbnailFocusMove) -> CaptureRevision? {
+        guard stackFocused else { return nil }
+        let cards = stack.cards(at: clock())
+        guard !cards.isEmpty else {
+            focusedCapture = nil
+            return nil
+        }
+        let current = focusedCapture.flatMap { id in cards.firstIndex { $0.revision.captureID == id } } ?? 0
+        let next = switch move {
+        case .newer: max(current - 1, 0)
+        case .older: min(current + 1, cards.count - 1)
+        }
+        focusedCapture = cards[next].revision.captureID
+        return cards[next].revision
+    }
+
     func thumbnails() -> [ThumbnailCard] {
         stack.cards(at: clock()).map { card in
             let suppressed = automaticExitSuppressed.contains(card.revision.captureID)
+            let pauseTimeout = stackFocused && card.dueExit == .timeout
             return ThumbnailCard(revision: card.revision, expiresAt: card.expiresAt,
-                                 dueExit: suppressed ? nil : card.dueExit,
+                                 dueExit: (suppressed || pauseTimeout) ? nil : card.dueExit,
                                  automaticExitSuppressed: suppressed)
         }
     }
@@ -271,6 +305,9 @@ actor CaptureLifecycleCoordinator {
                 guard !unfinishedRedactions.contains(id) else { return .rejected(.editingUnavailable) }
                 if exit == .timeout || exit == .overflow {
                     guard !automaticExitSuppressed.contains(id) else { return .rejected(.thumbnailExitNotDue) }
+                }
+                if exit == .timeout {
+                    guard !stackFocused else { return .rejected(.thumbnailExitNotDue) }
                 }
                 guard stack.admits(exit, for: id, at: clock()) else { return .rejected(.thumbnailExitNotDue) }
             }
