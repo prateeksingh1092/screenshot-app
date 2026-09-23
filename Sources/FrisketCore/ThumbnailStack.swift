@@ -49,6 +49,12 @@ struct ThumbnailStack: Sendable {
 
     mutating func remove(_ id: CaptureID) { newestFirst.removeAll { $0.revision.captureID == id } }
 
+    /// Keeps arrival order and expiry; only the current revision changes after Done.
+    mutating func replace(_ revision: CaptureRevision) {
+        guard let index = newestFirst.firstIndex(where: { $0.revision.captureID == revision.captureID }) else { return }
+        newestFirst[index].revision = revision
+    }
+
     func cards(at now: ContinuousClock.Instant) -> [ThumbnailCard] {
         newestFirst.enumerated().map { index, card in
             let overflowing = index >= policy.maximumCount

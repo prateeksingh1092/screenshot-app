@@ -7,6 +7,8 @@ import FrisketCore
     @Published var copyFailed = false
     @Published var saveFailed = false
     @Published var dragFailed = false
+    @Published var copiedWhilePending = false
+    @Published var editingUnavailable = false
     @Published var dismissFailed = false
     @Published var keptInHistory = false
     @Published var historyCommitted = false
@@ -21,6 +23,7 @@ struct ThumbnailCardActions {
     let close: () -> Void
     let escape: () -> Void
     let swipe: () -> Void
+    let edit: () -> Void
 }
 
 private struct ThumbnailCard: View {
@@ -36,9 +39,31 @@ private struct ThumbnailCard: View {
             if !model.keptInHistory {
                 ThumbnailCardControls(model: model, actions: actions)
             }
-            Text(model.keptInHistory ? "Kept in History" : model.saveFailed ? (model.historyCommitted ? "Kept in History. Save failed. Retry Save or Close." : "Save failed. Check the export folder in Settings, then Retry Save.") : model.dragFailed ? (model.historyCommitted ? "Kept in History. Drag failed. Drag again or Close." : "Drag failed. Drag again or close to keep in History.") : model.dismissFailed ? "Could not keep in History. Retry Close or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Close." : "Copy failed. Retry Copy or close to keep in History.") : "Close, swipe, or press Esc to keep in History.")
+            Text(status)
                 .font(.caption).fixedSize(horizontal: false, vertical: true)
         }.padding(14).frame(width: 260)
+    }
+
+    private var status: String {
+        if model.keptInHistory { return "Kept in History" }
+        if model.copiedWhilePending { return "Copied. Could not keep in History. Edit, retry Close, or delete." }
+        if model.saveFailed {
+            return model.historyCommitted
+                ? "Kept in History. Save failed. Retry Save or Close."
+                : "Save failed. Check the export folder in Settings, then Retry Save."
+        }
+        if model.dragFailed {
+            return model.historyCommitted
+                ? "Kept in History. Drag failed. Drag again or Close."
+                : "Drag failed. Drag again or close to keep in History."
+        }
+        if model.dismissFailed { return "Could not keep in History. Retry Close or Copy." }
+        if model.copyFailed {
+            return model.historyCommitted
+                ? "Kept in History. Copy failed. Retry Copy or Close."
+                : "Copy failed. Retry Copy or close to keep in History."
+        }
+        return "Close, swipe, or press Esc to keep in History."
     }
 }
 
@@ -51,7 +76,7 @@ private struct ThumbnailCardControls: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack {
-                Button(model.copyFailed ? "Retry Copy" : "Copy", action: actions.copy)
+                Button(model.copiedWhilePending ? "Copied" : model.copyFailed ? "Retry Copy" : "Copy", action: actions.copy)
                     .keyboardShortcut("c", modifiers: [])
                     .focused($copyFocused)
                     .overlay {
@@ -64,9 +89,15 @@ private struct ThumbnailCardControls: View {
                         }
                     }
                     .accessibilityLabel("Copy capture")
+                    .disabled(model.copiedWhilePending)
                 Button(model.saveFailed ? "Retry Save" : "Save", action: actions.save)
                     .keyboardShortcut("s", modifiers: [])
                     .accessibilityLabel(model.saveFailed ? "Retry saving capture" : "Save capture")
+                if !model.historyCommitted && !model.editingUnavailable {
+                    Button("Edit", action: actions.edit)
+                        .keyboardShortcut("e", modifiers: [])
+                        .accessibilityLabel("Edit capture")
+                }
             }
             HStack {
                 if !model.historyCommitted {
@@ -139,7 +170,7 @@ private final class ThumbnailCardPanel: NSPanel {
          startDrag: @escaping (NSView, NSEvent) -> Void) {
         self.revision = revision
         self.displayID = displayID
-        panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 290),
+        panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 320),
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.closeAction = actions.close
         panel.escape = actions.escape
@@ -166,7 +197,7 @@ private final class ThumbnailCardPanel: NSPanel {
             panel.setFrameOrigin(origin)
             panel.orderFrontRegardless()
             NSAccessibility.post(element: panel, notification: .announcementRequested,
-                                 userInfo: [.announcement: "Capture ready. Use Frisket’s Focus Latest Thumbnail menu to copy, save, close, or delete.",
+                                 userInfo: [.announcement: "Capture ready. Use Frisket’s Focus Latest Thumbnail menu to copy, save, edit, close, or delete.",
                                             .priority: NSAccessibilityPriorityLevel.medium.rawValue])
             return
         }

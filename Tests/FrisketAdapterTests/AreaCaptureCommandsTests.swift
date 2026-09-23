@@ -4,6 +4,7 @@ import FrisketCore
 import Testing
 
 @MainActor private final class RecordingPasteboard: PasteboardDestination {
+    var changeCount = 73
     var items: [NSPasteboardItem] = []
     var options: NSPasteboard.ContentsOptions = []
     var succeeds = true

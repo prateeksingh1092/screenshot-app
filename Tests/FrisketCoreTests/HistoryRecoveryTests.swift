@@ -29,7 +29,7 @@ private func interruptedCommit(at root: URL, point: HistoryCommitPoint, id: Capt
     let commands = recoveryCommands(store)
     _ = await commands.execute(.capture(id, maximumBytes: 1024))
     let result = await commands.execute(.dismiss(CaptureRevision(captureID: id, number: 1)))
-    #expect(result == .finalized(CaptureRevision(captureID: id, number: 1), (point == .rowCommitted || point == .thumbnailCached) ? .committed : .notCommitted(.historyUnavailable)))
+    #expect(result == .finalized(CaptureRevision(captureID: id, number: 1), (point == .rowCommitted || point == .thumbnailCached) ? .committed : .notCommitted(.recoveryRequired)))
     try await store.close().get()
 }
 
@@ -155,7 +155,8 @@ private func killAtCommitPoint(_ point: HistoryCommitPoint, root: URL, id: Captu
 
 extension HistoryRecoveryTests {
     @Test func bothCrashTiersCoverTheClosedCommitPointList() {
-        let all = Set(HistoryCommitPoint.allCases)
+        // Drag staging points are covered by DragHandoffTests, not History finalize.
+        let all = Set(HistoryCommitPoint.allCases).subtracting([.dragStaged, .dragPromiseWritten])
         #expect(Set(tierOnePoints) == all)
         #expect(Set(tierTwoPoints) == all)
         #expect(tierOnePoints.count == all.count)
