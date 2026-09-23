@@ -56,9 +56,11 @@ import FrisketCore
 
 private struct ExportSettingsView: View {
     @ObservedObject var settings: ExportSettings
+    @ObservedObject var history: HistorySettings
 
     var body: some View {
         Form {
+            HistorySettingsSection(settings: history)
             Section("Export folder") {
                 Text(settings.folder.path)
                     .textSelection(.enabled)
@@ -90,8 +92,8 @@ private struct ExportSettingsView: View {
 @MainActor final class ExportSettingsWindow {
     private let window: NSWindow
 
-    init(settings: ExportSettings) {
-        window = NSWindow(contentViewController: NSHostingController(rootView: ExportSettingsView(settings: settings)))
+    init(settings: ExportSettings, history: HistorySettings) {
+        window = NSWindow(contentViewController: NSHostingController(rootView: ExportSettingsView(settings: settings, history: history)))
         window.title = "Frisket Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false

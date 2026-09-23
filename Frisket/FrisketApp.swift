@@ -19,6 +19,7 @@ import FrisketCore
     private var commands: CaptureCommandLayer?
     private var dragAdapter: FilePromiseDragAdapter?
     private var statusItem: NSStatusItem?
+    private var historySettings: HistorySettings?
     private var settingsWindow: ExportSettingsWindow?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var screens: [CaptureID: NSScreen] = [:]
@@ -38,7 +39,12 @@ import FrisketCore
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
         let exportSettings = ExportSettings(historyRoot: identity.historyRoot)
-        settingsWindow = ExportSettingsWindow(settings: exportSettings)
+        let historySettings = HistorySettings()
+        self.historySettings = historySettings
+        historySettings.onQuotaEviction = { [weak self] in
+            self?.notice("History size limit reached", "Older captures were removed from History to meet its size limit. Saved exports are unchanged. You can adjust the limit in Settings.")
+        }
+        settingsWindow = ExportSettingsWindow(settings: exportSettings, history: historySettings)
         let windowPlatform = WindowScreenCapturePlatform(permission: permission, bundleIdentifier: identity.bundleIdentifier)
         self.windowPlatform = windowPlatform
         let dragStaging = DragStagingLifetime(directory: identity.historyRoot.appendingPathComponent("staging/drag"))
@@ -49,9 +55,10 @@ import FrisketCore
             windowSource: WindowCaptureSource(platform: windowPlatform, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                 bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
-            history: HistoryStore.launch(root: identity.historyRoot),
+            history: HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits),
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
             drag: dragAdapter, dragStaging: dragStaging, codec: PNGBitmapCodec())
+        if let commands { historySettings.connect(commands) }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
@@ -141,7 +148,10 @@ import FrisketCore
         menu.addItem(item)
     }
 
-    @objc private func showSettings() { settingsWindow?.show() }
+    @objc private func showSettings() {
+        settingsWindow?.show()
+        Task { await historySettings?.refresh() }
+    }
 
     private func add(_ title: String, action: Selector, to menu: NSMenu) {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -273,11 +283,15 @@ import FrisketCore
                 panel.model.copyFailed = true
                 return
             }
+            await historySettings?.refresh()
+            showOversizedNotice(outcome.commit)
             panel.model.historyCommitted = outcome.commit == .committed
             panel.model.editingUnavailable = outcome.commit == .notCommitted(.recoveryRequired)
             if case .copied = outcome.delivery {
                 if outcome.commit == .notCommitted(.recoveryRequired) {
                     notice("History needs recovery", "The capture was copied, but History could not finish keeping it. This capture cannot be edited.")
+                    remove(id)
+                } else if outcome.commit == .notCommitted(.captureExceedsHistoryLimit) {
                     remove(id)
                 } else if case .notCommitted = outcome.commit {
                     panel.model.copiedWhilePending = true
@@ -333,9 +347,11 @@ import FrisketCore
                 panel.model.saveFailed = true
                 return
             }
+            await historySettings?.refresh()
+            showOversizedNotice(outcome.commit)
             panel.model.historyCommitted = outcome.commit == .committed
             if case .saved = outcome.delivery {
-                if case .notCommitted = outcome.commit {
+                if case .notCommitted(let reason) = outcome.commit, reason != .captureExceedsHistoryLimit {
                     notice("Could not keep in History", "The PNG was saved to the export folder, but could not be kept in History.")
                 }
                 remove(id)
@@ -355,16 +371,23 @@ import FrisketCore
         panel.model.busy = true
         Task {
             switch await commands.execute(.exitThumbnail(panel.revision, exit)) {
-            case .finalized(_, .committed):
-                timeouts.removeValue(forKey: id)?.cancel()
-                panel.showKeptInHistory()
-                try? await Task.sleep(for: .seconds(1.2))
-                remove(id)
+            case .finalized(_, let commit):
+                await historySettings?.refresh()
+                showOversizedNotice(commit)
+                if commit == .committed {
+                    timeouts.removeValue(forKey: id)?.cancel()
+                    panel.showKeptInHistory()
+                    try? await Task.sleep(for: .seconds(1.2))
+                    remove(id)
+                } else if commit == .notCommitted(.recoveryRequired) {
+                    panel.model.editingUnavailable = true
+                    panel.model.dismissFailed = true
+                    panel.model.busy = false
+                } else {
+                    panel.model.dismissFailed = true
+                    panel.model.busy = false
+                }
             case .rejected(.thumbnailExitNotDue):
-                panel.model.busy = false
-            case .finalized(_, .notCommitted(.recoveryRequired)):
-                panel.model.editingUnavailable = true
-                panel.model.dismissFailed = true
                 panel.model.busy = false
             default:
                 panel.model.dismissFailed = true
@@ -520,7 +543,10 @@ import FrisketCore
             for id in arrivalOrder {
                 guard let panel = panels[id] else { continue }
                 panel.model.busy = true
-                guard case .finalized(_, .committed) = await commands.execute(.dismiss(panel.revision)) else {
+                let result = await commands.execute(.dismiss(panel.revision))
+                await historySettings?.refresh()
+                if case .finalized(_, let commit) = result { showOversizedNotice(commit) }
+                guard case .finalized(_, .committed) = result else {
                     panel.model.dismissFailed = true
                     panel.model.busy = false
                     terminating = false
@@ -546,6 +572,12 @@ import FrisketCore
             notice("Could not reopen Frisket", "Frisket is quitting. Launch it from ~/Applications/Frisket.app to reopen it.")
         }
     }
+    private func showOversizedNotice(_ commit: CommitOutcome) {
+        if commit == .notCommitted(.captureExceedsHistoryLimit) {
+            notice("Capture exceeds History size limit", "This capture could not be kept in History. Copy and Save remain available. Increase the size limit in Settings to keep larger captures.")
+        }
+    }
+
     private func notice(_ title: String, _ message: String) {
         let alert = NSAlert()
         alert.messageText = title

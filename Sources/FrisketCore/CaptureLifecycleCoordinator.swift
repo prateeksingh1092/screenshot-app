@@ -56,6 +56,16 @@ actor CaptureLifecycleCoordinator {
         return await history.recover()
     }
 
+    func maintainHistory(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure> {
+        guard let history else { return .failure(.unavailable) }
+        return await history.maintain(limits: limits)
+    }
+
+    func historyStatus(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure> {
+        guard let history else { return .failure(.unavailable) }
+        return await history.status(consumeNotice: consumeNotice)
+    }
+
     private func currentRevision(_ id: CaptureID) -> UInt64 { revisions[id] ?? 1 }
 
     func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {

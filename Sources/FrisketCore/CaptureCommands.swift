@@ -35,7 +35,7 @@ public enum CommitOutcome: Equatable, Sendable {
     case notCommitted(CommitUnavailableReason)
 }
 
-public enum CommitUnavailableReason: Sendable { case historyUnavailable, unknownMigrations, invalidImage, recoveryRequired }
+public enum CommitUnavailableReason: Sendable { case historyUnavailable, unknownMigrations, invalidImage, recoveryRequired, captureExceedsHistoryLimit }
 
 public enum DeliveryOutcome: Equatable, Sendable {
     case copied(ClipboardReceipt)
@@ -107,6 +107,14 @@ public struct CaptureCommandLayer: Sendable {
     /// The thumbnail stack, newest first, with any exit the policy requires now.
     public func thumbnails() async -> [ThumbnailCard] {
         await coordinator.thumbnails()
+    }
+
+    public func maintainHistory(limits: HistoryLimits? = nil) async -> Result<HistoryUsage, HistoryFailure> {
+        await coordinator.maintainHistory(limits: limits)
+    }
+
+    public func historyStatus(consumeNotice: Bool = false) async -> Result<HistoryUsage, HistoryFailure> {
+        await coordinator.historyStatus(consumeNotice: consumeNotice)
     }
 
     public func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {

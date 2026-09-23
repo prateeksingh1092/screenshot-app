@@ -152,3 +152,58 @@ identifier-derived relative names, and links/special files are refused before
 reconciliation so the sweep cannot follow them outside the root. Moving the
 root needs no row rewrites. A restore to another actual Mac remains a manual
 check; the automated test moves the root on this Intel Mac.
+
+## Ticket 16 retention and quota
+
+Call `CaptureCommandLayer.maintainHistory()` at launch, before capture work, and
+`maintainHistory(limits:)` when applying Settings. Both preserve an absent root.
+The defaults are 30 days and 1,000,000,000 logical bytes; Settings persists days
+and decimal MB in bundle-scoped preferences. Each successful finalization runs
+an oldest-first sweep ordered by date then integer key, excluding that capture.
+A tiny quota can remain exceeded by the protected capture and database overhead;
+Settings reports the actual usage and overage.
+
+`history-retention-v1` appends the sweep timestamp, one-time date-normalization
+flags, persisted quota event/notice state, and an auxiliary ownership ledger.
+The baseline migration and fixture remain unchanged. Usage sums indexed logical
+image, finalization-record and thumbnail sizes (including hidden deleting rows),
+the auxiliary ledger, and current SQLite/database/WAL/shared-memory file sizes.
+Launch remeasures tracked files. Failure blocks subsequent commits until a
+successful maintenance pass; Copy and Save retain independent delivery outcomes.
+An image plus its record and thumbnail exceeding the quota is refused before
+creating History storage, with `captureExceedsHistoryLimit` for presentation.
+
+The auxiliary ledger registers the authorized identifier, relative location and
+size before staging, follows exclusive renames, and transfers ownership to the
+History row atomically with insertion. It contains metadata, never pixel data.
+Interrupted staging/row-less files therefore remain accounted for. Launch
+remeasures these ledger entries and reconciles an interrupted rename. It does
+not adopt or discard row-less captures: that remains ticket 10's responsibility.
+Recovery must remove auxiliary entries when deleting files or adopting a row to
+avoid double counting. Recovery archives do not exist in this baseline; their
+future owner must extend this inventory when introducing archives, retain their
+sizes until export/deletion, and exclude external exports. Files are never owned
+merely because they reside beneath the History root.
+
+Age eviction defers when now precedes the newest timestamp or advances more than
+the configured window since the previous sweep. A missing sweep uses the newest
+stored timestamp as its baseline. Future dates normalize to now once per row;
+the flag survives restart. The next stable sweep may resume age eviction.
+The normalized date is in SQLite; a recovery adopter must preserve it for an
+existing row instead of overwriting it from the original finalization record.
+Quota enforcement remains active during age deferral.
+
+Eviction marks `deleting` and the quota event together, checkpoints, unlinks owned
+files directly, syncs their directories, removes the row, then checkpoints again.
+Deleting rows remain counted until row removal and are resumed before launch
+remeasurement. `HistoryEvictionPoint.allCases` is the closed interruption list:
+`markedDeleting`, `imageUnlinked`, `recordUnlinked`, `thumbnailUnlinked`,
+`directoriesSynced`, `rowRemoved`. Seam-1 tests inject a throw and SIGKILL a test
+helper at every point, reopen, run maintenance twice, and compare usage to disk.
+This is process-interruption evidence, not a power-loss or hardware durability test.
+General outstanding-WAL reconciliation and an exclusive root lock remain ticket 10.
+
+`historyStatus(consumeNotice: true)` returns and durably consumes the pending
+quota notice. The last-eviction date remains available for the Settings line.
+The app refreshes this presentation after finalization/delivery and on opening
+Settings. No screen or clipboard adapter is invoked by these queries.
