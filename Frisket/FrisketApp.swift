@@ -46,19 +46,61 @@ import FrisketCore
         menu.addItem(.separator())
         addSettings(to: menu)
         menu.addItem(.separator())
-        let mainMenu = NSMenu()
-        let appMenu = NSMenu()
-        let appItem = NSMenuItem()
-        appItem.submenu = appMenu
-        mainMenu.addItem(appItem)
-        addSettings(to: appMenu)
-        NSApp.mainMenu = mainMenu
+        installMainMenu()
         add("Quit Frisket", action: #selector(quit), to: menu)
         item.menu = menu
         statusItem = item
         if !hotKey.register(action: { [weak self] in self?.captureArea() }) {
             notice("Shortcut unavailable", "Another app may be using Control–Option–Command–4. Capture Area is still available in the Frisket menu.")
         }
+    }
+
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+        func submenu(_ title: String) -> NSMenu {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let menu = NSMenu(title: title)
+            item.submenu = menu
+            mainMenu.addItem(item)
+            return menu
+        }
+        func command(_ title: String, _ action: Selector, _ key: String, in menu: NSMenu,
+                     modifiers: NSEvent.ModifierFlags = .command) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            // A nil target uses the responder chain, including SwiftUI's selected text.
+            menu.addItem(item)
+        }
+        let app = submenu("Frisket")
+        command("About Frisket", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), "", in: app)
+        app.addItem(.separator())
+        addSettings(to: app)
+        app.addItem(.separator())
+        let services = NSMenu(title: "Services")
+        let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        servicesItem.submenu = services
+        app.addItem(servicesItem)
+        NSApp.servicesMenu = services
+        app.addItem(.separator())
+        command("Hide Frisket", #selector(NSApplication.hide(_:)), "h", in: app)
+        command("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", in: app,
+                modifiers: [.command, .option])
+        command("Show All", #selector(NSApplication.unhideAllApplications(_:)), "", in: app)
+        app.addItem(.separator())
+        command("Quit Frisket", #selector(NSApplication.terminate(_:)), "q", in: app)
+
+        let file = submenu("File")
+        command("Close Window", #selector(NSWindow.performClose(_:)), "w", in: file)
+        let edit = submenu("Edit")
+        command("Undo", Selector(("undo:")), "z", in: edit)
+        command("Redo", Selector(("redo:")), "z", in: edit, modifiers: [.command, .shift])
+        edit.addItem(.separator())
+        command("Cut", #selector(NSText.cut(_:)), "x", in: edit)
+        command("Copy", #selector(NSText.copy(_:)), "c", in: edit)
+        command("Paste", #selector(NSText.paste(_:)), "v", in: edit)
+        command("Delete", #selector(NSText.delete(_:)), "", in: edit)
+        command("Select All", #selector(NSText.selectAll(_:)), "a", in: edit)
+        NSApp.mainMenu = mainMenu
     }
 
     private func addSettings(to menu: NSMenu) {
@@ -146,7 +188,10 @@ import FrisketCore
         Task {
             defer { panel.model.busy = false }
             let result = await commands.execute(panel.model.saveFailed ? .retrySave(panel.revision) : .save(panel.revision))
-            guard case .save(let outcome) = result else { return }
+            guard case .save(let outcome) = result else {
+                panel.model.saveFailed = true
+                return
+            }
             panel.model.historyCommitted = outcome.commit == .committed
             if case .saved = outcome.delivery {
                 if case .notCommitted = outcome.commit {

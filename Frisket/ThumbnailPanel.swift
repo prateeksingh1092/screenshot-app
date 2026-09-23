@@ -56,12 +56,15 @@ private struct ThumbnailCard: View {
                     .accessibilityLabel("Dismiss capture to History")
                     .disabled(model.busy)
             }
-            if model.saveFailed {
+            if model.keptInHistory {
+                Text("Kept in History").font(.caption)
+            } else if model.saveFailed {
                 Text(model.historyCommitted ? "Kept in History. Save failed. Retry Save or Dismiss." : "Save failed. Check the export folder in Settings, then Retry Save.")
                     .font(.caption).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(model.dismissFailed ? "Could not keep in History. Retry Dismiss or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Dismiss." : "Copy failed. Retry Copy or dismiss to History.") : "Dismiss to keep in History.")
+                    .font(.caption).fixedSize(horizontal: false, vertical: true)
             }
-            Text(model.keptInHistory ? "Kept in History" : model.dismissFailed ? "Could not keep in History. Retry Dismiss or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Dismiss." : "Copy failed. Retry Copy or dismiss to History.") : "Dismiss to keep in History.")
-                .font(.caption).fixedSize(horizontal: false, vertical: true)
         }.padding(14).frame(width: 260)
             .onChange(of: model.copyFocusRequest) { _, _ in
                 copyFocused = true

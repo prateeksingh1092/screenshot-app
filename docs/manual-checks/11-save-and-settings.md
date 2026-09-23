@@ -12,7 +12,10 @@ Access and VoiceOver state. Record arm64 as not executed on this Intel Mac.
 
 1. Open Settings from the Frisket menu and with Command-comma while a thumbnail
    has focus. Confirm a single SwiftUI Settings window opens and reopens after
-   closing. Verify the first section is Export folder.
+   closing with Command-W. Verify the first section is Export folder. Select the
+   path and use Edit > Copy / Command-C, then paste into a disposable text field.
+   Confirm Command-Q follows the existing pending-capture finalization flow.
+   Command-comma while another app is active remains a manual focus limitation.
 2. Verify the default is `~/Pictures/Frisket`. On a synthetic area capture, focus
    its thumbnail and press S. Check a PNG is created even if the folder did not
    exist. Decode it using the marker/dimension procedure from the first-launch
@@ -22,13 +25,16 @@ Access and VoiceOver state. Record arm64 as not executed on this Intel Mac.
    Escape. Select a dedicated temporary export directory. Reopen Settings and
    relaunch the signed app to confirm the selection persists. Save again and
    confirm the destination changed.
-4. Attempt to select the exact app-owned History root, a descendant, and a
-   symlink to either. Each must be refused without changing the preference.
+4. Attempt to select the debug and production History roots, a descendant, and
+   a symlink or `/System/Volumes/Data/…` alias to either. Each must be refused
+   without changing the preference.
    Select a directory without write permission; verify refusal. If a selected
    directory later becomes unwritable, Save must fail visibly and retain Retry
-   Save and Dismiss, with Delete hidden when History committed. Restore access
-   or choose another folder, then Retry Save: one History entry, one successful
-   export, same rendered pixels.
+   Save and Dismiss, with Delete hidden when History committed.
+   Confirm the card shows one status message after failure, without the generic
+   “Dismiss to keep in History” prompt when History has already committed.
+   Restore access or choose another folder, then Retry Save: one History entry,
+   one successful export, same rendered pixels.
 5. Select a test directory in iCloud Drive only with Prateek's agreement to
    potential sync. Confirm the warning appears before accepting and remains in
    Settings. Cancel first and verify the prior setting remains. No real or

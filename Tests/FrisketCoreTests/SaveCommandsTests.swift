@@ -36,6 +36,8 @@ private struct UnusedClipboard: ImageClipboard {
         let entry = try #require(try await commands.historyEntries().get().first)
         let exported = folder.appendingPathComponent(receipt.filename)
         #expect(try Data(contentsOf: exported) == SavePixels().bytes)
+        #expect(try FileManager.default.attributesOfItem(atPath: exported.path)[.posixPermissions] as? Int == 0o644)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == [receipt.filename])
         #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == SavePixels().bytes)
         #expect(await commands.image(for: revision) == nil)
         #expect(await commands.execute(.save(revision)) == .rejected(.alreadyDelivered))

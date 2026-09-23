@@ -18,3 +18,20 @@ Verification used the pinned Xcode toolchain and in-worktree caches:
 Prateek’s pending [manual checks](/Users/16intelmac/Documents/Claude/Projects/screenshot-app/.worktrees/ticket-11/docs/manual-checks/11-save-and-settings.md): synthetic Save/retry, Settings persistence, ⌘,/keyboard routing, VoiceOver, iCloud warning, and retention/deletion independence after those tickets integrate.
 
 No staging, commits, ticket-status/checkbox changes, app launches, capture, clipboard, signing, or installs. History recovery internals are unchanged.
+
+
+## Fix pass
+
+Model: Codex GPT-6 Astra, high.
+
+- Fixed duplicated delivery bookkeeping with one shared Copy/Save delivery step; renamed commit and failure state.
+- Added standard application, File and Edit menus, including Quit (⌘Q), Close Window (⌘W), and responder-chain Copy.
+- Refused debug and production Application Support History roots and descendants.
+- Added volume/file resource-identity comparisons on existing ancestors, including missing-root suffixes. Foundation already normalized the tested firmlinks on this Mac; alias protection is now explicit.
+- Fixed rejected Save feedback, conflicting card messages, same-folder temporary writes followed by exclusive rename, and file creation mode `0644` (subject to umask).
+
+Left open: outcome data duplication preserves typed public results; Settings-shell naming awaits additional sections; synchronous Settings assessment needs an asynchronous redesign; intermediate-symlink races require descriptor-relative traversal. Command-comma focus behavior remains a manual check. Keyboard/VoiceOver checks remain pending because launches were prohibited.
+
+Validation: red→green for cross-build roots, relocated History aliases, and permissions. Focused suite: 12 tests passed. Root Swift suite: 89 passed, 3 skipped (92 total), including static checks. App typecheck and diff checks passed. Unsigned Xcode build was sandbox-blocked by GRDB’s manifest-cache write; coordinator rerun required.
+
+No staging, commits, or ticket status/checkbox changes.

@@ -265,7 +265,7 @@ is injected. The app now injects the lazy disk store.
 
 `execute(.save(revision))` and `execute(.retrySave(revision))` return
 `.save(SaveOutcome)` with the revision, History `commit`, and file `delivery`
-reported separately. Save uses the same coordinator branch and retained commit
+reported separately. Save uses the same shared delivery step and retained commit
 result as Copy. Only delivery is retried; successful or failed History commits
 are not repeated. Invalid/stale/in-flight commands are rejected before delivery.
 Copy and Save have separate retry eligibility. A committed capture cannot be
@@ -276,18 +276,25 @@ notice when delivery succeeds without History.
 The `CaptureExport` adapter accepts only `AuthorizedFinalization`. Its PNG bytes
 are the coordinator's frozen output (currently the unedited revision; future
 editor rendering must supply its flattened result there). `PNGFileExporter`
-creates the selected directory on delivery, writes a separate exclusively
-created PNG, and never opens/moves a History image. `ExportFilenamePolicy` uses
+creates the selected directory on delivery, writes an exclusively created
+temporary file in that folder (mode `0644`, subject to umask), then publishes
+the complete PNG with an exclusive rename. It never opens/moves a History
+image. `ExportFilenamePolicy` uses
 `Frisket-<capture UUID>-r<revision>.png`, followed by `-2`, `-3`, etc. on collisions;
-exclusive creation prevents races from overwriting existing files or symlinks.
+exclusive rename prevents races from overwriting existing files or symlinks.
 After 10,000 occupied candidates, delivery reports unavailable. Failed writes
-remove only the file created by that attempt. Exports are not registered with
+remove only the temporary file created by that attempt. Exports are not registered with
 History; retention/deletion operate on app-owned data only.
 
 `ExportFolderPolicy.assess` is pure core policy over path/access/resource facts.
 The disk adapter resolves existing ancestors (including symlinks with missing
-children), accounts for case-insensitive volumes, refuses History itself and
-its descendants, and refuses unwritable/non-directory destinations. It checks
+children), accounts for case-insensitive volumes, and compares volume/file
+resource identities on existing ancestors, including roots with missing suffixes.
+It refuses this build's History root and the debug and production History roots
+under Application Support, including their descendants and aliases, and refuses
+unwritable/non-directory destinations. Intermediate symlink replacement between
+assessment and writing remains a race; descriptor-relative traversal is deferred.
+It checks
 again on every delivery, including retries. iCloud detection combines the
 `~/Library/Mobile Documents` location with `isUbiquitousItem` on ancestors.
 Settings uses the same assessment and warns before accepting an iCloud folder.

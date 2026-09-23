@@ -9,11 +9,11 @@ actor CaptureLifecycleCoordinator {
     private let history: (any CaptureHistory)?
     private let exporter: (any CaptureExport)?
     private var finalized: Set<CaptureID> = []
-    private var copyCommits: [CaptureID: CommitOutcome] = [:]
+    private var deliveryCommits: [CaptureID: CommitOutcome] = [:]
     private var inProgress: Set<CaptureID> = []
     private var discarded: Set<CaptureID> = []
-    private var failedDelivery: Set<CaptureID> = []
-    private var failedSave: Set<CaptureID> = []
+    private enum DeliveryKind { case copy, save }
+    private var failedDeliveries: [CaptureID: Set<DeliveryKind>] = [:]
     private var delivered: Set<CaptureID> = []
     private var images: [CaptureID: CaptureImage] = [:]
 
@@ -58,8 +58,7 @@ actor CaptureLifecycleCoordinator {
                 finalized.insert(id)
                 pendingBytes -= image.pngData.count
                 images.removeValue(forKey: id)
-                failedDelivery.remove(id)
-                failedSave.remove(id)
+                failedDeliveries.removeValue(forKey: id)
             }
             inProgress.remove(id)
             return .finalized(revision, outcome)
@@ -72,8 +71,7 @@ actor CaptureLifecycleCoordinator {
             }
             pendingBytes -= images[id]?.pngData.count ?? 0
             images.removeValue(forKey: id)
-            failedDelivery.remove(id)
-            failedSave.remove(id)
+            failedDeliveries.removeValue(forKey: id)
             discarded.insert(id)
             return .discarded(id)
         case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes):
@@ -106,72 +104,73 @@ actor CaptureLifecycleCoordinator {
             case let .failure(error):
                 return .captureFailed(error)
             }
-        case let .copy(revision), let .retryCopy(revision), let .save(revision), let .retrySave(revision):
-            guard !inProgress.contains(revision.captureID) else { return .rejected(.commandInProgress) }
-            guard !discarded.contains(revision.captureID) else { return .rejected(.discardedCapture) }
-            guard images[revision.captureID] != nil || delivered.contains(revision.captureID) else {
-                return .rejected(.unknownCapture)
-            }
-            guard revision.number == 1 else { return .rejected(.staleRevision) }
-            guard !delivered.contains(revision.captureID) else { return .rejected(.alreadyDelivered) }
-            guard let image = images[revision.captureID] else { return .rejected(.unknownCapture) }
-            let saving: Bool
-            let retrying: Bool
-            switch command {
-            case .save: saving = true; retrying = false
-            case .retrySave: saving = true; retrying = true
-            case .retryCopy: saving = false; retrying = true
-            default: saving = false; retrying = false
-            }
-            let previouslyFailed = saving ? failedSave.contains(revision.captureID) : failedDelivery.contains(revision.captureID)
-            if retrying {
-                guard previouslyFailed else { return .rejected(.retryNotAvailable) }
-            } else if previouslyFailed {
-                return .rejected(.retryRequired)
-            }
-            let delivery: DeliveryOutcome
-            inProgress.insert(revision.captureID)
-            // Retrying delivery never repeats a commit, including a failed one.
-            let commit: CommitOutcome
-            if let prior = copyCommits[revision.captureID] { commit = prior }
-            else {
-                commit = await history?.finalize(AuthorizedFinalization(revision: revision, pngData: image.pngData))
-                    ?? .notCommitted(.historyUnavailable)
-                copyCommits[revision.captureID] = commit
-                if commit == .committed { finalized.insert(revision.captureID) }
-            }
-            if saving {
-                let delivery: SaveDeliveryOutcome
-                switch await exporter?.export(AuthorizedFinalization(revision: revision, pngData: image.pngData)) ?? .failure(.unavailable) {
-                case let .success(receipt):
-                    delivery = .saved(receipt)
-                    delivered.insert(revision.captureID)
-                    failedSave.remove(revision.captureID)
-                    failedDelivery.remove(revision.captureID)
-                    pendingBytes -= image.pngData.count
-                    images.removeValue(forKey: revision.captureID)
-                case let .failure(error):
-                    delivery = .failed(error)
-                    failedSave.insert(revision.captureID)
-                }
-                inProgress.remove(revision.captureID)
-                return .save(SaveOutcome(revision: revision, commit: commit, delivery: delivery))
-            }
-            switch await clipboard.write(ClipboardImage(pngData: image.pngData)) {
-            case let .success(receipt):
-                delivery = .copied(receipt)
-                delivered.insert(revision.captureID)
-                failedDelivery.remove(revision.captureID)
-                failedSave.remove(revision.captureID)
-                pendingBytes -= image.pngData.count
-                images.removeValue(forKey: revision.captureID)
-            case let .failure(error):
-                delivery = .failed(error)
-                failedDelivery.insert(revision.captureID)
-            }
-            inProgress.remove(revision.captureID)
-            return .copy(CopyOutcome(revision: revision, commit: commit,
-                                     delivery: delivery))
+        case let .copy(revision), let .retryCopy(revision):
+            let retrying: Bool = if case .retryCopy = command { true } else { false }
+            return await deliver(revision, kind: .copy, retrying: retrying,
+                using: { [clipboard] request in await clipboard.write(ClipboardImage(pngData: request.pngData)) },
+                outcome: { commit, result in
+                    let delivery: DeliveryOutcome
+                    switch result {
+                    case let .success(receipt): delivery = .copied(receipt)
+                    case let .failure(error): delivery = .failed(error)
+                    }
+                    return .copy(CopyOutcome(revision: revision, commit: commit, delivery: delivery))
+                })
+        case let .save(revision), let .retrySave(revision):
+            let retrying: Bool = if case .retrySave = command { true } else { false }
+            return await deliver(revision, kind: .save, retrying: retrying,
+                using: { [exporter] request in await exporter?.export(request) ?? .failure(.unavailable) },
+                outcome: { commit, result in
+                    let delivery: SaveDeliveryOutcome
+                    switch result {
+                    case let .success(receipt): delivery = .saved(receipt)
+                    case let .failure(error): delivery = .failed(error)
+                    }
+                    return .save(SaveOutcome(revision: revision, commit: commit, delivery: delivery))
+                })
         }
+    }
+
+    /// Every delivery shares authorization, commit caching, retry gating and byte ownership.
+    private func deliver<Receipt: Sendable, Failure: Error & Sendable>(
+        _ revision: CaptureRevision, kind: DeliveryKind, retrying: Bool,
+        using operation: @Sendable (AuthorizedFinalization) async -> Result<Receipt, Failure>,
+        outcome: (CommitOutcome, Result<Receipt, Failure>) -> CaptureCommandOutcome
+    ) async -> CaptureCommandOutcome {
+        let id = revision.captureID
+        guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+        guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
+        guard images[id] != nil || delivered.contains(id) else { return .rejected(.unknownCapture) }
+        guard revision.number == 1 else { return .rejected(.staleRevision) }
+        guard !delivered.contains(id) else { return .rejected(.alreadyDelivered) }
+        guard let image = images[id] else { return .rejected(.unknownCapture) }
+        let previouslyFailed = failedDeliveries[id]?.contains(kind) == true
+        if retrying {
+            guard previouslyFailed else { return .rejected(.retryNotAvailable) }
+        } else if previouslyFailed {
+            return .rejected(.retryRequired)
+        }
+        inProgress.insert(id)
+        defer { inProgress.remove(id) }
+        let request = AuthorizedFinalization(revision: revision, pngData: image.pngData)
+        // Retrying delivery never repeats a commit, including a failed one.
+        let commit: CommitOutcome
+        if let prior = deliveryCommits[id] { commit = prior }
+        else {
+            commit = await history?.finalize(request) ?? .notCommitted(.historyUnavailable)
+            deliveryCommits[id] = commit
+            if commit == .committed { finalized.insert(id) }
+        }
+        let result = await operation(request)
+        switch result {
+        case .success:
+            delivered.insert(id)
+            failedDeliveries.removeValue(forKey: id)
+            pendingBytes -= image.pngData.count
+            images.removeValue(forKey: id)
+        case .failure:
+            failedDeliveries[id, default: []].insert(kind)
+        }
+        return outcome(commit, result)
     }
 }
