@@ -4,7 +4,7 @@
 
 **Blocked by:** 18, 19, 20, 21, 23, 24, 32
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/39-manual-checklist-first-run`)
 
 - [ ] A bundled test-pattern window at known coordinates and a script that checks output dimensions and marker pixels.
 - [ ] Each run records date, OS build, commit, architectures and code signature, display layout, and permission state, with no personal pixels.
@@ -12,3 +12,9 @@
 - [ ] Prateek performs or approves the hardware steps; results are recorded.
 
 ## Comments
+
+### 2026-09-23 — coordinator
+
+Claimed on `e00eed1` after ticket 36 closed. Coordinator chat implements
+(Codex/Other Models still limited). Branch `ticket/39-manual-checklist-first-run`.
+Hardware cases stay pending for Prateek.
