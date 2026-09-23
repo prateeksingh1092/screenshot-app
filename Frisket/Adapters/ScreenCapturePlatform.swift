@@ -3,17 +3,28 @@ import AppKit
 import QuartzCore
 import ImageIO
 import UniformTypeIdentifiers
+import FrisketCore
 
 @MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
-    private let overlay = SelectionOverlay()
-    private var content: Task<ShareableSnapshot, Error>?
+    private lazy var overlay = SelectionOverlay()
+    private let permission: ScreenCapturePermissionAdapter
+    private var content: SCShareableContent?
     private(set) var captureDisplayID: UInt32?
 
-    func prefetchShareableContent() {
-        // Started on shortcut/menu invocation, before waiting for selection.
-        content = Task {
-            ShareableSnapshot(try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true))
+    init(permission: ScreenCapturePermissionAdapter) { self.permission = permission }
+
+    func prefetchShareableContent() async throws {
+        content = nil
+        let state = permission.refresh()
+        guard state == .granted else { throw CaptureSourceFailure.permissionRequired(state) }
+        do {
+            // This may present an OS alert. Await it with no overlay created.
+            content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        } catch {
+            throw permission.failure(for: error)
         }
+        let refreshed = permission.refresh()
+        guard refreshed == .granted else { throw CaptureSourceFailure.permissionRequired(refreshed) }
     }
 
     func selectArea() async -> AreaSelection? {
@@ -27,8 +38,7 @@ import UniformTypeIdentifiers
         // The preview's pixels never become a pending capture or reach storage.
         hideSelection()
         var magnifier: SelectionMagnifier?
-        if let content, let identifier = Bundle.main.bundleIdentifier,
-           let available = try? await content.value.content {
+        if let available = content, let identifier = Bundle.main.bundleIdentifier {
             magnifier = try? await SelectionMagnifier.prepare(on: screen, content: available, excluding: identifier)
         }
         // A display change while preparing must not open a stale selection panel.
@@ -58,13 +68,13 @@ import UniformTypeIdentifiers
     }
 
     func finishCapture() {
-        content?.cancel()
         content = nil
     }
 
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
-        guard let content else { throw CapturePlatformError.unavailable }
-        let available = try await content.value.content
+        let state = permission.refresh()
+        guard state == .granted else { throw CaptureSourceFailure.permissionRequired(state) }
+        guard let available = content else { throw CapturePlatformError.unavailable }
         guard let display = available.displays.first(where: { $0.displayID == request.displayID }),
               NSScreen.screens.contains(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == request.displayID }) else {
             throw CapturePlatformError.unavailable
@@ -74,7 +84,14 @@ import UniformTypeIdentifiers
         let config = ScreenCapturePolicy.configuration(sourceRect: request.sourceRect,
                                                        pixelWidth: request.pixelWidth, pixelHeight: request.pixelHeight)
         // Own-app filtering remains the safety mechanism even if a window-server update lags.
-        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        let image: CGImage
+        do {
+            image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        } catch {
+            throw permission.failure(for: error)
+        }
+        let refreshed = permission.refresh()
+        guard refreshed == .granted else { throw CaptureSourceFailure.permissionRequired(refreshed) }
         let bytes = NSMutableData()
         guard let encoder = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil) else {
             throw CapturePlatformError.unavailable
@@ -86,10 +103,3 @@ import UniformTypeIdentifiers
 }
 
 private enum CapturePlatformError: Error { case unavailable }
-
-// The SDK has not annotated SCShareableContent as Sendable. Keep its object graph
-// on MainActor, including across the prefetch task result.
-@MainActor private final class ShareableSnapshot {
-    let content: SCShareableContent
-    init(_ content: SCShareableContent) { self.content = content }
-}

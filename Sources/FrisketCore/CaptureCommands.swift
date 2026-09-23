@@ -54,6 +54,7 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case copy(CopyOutcome)
     case finalized(CaptureRevision, CommitOutcome)
     case captureFailed(CaptureSourceFailure)
+    case permissionRequired(CapturePermissionState)
     case rejected(CommandRejection)
 }
 
@@ -62,11 +63,11 @@ public struct CaptureCommandLayer: Sendable {
     private let diagnostics: any DiagnosticSink
     private let coordinator: CaptureLifecycleCoordinator
 
-    public init(source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
+    public init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
                 diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil) {
         self.diagnostics = diagnostics
-        coordinator = CaptureLifecycleCoordinator(source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
+        coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
                                                   pendingByteLimit: pendingByteLimit, history: history)
     }
 

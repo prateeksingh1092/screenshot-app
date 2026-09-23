@@ -8,7 +8,7 @@ struct FullScreenDisplay {
 }
 
 @MainActor protocol FullScreenCapturePlatform: AnyObject {
-    func prefetchShareableContent()
+    func prefetchShareableContent() async throws
     func displayUnderPointer() -> FullScreenDisplay?
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data
     func finishCapture()
@@ -24,8 +24,10 @@ struct FullScreenDisplay {
     }
 
     func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
-        platform.prefetchShareableContent()
         defer { platform.finishCapture() }
+        do { try await platform.prefetchShareableContent() }
+        catch let failure as CaptureSourceFailure { return .failure(failure) }
+        catch { return .failure(.unavailable) }
         // Resolve once before awaiting pixels, so pointer motion cannot retarget the capture.
         guard let display = platform.displayUnderPointer(), display.scale.isFinite, display.scale > 0 else {
             return .failure(.unavailable)
@@ -42,6 +44,8 @@ struct FullScreenDisplay {
             let data = try await platform.capture(request, maximumBytes: maximumBytes)
             guard data.count <= maximumBytes else { return .failure(.unavailable) }
             return .success(CaptureImage(pngData: data))
+        } catch let failure as CaptureSourceFailure {
+            return .failure(failure)
         } catch {
             return .failure(.unavailable)
         }

@@ -11,20 +11,26 @@ import FrisketCore
     }
 }
 
-@MainActor final class AppController: NSObject, NSApplicationDelegate {
+@MainActor final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKey = CarbonHotKey()
-    private let platform = ScreenCapturePlatform()
+    private let permission = ScreenCapturePermissionAdapter(access: SystemScreenRecordingAccess())
+    private lazy var platform = ScreenCapturePlatform(permission: permission)
     private var commands: CaptureCommandLayer?
     private var statusItem: NSStatusItem?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var arrivalOrder: [CaptureID] = []
     private var capturing = false
     private var terminating = false
+    private var requestingPermission = false
+    private var recoveryPanel: PermissionRecoveryPanel?
+    private var permissionTimer: Timer?
+    private var reopenAfterQuit = false
+    private var preparedRelaunch: InstalledAppRelaunch?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
-        commands = CaptureCommandLayer(source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
+        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
             history: HistoryStore(root: identity.historyRoot))
@@ -32,6 +38,7 @@ import FrisketCore
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
         let menu = NSMenu()
+        menu.delegate = self
         add("Capture Area (⌃⌥⌘4)", action: #selector(captureArea), to: menu)
         add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
@@ -43,6 +50,13 @@ import FrisketCore
         add("Quit Frisket", action: #selector(quit), to: menu)
         item.menu = menu
         statusItem = item
+        refreshPermissionIndicator()
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshPermissionIndicator() }
+        }
+        timer.tolerance = 0.25
+        RunLoop.main.add(timer, forMode: .common)
+        permissionTimer = timer
         if !hotKey.register(action: { [weak self] in self?.captureArea() }) {
             notice("Shortcut unavailable", "Another app may be using Control–Option–Command–4. Capture Area is still available in the Frisket menu.")
         }
@@ -63,10 +77,11 @@ import FrisketCore
     }
 
     private func capture(_ command: CaptureCommand) {
-        guard !capturing, !terminating, let commands else { return }
+        guard !capturing, !terminating, !requestingPermission, let commands else { return }
+        if recoveryPanel?.window?.isVisible == true { recoveryPanel?.present(); return }
         capturing = true
         Task {
-            defer { capturing = false }
+            defer { capturing = false; refreshPermissionIndicator() }
             let result = await commands.execute(command)
             switch result {
             case let .pending(revision):
@@ -86,8 +101,10 @@ import FrisketCore
                 panels[id] = panel
                 arrivalOrder.append(id)
             case .captureFailed(.cancelled): break
+            case let .permissionRequired(state):
+                showPermissionRecovery(state)
             case .captureFailed:
-                notice("Capture unavailable", "Check Frisket’s Screen Recording permission in System Settings → Privacy & Security → Screen & System Audio Recording. If macOS requests it, quit and reopen Frisket. A disconnected display or an oversized capture can also prevent capture.")
+                notice("Capture unavailable", "A disconnected display or an oversized capture can prevent capture. Try again with a smaller area.")
             default:
                 notice("Capture unavailable", "Copy or delete pending captures, then try again.")
             }
@@ -150,12 +167,60 @@ import FrisketCore
     }
     @objc private func quit() { NSApp.terminate(nil) }
 
+    func menuWillOpen(_ menu: NSMenu) { refreshPermissionIndicator() }
+    func applicationDidBecomeActive(_ notification: Notification) { refreshPermissionIndicator() }
+
+    private func refreshPermissionIndicator() {
+        let missing = permission.refresh() != .granted
+        statusItem?.button?.image = NSImage(systemSymbolName: missing ? "exclamationmark.triangle.fill" : "camera",
+            accessibilityDescription: missing ? "Screen Recording permission required" : "Screen Recording available")
+        statusItem?.button?.imagePosition = .imageLeading
+        statusItem?.button?.setAccessibilityLabel(missing ? "Frisket capture menu, Screen Recording permission required" : "Frisket capture menu")
+        statusItem?.button?.toolTip = missing ? "Screen Recording permission required" : "Capture with Frisket"
+    }
+
+    private func showPermissionRecovery(_ state: CapturePermissionState) {
+        recoveryPanel?.close()
+        recoveryPanel = PermissionRecoveryPanel(state: state,
+            request: { [weak self] in
+                guard let self, !self.capturing, !self.terminating else { return }
+                self.requestingPermission = true
+                _ = self.permission.requestPermission()
+                self.requestingPermission = false
+                self.refreshPermissionIndicator()
+                // Never automatically resume capture or reopen UI after a system request.
+            }, privacy: { [weak self] in
+                let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+                if !NSWorkspace.shared.open(url) {
+                    self?.notice("Open System Settings", "Open Privacy & Security → Screen & System Audio Recording and enable Frisket.")
+                }
+            }, reopen: { [weak self] in
+                guard let self else { return }
+                self.reopenAfterQuit = true
+                NSApp.terminate(nil)
+            })
+        recoveryPanel?.present()
+    }
+
+    private func prepareAcceptedQuit() -> Bool {
+        guard reopenAfterQuit else { return true }
+        reopenAfterQuit = false
+        do {
+            preparedRelaunch = try InstalledAppRelaunch()
+            return true
+        } catch {
+            notice("Could not reopen Frisket", "Launch Frisket from ~/Applications/Frisket.app, then try Quit & Reopen again.")
+            return false
+        }
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !capturing, !panels.values.contains(where: { $0.model.busy }) else {
+        guard !capturing, !requestingPermission, !panels.values.contains(where: { $0.model.busy }) else {
+            reopenAfterQuit = false
             notice("Finish the current action", "Cancel selection with Escape or wait for Copy, then quit again.")
             return .terminateCancel
         }
-        guard !panels.isEmpty, let commands else { return .terminateNow }
+        guard !panels.isEmpty, let commands else { return prepareAcceptedQuit() ? .terminateNow : .terminateCancel }
         terminating = true
         Task {
             for id in arrivalOrder {
@@ -165,16 +230,28 @@ import FrisketCore
                     panel.model.dismissFailed = true
                     panel.model.busy = false
                     terminating = false
+                    reopenAfterQuit = false
                     sender.reply(toApplicationShouldTerminate: false)
                     return
                 }
                 remove(id)
             }
-            sender.reply(toApplicationShouldTerminate: true)
+            // Only prepare relaunch after every pending capture is safely in History.
+            let accepted = prepareAcceptedQuit()
+            if !accepted { terminating = false }
+            sender.reply(toApplicationShouldTerminate: accepted)
         }
         return .terminateLater
     }
-    func applicationWillTerminate(_ notification: Notification) { hotKey.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        permissionTimer?.invalidate()
+        hotKey.stop()
+        do {
+            try preparedRelaunch?.openDuringTermination()
+        } catch {
+            notice("Could not reopen Frisket", "Frisket is quitting. Launch it from ~/Applications/Frisket.app to reopen it.")
+        }
+    }
     private func notice(_ title: String, _ message: String) {
         let alert = NSAlert()
         alert.messageText = title

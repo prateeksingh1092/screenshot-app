@@ -260,3 +260,15 @@ uses the same in-worktree caches and
 Xcode toolchain as the full `sh scripts/test-core.sh` run. Original ticket 06
 History-unavailable descriptions above remain applicable when no `CaptureHistory`
 is injected. The app now injects the lazy disk store.
+
+## Ticket 23 permission gate
+
+The command initializer now requires a `CapturePermissionSource` in addition to
+pixels and clipboard. Existing fixtures explicitly inject a granted stand-in;
+the app supplies the CoreGraphics/ScreenCaptureKit adapter. See
+[permission model, platform evidence and alert ordering](permission-recovery.md)
+and [the manual state checklist](manual-checks/23-permission-states.md).
+
+The app filesystem guard permits the specific recovery forms
+`NSWorkspace.shared.open` and `FileHandle.nullDevice`; fixtures still reject
+actual file writes in those same files, writable file handles, and POSIX `open`.

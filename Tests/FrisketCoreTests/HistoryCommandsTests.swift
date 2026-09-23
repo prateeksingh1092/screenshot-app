@@ -36,7 +36,7 @@ private enum HistoryCaptureKind: CaseIterable, Sendable {
         let root = directory.appendingPathComponent("fixture.bundle/History.noindex")
         let store = HistoryStore(root: root, clock: { Date(timeIntervalSince1970: 1234) })
         let source = HistoryPixels()
-        let commands = CaptureCommandLayer(source: source, fullScreenSource: source, clipboard: HistoryClipboard(),
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, fullScreenSource: source, clipboard: HistoryClipboard(),
             pendingByteLimit: source.bytes.count, history: store)
         #expect(try await commands.historyEntries().get().isEmpty)
         #expect(!FileManager.default.fileExists(atPath: root.path))
@@ -82,7 +82,7 @@ extension HistoryCommandsTests {
                 if stopAfterRow { throw StopAfterCommit.stop }
             }
         })
-        let commands = CaptureCommandLayer(source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024, history: store)
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024, history: store)
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(kind.command(revision.captureID, maximumBytes: 1024))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
@@ -123,7 +123,7 @@ extension HistoryCommandsTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let source = HistoryPixels()
-        let commands = CaptureCommandLayer(source: source, fullScreenSource: source, clipboard: RetryHistoryClipboard(),
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, fullScreenSource: source, clipboard: RetryHistoryClipboard(),
             pendingByteLimit: source.bytes.count, history: HistoryStore(root: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(kind.command(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
@@ -148,7 +148,7 @@ extension HistoryCommandsTests {
     private func copyRetryOrDismissAfterDeliveryFailureKeepsTheSameCommittedRevision(dismiss: Bool, kind: HistoryCaptureKind) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
-        let commands = CaptureCommandLayer(source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: RetryHistoryClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: RetryHistoryClipboard(), pendingByteLimit: 1024,
             history: HistoryStore(root: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(kind.command(revision.captureID, maximumBytes: 1024))
@@ -206,7 +206,7 @@ extension HistoryCommandsTests {
         try migrationFixture(at: root, wal: wal)
         let before = try diskSnapshot(root)
         let log = LocalDiagnosticLog()
-        let commands = CaptureCommandLayer(source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
             diagnostics: log, history: HistoryStore(root: root))
         let failure: HistoryFailure = wal ? .recoveryRequired : .unknownMigrations
         let reason: CommitUnavailableReason = wal ? .recoveryRequired : .unknownMigrations
@@ -253,7 +253,7 @@ extension HistoryCommandsTests {
             .appendingPathComponent("Fixtures/History/history-v1.sql")
         try seedSQL(String(contentsOf: fixture, encoding: .utf8), at: root)
         let before = try diskSnapshot(root)
-        let commands = CaptureCommandLayer(source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
             history: HistoryStore(root: root))
         let oldEntries = try await commands.historyEntries().get()
         #expect(oldEntries.count == 1) // deleting is a valid state but hidden
@@ -279,7 +279,7 @@ extension HistoryCommandsTests {
         let store = HistoryStore(root: root, commitPoint: { reached in
             if reached == point { throw StopAfterCommit.stop }
         })
-        let commands = CaptureCommandLayer(source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024, history: store)
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024, history: store)
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         let id = revision.captureID.rawValue.uuidString
         _ = await commands.execute(kind.command(revision.captureID, maximumBytes: 1024))
@@ -320,7 +320,7 @@ extension HistoryCommandsTests {
     private func discardedAndStaleCommandsCannotCreateStorage(kind: HistoryCaptureKind) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
-        let commands = CaptureCommandLayer(source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
             history: HistoryStore(root: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.dismiss(revision)) == .rejected(.unknownCapture))
@@ -330,5 +330,46 @@ extension HistoryCommandsTests {
         #expect(await commands.execute(.dismiss(revision)) == .rejected(.discardedCapture))
         #expect(try await commands.historyEntries().get().isEmpty)
         #expect(!FileManager.default.fileExists(atPath: root.path))
+    }
+}
+
+private actor HistoryPermission: CapturePermissionSource {
+    private var state: CapturePermissionState
+    init(_ state: CapturePermissionState) { self.state = state }
+    func capturePermission() -> CapturePermissionState { state }
+    func revoke() { state = .revokedWhileRunning }
+}
+
+extension HistoryCommandsTests {
+    @Test(arguments: [CapturePermissionState.notAsked, .denied, .revokedWhileRunning, .needsRelaunch], HistoryCaptureKind.allCases)
+    private func missingPermissionCannotCreatePendingOrHistory(state: CapturePermissionState, kind: HistoryCaptureKind) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let commands = CaptureCommandLayer(permission: HistoryPermission(state), source: HistoryPixels(),
+            fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
+            history: HistoryStore(root: root))
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+        #expect(await commands.execute(kind.command(revision.captureID, maximumBytes: 1024)) == .permissionRequired(state))
+        #expect(await commands.image(for: revision) == nil)
+        #expect(await commands.execute(.dismiss(revision)) == .rejected(.unknownCapture))
+        #expect(await commands.execute(.copy(revision)) == .rejected(.unknownCapture))
+        #expect(try await commands.historyEntries().get().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: root.path))
+    }
+
+    @Test(arguments: HistoryCaptureKind.allCases)
+    private func revokedPermissionStillAllowsPendingCaptureToFinalize(kind: HistoryCaptureKind) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let permission = HistoryPermission(.granted)
+        let commands = CaptureCommandLayer(permission: permission, source: HistoryPixels(),
+            fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
+            history: HistoryStore(root: root))
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+        #expect(await commands.execute(kind.command(revision.captureID, maximumBytes: 1024)) == .pending(revision))
+        await permission.revoke()
+        #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
+        #expect(try await commands.historyEntries().get().map(\.captureID) == [revision.captureID])
+        #expect(await commands.image(for: revision) == nil)
     }
 }

@@ -6,7 +6,10 @@ public struct CaptureImage: Sendable {
     public init(pngData: Data) { self.pngData = pngData }
 }
 
-public enum CaptureSourceFailure: Error, Equatable, Sendable { case unavailable, emptyImage, cancelled }
+public enum CaptureSourceFailure: Error, Equatable, Sendable {
+    case unavailable, emptyImage, cancelled
+    case permissionRequired(CapturePermissionState)
+}
 
 /// The source must bound its work to the allowance and return encoded PNG data.
 public protocol CapturePixelSource: Sendable {

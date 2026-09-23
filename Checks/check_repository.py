@@ -173,7 +173,12 @@ def capture_memory_issues(files):
             if capture and re.search(r'AuthorizedFinalization|\.\s*finalize\s*\(', capture.group(1)):
                 issues.append(f"{path}: capture cannot authorize persistence")
         if path.startswith("Frisket/"):
-            if re.search(write_routes, code):
+            # Recovery opens Settings and directs relaunch helper I/O to /dev/null.
+            # Mask only these exact non-storage forms; other writes in the same
+            # file (including POSIX open and writable FileHandle) stay forbidden.
+            storage_code = re.sub(r'\bNSWorkspace\s*\.\s*shared\s*\.\s*open\b', 'workspaceLaunch', code)
+            storage_code = re.sub(r'\bFileHandle\s*\.\s*nullDevice\b', 'nullDeviceHandle', storage_code)
+            if re.search(write_routes, storage_code):
                 issues.append(f"{path}: app filesystem write bypasses authorized finalization")
             continue
         if path.startswith("Sources/FrisketCore/StorageAdapter/"):

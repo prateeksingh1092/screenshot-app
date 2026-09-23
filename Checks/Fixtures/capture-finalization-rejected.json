@@ -7,10 +7,16 @@
     "Frisket/BadRoot.swift": "try data.write(to: historyRoot)",
     "Sources/FrisketCore/StorageAdapter/EarlyQuery.swift": "func entries() -> [HistoryEntry] { let db = try writableDatabase(); return [] }",
     "Sources/FrisketCore/CaptureLifecycleCoordinator.swift": "switch command { case let .capture(id, maximumBytes): let request = AuthorizedFinalization(revision: revision, pngData: pixels); case let .dismiss(revision): break }",
-    "Sources/FrisketCore/StorageAdapter/EagerProperty.swift": "actor Store { let db = try DatabaseQueue(path: root) }"
+    "Sources/FrisketCore/StorageAdapter/EagerProperty.swift": "actor Store { let db = try DatabaseQueue(path: root) }",
+    "Frisket/RecoveryWithWrite.swift": "NSWorkspace.shared.open(settingsURL); helper.standardOutput = FileHandle.nullDevice; try data.write(to: historyRoot)",
+    "Frisket/RealFileHandle.swift": "let output = try FileHandle(forWritingTo: historyRoot)",
+    "Frisket/POSIXOpen.swift": "Darwin.open(path, O_WRONLY)"
   },
   "expected": [
     "Frisket/BadRoot.swift: app filesystem write bypasses authorized finalization",
+    "Frisket/POSIXOpen.swift: app filesystem write bypasses authorized finalization",
+    "Frisket/RealFileHandle.swift: app filesystem write bypasses authorized finalization",
+    "Frisket/RecoveryWithWrite.swift: app filesystem write bypasses authorized finalization",
     "Sources/FrisketCore/BadAuthorization.swift: finalization capability constructed outside coordinator",
     "Sources/FrisketCore/CaptureLifecycleCoordinator.swift: capture cannot authorize persistence",
     "Sources/FrisketCore/StorageAdapter/Eager.swift: storage initialization or query may write before finalization",
