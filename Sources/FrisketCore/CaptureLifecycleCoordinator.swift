@@ -4,6 +4,7 @@ actor CaptureLifecycleCoordinator {
     private let pendingByteLimit: Int
     private var pendingBytes = 0
     private let source: any CapturePixelSource
+    private let fullScreenSource: (any CapturePixelSource)?
     private let clipboard: any ImageClipboard
     private var inProgress: Set<CaptureID> = []
     private var discarded: Set<CaptureID> = []
@@ -11,9 +12,11 @@ actor CaptureLifecycleCoordinator {
     private var delivered: Set<CaptureID> = []
     private var images: [CaptureID: CaptureImage] = [:]
 
-    init(source: any CapturePixelSource, clipboard: any ImageClipboard, pendingByteLimit: Int) {
+    init(source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
+         clipboard: any ImageClipboard, pendingByteLimit: Int) {
         self.pendingByteLimit = max(0, pendingByteLimit)
         self.source = source
+        self.fullScreenSource = fullScreenSource
         self.clipboard = clipboard
     }
 
@@ -35,7 +38,7 @@ actor CaptureLifecycleCoordinator {
             failedDelivery.remove(id)
             discarded.insert(id)
             return .discarded(id)
-        case let .capture(id, maximumBytes):
+        case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes):
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
             guard images[id] == nil, !delivered.contains(id) else { return .rejected(.duplicateCapture) }
@@ -43,9 +46,16 @@ actor CaptureLifecycleCoordinator {
             guard maximumBytes <= pendingByteLimit - pendingBytes else {
                 return .rejected(.pendingByteBudgetExceeded)
             }
+            let captureSource: any CapturePixelSource
+            if case .captureFullScreen = command {
+                guard let fullScreenSource else { return .captureFailed(.unavailable) }
+                captureSource = fullScreenSource
+            } else {
+                captureSource = source
+            }
             pendingBytes += maximumBytes
             inProgress.insert(id)
-            let result = await source.capture(maximumBytes: maximumBytes)
+            let result = await captureSource.capture(maximumBytes: maximumBytes)
             pendingBytes -= maximumBytes
             inProgress.remove(id)
             switch result {

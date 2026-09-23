@@ -24,12 +24,14 @@ import FrisketCore
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
         commands = CaptureCommandLayer(source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
+            fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
         let menu = NSMenu()
         add("Capture Area (⌃⌥⌘4)", action: #selector(captureArea), to: menu)
+        add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
         menu.addItem(.separator())
         let history = NSMenuItem(title: "History unavailable in this build", action: nil, keyEquivalent: "")
@@ -51,11 +53,19 @@ import FrisketCore
     }
 
     @objc private func captureArea() {
+        capture(.capture(CaptureID(), maximumBytes: 128 * 1024 * 1024))
+    }
+
+    @objc private func captureFullScreen() {
+        capture(.captureFullScreen(CaptureID(), maximumBytes: 128 * 1024 * 1024))
+    }
+
+    private func capture(_ command: CaptureCommand) {
         guard !capturing, let commands else { return }
         capturing = true
         Task {
             defer { capturing = false }
-            let result = await commands.execute(.capture(CaptureID(), maximumBytes: 128 * 1024 * 1024))
+            let result = await commands.execute(command)
             switch result {
             case let .pending(revision):
                 guard let image = await commands.image(for: revision),
@@ -74,7 +84,7 @@ import FrisketCore
                 arrivalOrder.append(id)
             case .captureFailed(.cancelled): break
             case .captureFailed:
-                notice("Capture unavailable", "Check Frisket’s Screen Recording permission in System Settings → Privacy & Security → Screen & System Audio Recording. If macOS requests it, quit and reopen Frisket. A disconnected display or an oversized area can also prevent capture.")
+                notice("Capture unavailable", "Check Frisket’s Screen Recording permission in System Settings → Privacy & Security → Screen & System Audio Recording. If macOS requests it, quit and reopen Frisket. A disconnected display or an oversized capture can also prevent capture.")
             default:
                 notice("Capture unavailable", "Copy or delete pending captures, then try again.")
             }

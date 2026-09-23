@@ -227,3 +227,21 @@ The app's Xcode build always runs the `input-monitoring` static check. The new
 Swift Testing suite exercises selection/pixel stand-ins and the actual AppKit
 pasteboard item/options adapter through seam 1. No general pasteboard object,
 screen-capture call, permission prompt, or application host is used in tests.
+
+## Ticket 20 full-screen capture
+
+`captureFullScreen(CaptureID, maximumBytes:)` uses the optional `fullScreenSource`
+injected into the same command layer. Without that source it reports unavailable;
+it never falls back to area capture. Both capture commands share one coordinator,
+Pending capture budget and revision-bound Copy/Delete flow. Diagnostics classify
+both as the existing closed `capture` operation.
+
+The app's **Capture Full Screen** menu item requests the display under the
+pointer, with display-local bounds and native backing-scale pixel dimensions.
+The source bounds the raw bitmap before capture. ScreenCaptureKit uses the same
+own-app exclusion filter and in-memory PNG encoding as area capture; there is no
+window-sharing fallback. Full-screen capture has no hot key in this ticket;
+shortcut defaults/remapping belong to ticket 24. Seam 1 fixtures cover 1×, 2×,
+negative global coordinates, exclusion requests, Pending image dimensions,
+thumbnail downsampling and unchanged Copy bytes. Actual display selection and
+OS exclusion require [the manual checklist](manual-checks/20-full-screen-capture.md).
