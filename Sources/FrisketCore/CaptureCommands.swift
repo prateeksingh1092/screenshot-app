@@ -65,6 +65,11 @@ public struct CaptureCommandLayer: Sendable {
                                                   pendingByteLimit: pendingByteLimit)
     }
 
+    /// Read-only presentation query; the coordinator remains the owner of pending bytes.
+    public func image(for revision: CaptureRevision) async -> CaptureImage? {
+        await coordinator.image(for: revision)
+    }
+
     public func execute(_ command: CaptureCommand) async -> CaptureCommandOutcome {
         let outcome = await coordinator.execute(command)
         await diagnostics.record(DiagnosticEvent(command: command, outcome: outcome))

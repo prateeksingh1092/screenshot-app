@@ -1,9 +1,10 @@
 # Frisket core package
 
 `Frisket` is a Swift 6.3 package with one static library, `FrisketCore`, and
-one test target, `FrisketCoreTests`. It targets macOS 26. There are no external
+the core test target `FrisketCoreTests`, plus a test-only `FrisketAdapters`
+module and `FrisketAdapterTests` compiling the app adapter sources. It targets macOS 26. There are no external
 dependencies or executable targets. The core implements the fixture capture-to-Copy
-command flow; platform capture, pasteboard, and History adapters are not installed. SwiftPM's default
+command flow; the app now supplies platform capture and pasteboard adapters, while History remains unavailable. SwiftPM's default
 build uses the host architecture; no cross-compilation flags are set.
 
 ## Build and test commands
@@ -63,7 +64,7 @@ It returns zero on success and a diagnostic plus nonzero exit on failure.
 The same checks can run independently while the Swift Testing runner is blocked:
 
 ```sh
-for check in dependencies imports identity provenance diagnostics capture-memory; do
+for check in dependencies imports identity provenance diagnostics capture-memory input-monitoring; do
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /usr/bin/python3 \
     Checks/check_repository.py --root . --check "$check" || exit
 done
@@ -200,3 +201,17 @@ Two additional lexical checks run with the existing checks and fixtures:
 These are conservative lexical guards, not a Swift semantic or capability
 proof. New indirect filesystem routes and future platform adapters still need
 review. No real root or clipboard is touched by the command tests.
+
+## Ticket 08 app integration
+
+See [app build and signing](app-build.md). The app links a native static target
+from the exact core source directory; SwiftPM remains the automated test runner.
+`CaptureCommandLayer.image(for:)` exposes revision-bound in-memory bytes for
+thumbnail downsampling, returning nil for unknown, stale, copied or discarded
+revisions. Cancellation is a typed capture-source outcome. Lifecycle and byte
+ownership remain in the coordinator.
+
+The app's Xcode build always runs the `input-monitoring` static check. The new
+Swift Testing suite exercises selection/pixel stand-ins and the actual AppKit
+pasteboard item/options adapter through seam 1. No general pasteboard object,
+screen-capture call, permission prompt, or application host is used in tests.

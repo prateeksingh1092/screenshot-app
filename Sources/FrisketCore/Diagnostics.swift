@@ -7,7 +7,7 @@ public enum DiagnosticEventName: String, Codable, Sendable {
 public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, discard }
 public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history }
 public enum DiagnosticErrorCode: String, Codable, Sendable {
-    case unavailable, emptyImage, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
+    case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance
 }
@@ -88,6 +88,7 @@ extension DiagnosticEvent {
             name = .captureFailed
             switch failure {
             case .unavailable: error = DiagnosticError(domain: .captureSource, code: .unavailable)
+            case .cancelled: error = DiagnosticError(domain: .captureSource, code: .cancelled)
             case .emptyImage: error = DiagnosticError(domain: .captureSource, code: .emptyImage)
             }
         case let .copy(result):

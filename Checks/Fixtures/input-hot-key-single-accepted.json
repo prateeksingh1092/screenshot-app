@@ -1,0 +1,10 @@
+{
+  "check": "input-monitoring",
+  "repositoryFiles": {
+    "Package.swift": "// fixture",
+    "Frisket/HotKey.swift": "// RegisterEventHotKey(2)\nlet description = \"RegisterEventHotKey(3)\"\nCarbon.RegisterEventHotKey(1)",
+    "Sources/Other.swift": "/* RegisterEventHotKey(4) */",
+    "Tests/HotKeyTests.swift": "RegisterEventHotKey(5)"
+  },
+  "expected": []
+}

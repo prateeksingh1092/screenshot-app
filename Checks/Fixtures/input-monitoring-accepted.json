@@ -1,0 +1,8 @@
+{
+  "check": "input-monitoring",
+  "repositoryFiles": {
+    "Package.swift": "// fixture",
+    "Frisket/Good.swift": "// CGEvent.tapCreate\nlet description = \"addGlobalMonitorForEvents\"\nRegisterEventHotKey(1)\nfunc mouseDragged(with event: NSEvent) {}"
+  },
+  "expected": []
+}

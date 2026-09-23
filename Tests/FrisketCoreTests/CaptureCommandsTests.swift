@@ -318,3 +318,21 @@ extension CaptureCommandsTests {
         #expect(entries.first?.recordedAt == Date(timeIntervalSince1970: 2_209_600))
     }
 }
+
+extension CaptureCommandsTests {
+    @Test func pendingImageQueryIsRevisionBoundAndReleasesAfterCopyOrDiscard() async {
+        let commands = CaptureCommandLayer(source: FixturePixelSource(bytes: Data([21, 22])),
+                                            clipboard: RecordingClipboard(), pendingByteLimit: 16)
+        let id = CaptureID(), second = CaptureID()
+        let revision = CaptureRevision(captureID: id, number: 1)
+        #expect(await commands.image(for: revision) == nil)
+        _ = await commands.execute(.capture(id, maximumBytes: 2))
+        #expect(await commands.image(for: revision)?.pngData == Data([21, 22]))
+        #expect(await commands.image(for: CaptureRevision(captureID: id, number: 2)) == nil)
+        _ = await commands.execute(.copy(revision))
+        #expect(await commands.image(for: revision) == nil)
+        _ = await commands.execute(.capture(second, maximumBytes: 2))
+        _ = await commands.execute(.discard(second))
+        #expect(await commands.image(for: CaptureRevision(captureID: second, number: 1)) == nil)
+    }
+}
