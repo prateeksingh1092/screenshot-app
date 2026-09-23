@@ -69,6 +69,26 @@ extension ScrollingCaptureCommandsTests {
         #expect(previews.allSatisfy { !$0.pngData.isEmpty })
     }
 
+    @Test func rejectedAlignmentCannotBecomeAPendingPrefixOnDone() async throws {
+        let unrelated = try #require(TestImageFactory.solidColor(width: 240, height: 400))
+        let frames = ScriptedFrames(try manualFrames(offsets: [0]) + [
+            .viewport(try #require(ScrollingViewport(cgImage: unrelated))), .done
+        ])
+        let commands = layer(frames: frames, budget: .v1, pendingByteLimit: 2_000_000)
+        let id = CaptureID()
+        let result = await commands.execute(.captureScrolling(id, maximumBytes: 2_000_000))
+        guard case let .captureFailed(.rejectedAlignment(evidence)) = result else {
+            Issue.record("Rejected alignment must fail, got \(result)")
+            return
+        }
+        #expect(evidence.disposition == .rejectedAlignment)
+        #expect(evidence.appendedRows == 0)
+        #expect(evidence.confidence == 0)
+        #expect(await commands.image(for: CaptureRevision(captureID: id, number: 1)) == nil)
+        // A failed capture releases its entire reservation.
+        #expect(await commands.execute(.capture(CaptureID(), maximumBytes: 2_000_000)) != .rejected(.pendingByteBudgetExceeded))
+    }
+
     @Test func copyDeliversTheScrollingCapture() async throws {
         let clipboard = RecordingScrollingClipboard()
         let frames = ScriptedFrames(try manualFrames(offsets: [0, 80, 160]) + [.done])
@@ -194,5 +214,144 @@ private actor RecordingScrollingClipboard: ImageClipboard {
     func write(_ image: ClipboardImage) async -> Result<ClipboardReceipt, ClipboardFailure> {
         images.append(image)
         return .success(ClipboardReceipt(changeCount: 41))
+    }
+}
+
+extension ScrollingCaptureCommandsTests {
+    @Test(arguments: ["area", "fullScreen", "scrolling"])
+    func permissionWaitReservesScrollingBudgetAndIdentifier(kind: String) async {
+        for duplicate in [false, true] {
+            let permission = SuspendedScrollingPermission()
+            let commands = CaptureCommandLayer(permission: permission,
+                source: OccupyingPixels(), fullScreenSource: OccupyingPixels(),
+                clipboard: IgnoringClipboard(), pendingByteLimit: duplicate ? 8 : 4,
+                scrollingFrames: IdleFrames())
+            let id = CaptureID()
+            let first = Task { await commands.execute(.captureScrolling(id, maximumBytes: 4)) }
+            await permission.waitUntilRequested()
+            let otherID = duplicate ? id : CaptureID()
+            let competing: CaptureCommand
+            switch kind {
+            case "area": competing = .capture(otherID, maximumBytes: 4)
+            case "fullScreen": competing = .captureFullScreen(otherID, maximumBytes: 4)
+            default: competing = .captureScrolling(otherID, maximumBytes: 4)
+            }
+            let result = await commands.execute(competing)
+            await permission.resolve(.granted)
+            #expect(result == .rejected(duplicate ? .commandInProgress : .pendingByteBudgetExceeded))
+            #expect(await first.value == .captureFailed(.cancelled))
+            #expect(await commands.image(for: CaptureRevision(captureID: otherID, number: 1)) == nil)
+            // Both the identifier and all reserved bytes are released on cancellation.
+            #expect(await commands.execute(.capture(id, maximumBytes: 4)) == .pending(CaptureRevision(captureID: id, number: 1)))
+        }
+    }
+}
+
+private actor SuspendedScrollingPermission: CapturePermissionSource {
+    private var requested = false
+    private var waiting: CheckedContinuation<CapturePermissionState, Never>?
+    private var observer: CheckedContinuation<Void, Never>?
+
+    func capturePermission() async -> CapturePermissionState {
+        if requested { return .granted }
+        requested = true
+        return await withCheckedContinuation { continuation in
+            waiting = continuation
+            observer?.resume()
+            observer = nil
+        }
+    }
+
+    func waitUntilRequested() async {
+        if requested { return }
+        await withCheckedContinuation { observer = $0 }
+    }
+
+    func resolve(_ state: CapturePermissionState) {
+        waiting?.resume(returning: state)
+        waiting = nil
+    }
+}
+
+
+extension ScrollingCaptureCommandsTests {
+    @Test func liveSessionMatchesPureStitcherWithoutWaitingForDone() throws {
+        let session = ScrollingCaptureSession(budget: .v1)
+        let offsets = [0, 80, 80, 160]
+        let images = try offsets.map {
+            try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: $0))
+        }
+        let pure = try Stitcher.stitch(images.map { ScrollingCaptureFrame(image: $0) })
+        #expect(pure.alignments.map(\.disposition) == [.initialFrame, .appended, .noMovement, .appended])
+        for (index, image) in images.enumerated() {
+            let result = session.ingest(try #require(ScrollingViewport(cgImage: image)))
+            if index == 2 {
+                #expect(result == .unchanged)
+            } else {
+                guard case let .preview(preview) = result else {
+                    Issue.record("Each moving viewport must produce a preview before Done")
+                    return
+                }
+                #expect(preview.width == 240)
+                #expect(preview.height == [400, 480, 480, 560][index])
+                #expect(!preview.pngData.isEmpty)
+            }
+        }
+        let finished = try decoded(try #require(session.finish()?.pngData))
+        let reference = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 560, logicalYOffset: 0))
+        #expect(finished.dataProvider?.data as Data? == pure.image.dataProvider?.data as Data?)
+        #expect(finished.dataProvider?.data as Data? == reference.dataProvider?.data as Data?)
+    }
+
+    @Test func liveAlignmentRejectionPreservesPureEvidenceAndPreventsFinish() throws {
+        let session = ScrollingCaptureSession(budget: .v1)
+        let initial = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: 0))
+        let unrelated = try #require(TestImageFactory.solidColor(width: 240, height: 400))
+        let pure = try Stitcher.stitch([initial, unrelated].map { ScrollingCaptureFrame(image: $0) })
+        _ = session.ingest(try #require(ScrollingViewport(cgImage: initial)))
+        guard case let .rejectedAlignment(evidence) = session.ingest(try #require(ScrollingViewport(cgImage: unrelated))) else {
+            Issue.record("Expected explicit alignment rejection")
+            return
+        }
+        #expect(evidence == pure.alignments.last)
+        #expect(evidence.disposition == .rejectedAlignment)
+        #expect(session.finish() == nil)
+        #expect(session.ingest(try #require(ScrollingViewport(cgImage: initial))) == .rejectedAlignment(evidence))
+    }
+
+    @Test(arguments: [CapturePermissionState.notAsked, .denied, .revokedWhileRunning, .needsRelaunch])
+    func refusedPermissionReleasesScrollingReservation(state: CapturePermissionState) async {
+        let permission = SuspendedScrollingPermission()
+        let frames = IdleFrames()
+        let commands = CaptureCommandLayer(permission: permission, source: OccupyingPixels(),
+            clipboard: IgnoringClipboard(), pendingByteLimit: 4, scrollingFrames: frames)
+        let id = CaptureID()
+        let capture = Task { await commands.execute(.captureScrolling(id, maximumBytes: 4)) }
+        await permission.waitUntilRequested()
+        await permission.resolve(state)
+        #expect(await capture.value == .permissionRequired(state))
+        #expect(await frames.served == 0)
+        #expect(await commands.execute(.capture(id, maximumBytes: 4)) == .pending(CaptureRevision(captureID: id, number: 1)))
+    }
+}
+
+
+extension ScrollingCaptureCommandsTests {
+    @Test func ambiguousWideViewportCannotFinishAsPartialCapture() throws {
+        let session = ScrollingCaptureSession(budget: .v1)
+        let first = try #require(TestImageFactory.repeatedScrollingFrame(width: 1920, height: 1080, logicalYOffset: 0))
+        let second = try #require(TestImageFactory.repeatedScrollingFrame(width: 1920, height: 1080, logicalYOffset: 360))
+        _ = session.ingest(try #require(ScrollingViewport(cgImage: first)))
+        // The original memory fixture ignored this rejection. A conservative
+        // matcher may reject ambiguity; a future matcher may accept all 360 rows.
+        switch session.ingest(try #require(ScrollingViewport(cgImage: second))) {
+        case .rejectedAlignment:
+            #expect(session.finish() == nil)
+        case let .preview(preview):
+            #expect(preview.height == 1440)
+            #expect(try decoded(try #require(session.finish()?.pngData)).height == 1440)
+        default:
+            Issue.record("A moved viewport must never silently become an unchanged prefix")
+        }
     }
 }

@@ -101,22 +101,27 @@ public protocol ScrollingPreviewSurface: Sendable {
 public enum ScrollingIngest: Equatable, Sendable {
   case preview(ScrollingPreview)
   case unchanged
+  case rejectedAlignment(ScrollingCaptureAlignment)
   case stopped(ScrollingCaptureNotice, ScrollingPreview)
   case refused(ScrollingCaptureNotice)
   case failed
 }
 
 /// Pending original for one manual Scrolling capture. Frames are copied into compressed strips and then released.
+/// Incremental matcher access is confined here for awaited frames, live previews and
+/// per-frame budget stops; see the live-session exception in docs/stitcher.md.
 public final class ScrollingCaptureSession: @unchecked Sendable {
   private let budget: ScrollingCaptureBudget
   private var matcher = ScrollingCaptureStitcher()
   private var notice: ScrollingCaptureNotice?
+  private var rejection: ScrollingCaptureAlignment?
 
   public init(budget: ScrollingCaptureBudget) {
     self.budget = budget
   }
 
   public func ingest(_ viewport: ScrollingViewport) -> ScrollingIngest {
+    if let rejection { return .rejectedAlignment(rejection) }
     if let notice {
       guard let preview = currentPreview(notice) else { return .refused(notice) }
       return .stopped(notice, preview)
@@ -158,12 +163,21 @@ public final class ScrollingCaptureSession: @unchecked Sendable {
       notice = .pixelCap
       guard let preview = currentPreview(.pixelCap) else { return .refused(.pixelCap) }
       return .stopped(.pixelCap, preview)
-    case .ignoredNoMovement, .ignoredAlignmentFailed:
+    case .ignoredNoMovement:
       return .unchanged
+    case .ignoredAlignmentFailed:
+      let evidence = ScrollingCaptureAlignment(disposition: .rejectedAlignment,
+        pixelScore: update.alignmentDebug?.pixelScore, totalScore: update.alignmentDebug?.totalScore,
+        appendedRows: 0, confidence: update.alignmentDebug?.confidence ?? 0,
+        usedVisionEstimate: update.alignmentDebug?.usedVisionEstimate ?? false)
+      rejection = evidence
+      matcher = ScrollingCaptureStitcher()
+      return .rejectedAlignment(evidence)
     }
   }
 
   public func finish() -> CaptureImage? {
+    guard rejection == nil else { return nil }
     guard matcher.acceptedFrameCount > 0, let image = matcher.mergedImage(), let png = encodePNG(image), !png.isEmpty else {
       cancel()
       return nil
@@ -175,6 +189,7 @@ public final class ScrollingCaptureSession: @unchecked Sendable {
   public func cancel() {
     matcher = ScrollingCaptureStitcher()
     notice = nil
+    rejection = nil
   }
 
   private func currentPreview(_ notice: ScrollingCaptureNotice?) -> ScrollingPreview? {

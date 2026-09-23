@@ -36,6 +36,9 @@ import FrisketCore
         platform.finishCapture()
     }
 
+    /// The panel and adapter tests use the same cancellation action.
+    func cancel() { choice = .cancel }
+
     func nextFrame() async -> ScrollingFrameEvent {
         if let choice { return choice }
         if !prepared {
@@ -55,12 +58,15 @@ import FrisketCore
         }
         do {
             let image = try await platform.captureRegion(request)
+            if let choice { return choice }
             guard let viewport = ScrollingViewport(cgImage: image) else { return .failed(.unavailable) }
             sampled = true
             return .viewport(viewport)
         } catch let failure as CaptureSourceFailure {
+            if let choice { return choice }
             return .failed(failure)
         } catch {
+            if let choice { return choice }
             return .failed(.unavailable)
         }
     }
@@ -68,7 +74,7 @@ import FrisketCore
     func update(_ preview: ScrollingPreview) async {
         if panel == nil {
             panel = ScrollingSessionPanel(done: { [weak self] in self?.choice = .done },
-                                          cancel: { [weak self] in self?.choice = .cancel })
+                                          cancel: { [weak self] in self?.cancel() })
         }
         panel?.update(preview)
     }

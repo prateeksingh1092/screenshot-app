@@ -33,10 +33,47 @@ bitmap. No global state or storage is mutated. Vision is local registration,
 not OCR. Failure to obtain a Vision estimate leaves the pixel matcher active.
 
 The inherited matcher and its regression suite remain internal. Its preview,
-mutable start/append and strip iteration methods are not product interfaces.
-The public sequence tests and full-size run exercise the product interface.
+mutable start/append and strip iteration methods are not exposed to app callers.
+The public sequence tests and full-size run exercise the pure product interface.
+The live session is a bounded exception described below.
 The existing 22 scenarios and five strip/lifetime/sticky tests retain the
 trial's regression coverage, including its deliberately conservative cases.
+
+## Live scrolling session exception (ticket 35 fix pass)
+
+`ScrollingCaptureSession` is the sole product-side owner allowed to use the
+internal matcher's incremental methods. The coordinator serializes access to
+one session. App adapters supply `ScrollingFrameFeed` events; they never receive
+the matcher. This exception uses the documentation option authorized by the
+fix-35 brief; it does not replace the pure sequence contract for completed inputs.
+
+`Stitcher.stitch(_:)` synchronously consumes a finite `Sequence` and returns only
+at its end. The live feed awaits ScreenCaptureKit and human Done/Cancel choices,
+updates a preview between frames, and checks retained-byte and pixel budgets
+before accepting more content. The existing pure interface cannot await that
+feed, emit intermediate previews, or stop at a requested output height. Buffering
+all viewports until Done violates prompt frame release and removes the live
+preview. Replaying all prior viewports for each preview retains capture-sized
+input history and repeats earlier matching. Feeding the tall result plus the
+next viewport instead violates the equal-viewport-dimensions contract and loses
+the previous-viewport matching state. A blocking synchronous bridge would also
+need extra control and preview side effects, so would not preserve purity.
+
+The session therefore keeps one incremental matcher, compressed output strips
+and the previous accepted raster. It uses the same matching algorithm as the
+pure function and does not replay previous input frames. Tests compare each live
+preview's dimensions and the final decoded pixels with the pure result and an
+independent synthetic document. Existing frame-release, cap, memory-stop and
+opt-in memory tests exercise the constraints requiring this exception.
+
+An alignment rejection is terminal for a live session: ingest emits
+`rejectedAlignment` with disposition, scores, appended-row count, confidence and
+Vision-use evidence; the accepted prefix is released and `finish()` returns nil.
+The command returns `captureFailed(.rejectedAlignment(evidence))`, releases its
+reservation and creates no thumbnail. Diagnostics retain only the closed
+`rejectedAlignment` code. True no-movement still returns `unchanged`. The pure
+function continues to return its accepted prefix plus all alignment records,
+so its callers must still inspect those records.
 
 ## Reproduce
 

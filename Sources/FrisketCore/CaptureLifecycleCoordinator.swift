@@ -170,10 +170,15 @@ actor CaptureLifecycleCoordinator {
         guard maximumBytes > 0 else { return .rejected(.invalidByteAllowance) }
         guard let scrollingFrames else { return .captureFailed(.unavailable) }
         guard maximumBytes <= pendingByteLimit - pendingBytes else { return .rejected(.pendingByteBudgetExceeded) }
-        let access = await permission.capturePermission()
-        guard access == .granted else { return .permissionRequired(access) }
+        // Reserve before the first suspension, just like area/full-screen capture.
         pendingBytes += maximumBytes
         inProgress.insert(id)
+        let access = await permission.capturePermission()
+        guard access == .granted else {
+            pendingBytes -= maximumBytes
+            inProgress.remove(id)
+            return .permissionRequired(access)
+        }
         let sessionBudget = ScrollingCaptureBudget(pixelCap: scrollingBudget.pixelCap,
                                                    memoryBudgetBytes: min(scrollingBudget.memoryBudgetBytes, maximumBytes))
         let session = ScrollingCaptureSession(budget: sessionBudget)
@@ -196,6 +201,11 @@ actor CaptureLifecycleCoordinator {
                 switch session.ingest(viewport) {
                 case let .preview(preview):
                     await scrollingPreview?.update(preview)
+                case let .rejectedAlignment(evidence):
+                    session.cancel()
+                    pendingBytes -= maximumBytes
+                    inProgress.remove(id)
+                    return .captureFailed(.rejectedAlignment(evidence))
                 case .unchanged:
                     break
                 case let .stopped(reason, preview):

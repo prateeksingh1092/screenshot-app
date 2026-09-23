@@ -10,7 +10,7 @@ public enum DiagnosticErrorCode: String, Codable, Sendable {
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired
-    case permissionRequired, pixelCap, memoryBudget
+    case permissionRequired, pixelCap, memoryBudget, rejectedAlignment
 }
 
 public struct DiagnosticError: Equatable, Codable, Sendable {
@@ -112,6 +112,7 @@ extension DiagnosticEvent {
         case let .captureFailed(failure):
             name = .captureFailed
             switch failure {
+            case .rejectedAlignment: error = DiagnosticError(domain: .captureSource, code: .rejectedAlignment)
             case .unavailable: error = DiagnosticError(domain: .captureSource, code: .unavailable)
             case .cancelled: error = DiagnosticError(domain: .captureSource, code: .cancelled)
             case .emptyImage: error = DiagnosticError(domain: .captureSource, code: .emptyImage)

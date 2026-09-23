@@ -18,7 +18,7 @@ public struct ScrollingCaptureFrame {
 }
 
 /// Alignment evidence in input order; contains no pixels or free-form diagnostics.
-public struct ScrollingCaptureAlignment {
+public struct ScrollingCaptureAlignment: Equatable, Sendable {
   public enum Disposition: Equatable, Sendable {
     case initialFrame, appended, noMovement, rejectedAlignment
   }

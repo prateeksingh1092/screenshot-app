@@ -27,6 +27,7 @@ import Testing
 @MainActor private final class RecordingScrollingRegion: ScrollingRegionCapturing {
     private(set) var requests: [AreaCaptureRequest] = []
     private(set) var didHideSelection = false
+    var beforeCapture: (() async throws -> Void)?
 
     func prefetchShareableContent() async throws {}
     func selectArea() async -> AreaSelection? {
@@ -37,6 +38,7 @@ import Testing
     func finishCapture() {}
     func captureRegion(_ request: AreaCaptureRequest) async throws -> CGImage {
         requests.append(request)
+        try await beforeCapture?()
         var pixels = [UInt8](repeating: 0, count: 4 * 2 * 4)
         for index in stride(from: 3, to: pixels.count, by: 4) { pixels[index] = 255 }
         let data = Data(pixels) as CFData
@@ -46,4 +48,64 @@ import Testing
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
     }
+}
+
+
+extension ScrollingCaptureAdapterTests {
+    @Test(arguments: [false, true])
+    func cancelDuringLimitTriggeringViewportDiscardsTheCapture(captureFails: Bool) async throws {
+        let platform = RecordingScrollingRegion()
+        let gate = SuspendedRegion()
+        platform.beforeCapture = {
+            if platform.requests.count == 2 {
+                await gate.suspend()
+                if captureFails { throw CaptureSourceFailure.unavailable }
+            }
+        }
+        let capture = ManualScrollingCapture(platform: platform, bundleIdentifier: "fixture.bundle")
+        defer { capture.hide() }
+        let commands = CaptureCommandLayer(permission: ScrollingAdapterPermission(),
+            source: UnusedScrollingPixels(), clipboard: UnusedScrollingClipboard(), pendingByteLimit: 100_000,
+            scrollingFrames: capture,
+            scrollingBudget: ScrollingCaptureBudget(pixelCap: 8, memoryBudgetBytes: 100_000))
+        let id = CaptureID()
+        let task = Task { await commands.execute(.captureScrolling(id, maximumBytes: 100_000)) }
+        await gate.waitUntilSuspended()
+        capture.cancel()
+        gate.resume()
+        #expect(await task.value == .captureFailed(.cancelled))
+        #expect(await commands.image(for: CaptureRevision(captureID: id, number: 1)) == nil)
+        #expect(await capture.nextFrame() == .cancel)
+    }
+}
+
+@MainActor private final class SuspendedRegion {
+    private var pending: CheckedContinuation<Void, Never>?
+    private var observer: CheckedContinuation<Void, Never>?
+
+    func suspend() async {
+        await withCheckedContinuation { continuation in
+            pending = continuation
+            observer?.resume()
+            observer = nil
+        }
+    }
+    func waitUntilSuspended() async {
+        if pending != nil { return }
+        await withCheckedContinuation { observer = $0 }
+    }
+    func resume() {
+        pending?.resume()
+        pending = nil
+    }
+}
+
+private struct ScrollingAdapterPermission: CapturePermissionSource {
+    func capturePermission() async -> CapturePermissionState { .granted }
+}
+private struct UnusedScrollingPixels: CapturePixelSource {
+    func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> { .failure(.unavailable) }
+}
+private struct UnusedScrollingClipboard: ImageClipboard {
+    func write(_ image: ClipboardImage) async -> Result<ClipboardReceipt, ClipboardFailure> { .failure(.unavailable) }
 }
