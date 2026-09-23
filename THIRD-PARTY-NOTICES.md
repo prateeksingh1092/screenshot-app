@@ -72,9 +72,47 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Conditional future attribution
+## Snapzy stitcher trial — BSD-3-Clause
 
-Snapzy is currently a read-only engineering reference. Its evaluation checkout
-is excluded from the proposed commit. Add its BSD-3-Clause licence, copyright,
-and file-level provenance only if ticket 34 adopts the scrolling stitcher;
-retain the original headers in any code then ported.
+Copyright (c) 2026, Trong Duong Duc.
+Upstream: https://github.com/duongductrong/Snapzy
+Source revision: `837fc73d9b55dfde203e9d14aeb8c8fae4f0add7`.
+
+Ticket 04 copies the stitcher, image factory, and converted tests into the isolated
+`Trials/StitcherTrial/` evaluation package. Frisket does not depend on it; this is
+not a decision to adopt the stitcher. File provenance is in
+[docs/ported-files.json](docs/ported-files.json). The original file banners are
+retained. Upstream has no BSD text in these individual files, so the complete
+upstream licence is prepended to each copy and retained verbatim in the trial's
+[LICENSE](Trials/StitcherTrial/LICENSE).
+
+```text
+BSD 3-Clause License
+
+Copyright (c) 2026, Trong Duong Duc
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
