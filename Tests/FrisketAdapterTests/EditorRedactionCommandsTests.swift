@@ -741,6 +741,63 @@ extension EditorRedactionCommandsTests {
         #expect(await commands.execute(leave.command(for: original)) == .discarded(id))
         #expect(try await commands.historyEntries().get().isEmpty)
     }
+
+    @Test(arguments: CanaryCase.all)
+    private func editorCopySaveAndDragDeliverTheRenderedRevision(fixture: CanaryCase) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("History.noindex")
+        let exports = directory.appendingPathComponent("Exports")
+        let clipboard = RecordingClipboard()
+        let drag = CropDragHandoff()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+            exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
+            drag: drag, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")),
+            codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let rendered = CaptureRevision(captureID: id, number: 2)
+        let edits = try fixture.edits()
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(EditorLeave.deliver(edits, .copy).command(for: original)) ==
+            .edited(rendered, .committed))
+
+        #expect(await commands.execute(EditorDelivery.copy.command(for: rendered)) ==
+            .copy(CopyOutcome(revision: rendered, commit: .committed,
+                delivery: .copied(ClipboardReceipt(changeCount: 101)))))
+        expectRedacted(try decodeSRGB(try #require(await clipboard.images.last).pngData), fixture)
+        guard case let .save(saved) = await commands.execute(EditorDelivery.save.command(for: rendered)),
+              case let .saved(receipt) = saved.delivery else {
+            Issue.record("Editor Save should succeed"); return
+        }
+        expectRedacted(try decodeSRGB(try Data(contentsOf: exports.appendingPathComponent(receipt.filename))), fixture)
+        #expect(await commands.execute(EditorDelivery.drag.command(for: rendered)) ==
+            .drag(DragOutcome(revision: rendered, commit: .committed, delivery: .copied)))
+        expectRedacted(try decodeSRGB(try #require(await drag.bytes().last)), fixture)
+    }
+
+    @Test func failedEditorCopyLeavesTheRenderedRevisionForRetry() async throws {
+        let fixture = CanaryCase.all[0]
+        let root = historyRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let clipboard = FailingOnceClipboard()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let rendered = CaptureRevision(captureID: id, number: 2)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(EditorLeave.deliver(try fixture.edits(), .copy).command(for: original)) ==
+            .edited(rendered, .committed))
+        #expect(await commands.execute(EditorDelivery.copy.command(for: rendered)) ==
+            .copy(CopyOutcome(revision: rendered, commit: .committed, delivery: .failed(.unavailable))))
+        #expect(try await commands.historyEntries().get().map(\.captureID) == [id])
+        #expect(await commands.execute(.retryCopy(rendered)) ==
+            .copy(CopyOutcome(revision: rendered, commit: .committed,
+                delivery: .copied(ClipboardReceipt(changeCount: 7)))))
+        expectRedacted(try decodeSRGB(try #require(await clipboard.images.last).pngData), fixture)
+    }
 }
 
 private struct EffectCanary: Sendable, CustomTestStringConvertible {
