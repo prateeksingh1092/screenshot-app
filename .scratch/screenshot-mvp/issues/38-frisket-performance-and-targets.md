@@ -4,7 +4,7 @@
 
 **Blocked by:** 08, 37
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/38-frisket-performance-and-targets`)
 
 - [ ] Latency comes from app-logged monotonic timestamps; idle CPU, wakeups, and footprint as in ticket 37.
 - [ ] The low-power GPU is confirmed.

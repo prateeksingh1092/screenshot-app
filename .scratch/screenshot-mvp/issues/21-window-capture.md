@@ -4,7 +4,7 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/21-window-capture`)
 
 - [ ] Only windows visible on the current Space are candidates; minimized windows and other Spaces are out of scope.
 - [ ] The highlight ignores Frisket's own panels, and Frisket's windows never appear in the capture.

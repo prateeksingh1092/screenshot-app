@@ -4,7 +4,7 @@
 
 **Blocked by:** 23
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/25-onboarding-and-about`)
 
 - [ ] Onboarding explains the Screen Recording permission, what History keeps and for how long, and that Save keeps a permanent copy.
 - [ ] It states Frisket's privacy limits: it can remove captures only from itself, not from apps, devices, or backups it already delivered to; FileVault is recommended.
