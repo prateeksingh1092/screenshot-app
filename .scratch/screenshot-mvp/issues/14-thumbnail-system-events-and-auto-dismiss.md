@@ -4,14 +4,14 @@
 
 **Blocked by:** 11, 13
 
-**Status:** in-progress (branch `ticket/14-thumbnail-system-events-and-auto-dismiss`)
+**Status:** resolved (tested on `main` at `955092c`; lock and unplug manual pending)
 
-- [ ] Quit finalizes unedited thumbnails to History, waiting only for commits the user has authorized.
-- [ ] Unplugging a display moves its thumbnails to a remaining display.
-- [ ] Screen lock leaves thumbnails pending.
-- [ ] A crash loses unedited captures; nothing reaches disk before the user acts (decision 31).
-- [ ] Settings offers auto-dismiss delays and "never".
-- [ ] Each outcome is covered by a seam 1 test; display unplug and lock are also in the manual checklist.
+- [x] Quit finalizes unedited thumbnails to History, waiting only for commits the user has authorized.
+- [x] Unplugging a display moves its thumbnails to a remaining display.
+- [x] Screen lock leaves thumbnails pending.
+- [x] A crash loses unedited captures; nothing reaches disk before the user acts (decision 31).
+- [x] Settings offers auto-dismiss delays and "never".
+- [x] Each outcome is covered by a seam 1 test; display unplug and lock are also in the manual checklist.
 
 ## Comments
 
@@ -26,3 +26,5 @@ Cursor coordinator chat (Claude Opus 5.5 High). Report: [14-implementer.md](../r
 ### 2026-09-23 — review and fix
 
 In-chat review vs `b04a53c`: [14-code-review.md](../reviews/14-code-review.md). One fix: failed quit unbusies remaining cards.
+
+- **Integration:** `integrate/14` fast-forwarded `main` to `955092c`. Never vs zero, quit, lock, unplug, and crash-writes-nothing are seam 1. Settings persist never and seconds separately. Root `swift test`: 246 tests in 36 suites passed. Unsigned x86_64 `xcodebuild` succeeded. x86_64 only; arm64 not executed. Coordinator chat after Codex/Other Models limits. Manual lock/unplug/Settings persist remain for Prateek.
