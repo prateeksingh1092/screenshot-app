@@ -24,3 +24,7 @@ Report: [33-implementer.md](../reports/33-implementer.md). Copy Text recognizes
 the current revision only, drops stale results, and notices the character
 count. Manual not run. Status/checkboxes unchanged pending review.
 
+### 2026-09-23 — review
+
+In-chat review vs `9617e93`: [33-code-review.md](../reviews/33-code-review.md). No blocking findings.
+
