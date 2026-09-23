@@ -223,3 +223,54 @@ extension ThumbnailStackCommandsTests {
         #expect(try await fixture.historyIDs() == [revision.captureID])
     }
 }
+
+extension ThumbnailStackCommandsTests {
+    @Test func stackFocusPausesTimeoutWhileOverflowStillFinalizes() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let first = try await fixture.capture()
+        await fixture.commands.setThumbnailStackFocus(true)
+        fixture.clock.advance(by: ThumbnailStackPolicy().autoDismissDelay)
+        #expect(await fixture.commands.thumbnails().map(\.dueExit) == [nil])
+        #expect(await fixture.commands.execute(.exitThumbnail(first, .timeout)) == .rejected(.thumbnailExitNotDue))
+        var newest = first
+        for _ in 0..<4 { newest = try await fixture.capture() }
+        let cards = await fixture.commands.thumbnails()
+        #expect(cards.map(\.dueExit) == [nil, nil, nil, nil, .overflow])
+        #expect(await fixture.commands.execute(.exitThumbnail(first, .overflow)) == .finalized(first, .committed))
+        #expect(await fixture.commands.thumbnails().map(\.revision) == [newest,
+            cards[1].revision, cards[2].revision, cards[3].revision])
+        await fixture.commands.setThumbnailStackFocus(false)
+        fixture.clock.advance(by: ThumbnailStackPolicy().autoDismissDelay)
+        #expect(await fixture.commands.thumbnails().map(\.dueExit) == [.timeout, .timeout, .timeout, .timeout])
+    }
+
+    @Test func focusingTheStackSelectsTheNewestCardAndArrowsMoveBetweenCards() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let older = try await fixture.capture()
+        let newest = try await fixture.capture()
+        #expect(await fixture.commands.focusedThumbnail() == nil)
+        await fixture.commands.setThumbnailStackFocus(true)
+        #expect(await fixture.commands.focusedThumbnail() == newest)
+        #expect(await fixture.commands.moveThumbnailFocus(.older) == older)
+        #expect(await fixture.commands.focusedThumbnail() == older)
+        #expect(await fixture.commands.moveThumbnailFocus(.older) == older)
+        #expect(await fixture.commands.moveThumbnailFocus(.newer) == newest)
+        await fixture.commands.setThumbnailStackFocus(false)
+        #expect(await fixture.commands.focusedThumbnail() == nil)
+        #expect(await fixture.commands.moveThumbnailFocus(.older) == nil)
+    }
+
+    @Test func singleKeysAndArrowsMapToThumbnailCommands() {
+        #expect(ThumbnailKeys.command(characters: "c", keyCode: 8) == .copy)
+        #expect(ThumbnailKeys.command(characters: "s", keyCode: 1) == .save)
+        #expect(ThumbnailKeys.command(characters: "e", keyCode: 14) == .edit)
+        #expect(ThumbnailKeys.command(characters: "\u{7f}", keyCode: 51) == .deleteCapture)
+        #expect(ThumbnailKeys.command(characters: "\u{1b}", keyCode: 53) == .dismiss)
+        #expect(ThumbnailKeys.command(characters: "", keyCode: 126) == .older)
+        #expect(ThumbnailKeys.command(characters: "", keyCode: 125) == .newer)
+        #expect(ThumbnailKeys.command(characters: "c", keyCode: 8, command: true) == nil)
+        #expect(ThumbnailKeys.command(characters: "x", keyCode: 7) == nil)
+    }
+}

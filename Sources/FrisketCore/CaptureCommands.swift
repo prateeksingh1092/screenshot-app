@@ -117,6 +117,19 @@ public struct CaptureCommandLayer: Sendable {
         await coordinator.thumbnails()
     }
 
+    /// Keyboard or VoiceOver focus on the stack pauses timeout; overflow still finalizes.
+    public func setThumbnailStackFocus(_ focused: Bool) async {
+        await coordinator.setThumbnailStackFocus(focused)
+    }
+
+    public func focusedThumbnail() async -> CaptureRevision? {
+        await coordinator.focusedThumbnail()
+    }
+
+    public func moveThumbnailFocus(_ move: ThumbnailFocusMove) async -> CaptureRevision? {
+        await coordinator.moveThumbnailFocus(move)
+    }
+
     public func maintainHistory(limits: HistoryLimits? = nil) async -> Result<HistoryUsage, HistoryFailure> {
         await coordinator.maintainHistory(limits: limits)
     }

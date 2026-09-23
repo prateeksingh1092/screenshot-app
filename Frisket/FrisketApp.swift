@@ -253,7 +253,7 @@ import FrisketCore
     }
 
     private func makePanel(_ id: CaptureID, revision: CaptureRevision, preview: CGImage, displayID: UInt32?) -> ThumbnailPanel {
-        ThumbnailPanel(revision: revision, preview: preview, displayID: displayID,
+        let panel = ThumbnailPanel(revision: revision, preview: preview, displayID: displayID,
             actions: ThumbnailCardActions(copy: { [weak self] in self?.copy(id) },
                                           save: { [weak self] in self?.save(id) },
                                           delete: { [weak self] in self?.discard(id) },
@@ -262,6 +262,27 @@ import FrisketCore
                                           swipe: { [weak self] in self?.leave(id, by: .swipe) },
                                           edit: { [weak self] in self?.edit(id) }),
             startDrag: { [weak self] view, event in self?.startDrag(id, from: view, event: event) })
+        panel.moveFocus = { [weak self] move in self?.moveStackFocus(move) }
+        panel.onBecomeKey = { [weak self] in
+            Task { await self?.commands?.setThumbnailStackFocus(true) }
+        }
+        panel.onResignKey = { [weak self] in
+            Task { await self?.releaseStackFocusIfIdle() }
+        }
+        return panel
+    }
+
+    private func moveStackFocus(_ move: ThumbnailFocusMove) {
+        Task {
+            guard let revision = await commands?.moveThumbnailFocus(move) else { return }
+            panels[revision.captureID]?.focus()
+        }
+    }
+
+    private func releaseStackFocusIfIdle() async {
+        try? await Task.sleep(for: .milliseconds(50))
+        if panels.values.contains(where: \.isKey) { return }
+        await commands?.setThumbnailStackFocus(false)
     }
 
     private func edit(_ id: CaptureID) {
@@ -453,6 +474,7 @@ import FrisketCore
         editors.removeValue(forKey: id)
         arrivalOrder.removeAll { $0 == id }
         timeouts.removeValue(forKey: id)?.cancel()
+        if panels.isEmpty { Task { await commands?.setThumbnailStackFocus(false) } }
         settleSoon()
     }
 
@@ -509,7 +531,12 @@ import FrisketCore
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
     @objc private func focusThumbnail() {
-        if let id = arrivalOrder.last { panels[id]?.focus() }
+        Task {
+            await commands?.setThumbnailStackFocus(true)
+            if let revision = await commands?.focusedThumbnail() {
+                panels[revision.captureID]?.focus()
+            }
+        }
     }
     @objc private func showAbout() { surfaces.presentAbout() }
     @objc private func quit() { NSApp.terminate(nil) }

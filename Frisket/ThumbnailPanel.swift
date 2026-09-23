@@ -116,24 +116,49 @@ private struct ThumbnailCardControls: View {
     }
 }
 
-/// Recognizes Escape and a horizontal two-finger swipe within this window only.
+/// Recognizes single-key commands, arrows, Escape, and a horizontal two-finger swipe.
 private final class ThumbnailCardPanel: NSPanel {
     var closeAction: (() -> Void)?
-    var escape: (() -> Void)?
     var swipe: (() -> Void)?
+    var keyCommand: ((ThumbnailKeyCommand) -> Void)?
+    var onBecomeKey: (() -> Void)?
+    var onResignKey: (() -> Void)?
     private var swipeDistance = CGSize.zero
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    override func becomeKey() {
+        super.becomeKey()
+        onBecomeKey?()
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        onResignKey?()
+    }
+
+    override func setAccessibilityFocused(_ focused: Bool) {
+        super.setAccessibilityFocused(focused)
+        if focused { onBecomeKey?() }
+        else { onResignKey?() }
+    }
+
     // The standard File > Close Window command uses the same lifecycle exit.
     override func performClose(_ sender: Any?) { closeAction?() }
 
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, event.charactersIgnoringModifiers == "\u{1b}",
-           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
-            escape?()
-            return
+        if event.type == .keyDown {
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            if let command = ThumbnailKeys.command(characters: event.charactersIgnoringModifiers ?? "",
+                                                   keyCode: UInt16(event.keyCode),
+                                                   command: modifiers.contains(.command),
+                                                   option: modifiers.contains(.option),
+                                                   control: modifiers.contains(.control),
+                                                   shift: modifiers.contains(.shift)) {
+                keyCommand?(command)
+                return
+            }
         }
         if event.type == .scrollWheel, event.hasPreciseScrollingDeltas {
             trackSwipe(event)
@@ -166,6 +191,15 @@ private final class ThumbnailCardPanel: NSPanel {
     private let panel: ThumbnailCardPanel
     private var shown = false
 
+    var onBecomeKey: (() -> Void)? {
+        didSet { panel.onBecomeKey = onBecomeKey }
+    }
+    var onResignKey: (() -> Void)? {
+        didSet { panel.onResignKey = onResignKey }
+    }
+    var moveFocus: ((ThumbnailFocusMove) -> Void)?
+    var isKey: Bool { panel.isKeyWindow }
+
     init(revision: CaptureRevision, preview: CGImage, displayID: UInt32?, actions: ThumbnailCardActions,
          startDrag: @escaping (NSView, NSEvent) -> Void) {
         self.revision = revision
@@ -173,8 +207,30 @@ private final class ThumbnailCardPanel: NSPanel {
         panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 320),
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.closeAction = actions.close
-        panel.escape = actions.escape
         panel.swipe = actions.swipe
+        panel.keyCommand = { [weak self] command in
+            self?.onBecomeKey?()
+            switch command {
+            case .copy: actions.copy()
+            case .save: actions.save()
+            case .edit: actions.edit()
+            case .deleteCapture: actions.delete()
+            case .dismiss: actions.escape()
+            case .newer: self?.moveFocus?(.newer)
+            case .older: self?.moveFocus?(.older)
+            }
+        }
+        panel.setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: "Copy capture") { [weak self] in self?.onBecomeKey?(); actions.copy(); return true },
+            NSAccessibilityCustomAction(name: "Save capture") { [weak self] in self?.onBecomeKey?(); actions.save(); return true },
+            NSAccessibilityCustomAction(name: "Edit capture") { [weak self] in self?.onBecomeKey?(); actions.edit(); return true },
+            NSAccessibilityCustomAction(name: "Delete pending capture") { [weak self] in self?.onBecomeKey?(); actions.delete(); return true },
+            NSAccessibilityCustomAction(name: "Close thumbnail and keep capture in History") { [weak self] in
+                self?.onBecomeKey?()
+                actions.close()
+                return true
+            }
+        ])
         panel.isReleasedWhenClosed = false
         panel.isRestorable = false
         panel.hidesOnDeactivate = false
@@ -197,7 +253,7 @@ private final class ThumbnailCardPanel: NSPanel {
             panel.setFrameOrigin(origin)
             panel.orderFrontRegardless()
             NSAccessibility.post(element: panel, notification: .announcementRequested,
-                                 userInfo: [.announcement: "Capture ready. Use Frisket’s Focus Latest Thumbnail menu to copy, save, edit, close, or delete.",
+                                 userInfo: [.announcement: "Capture ready. Focus Latest Thumbnail, then arrows move, C copies, S saves, E edits, Delete deletes, Escape dismisses.",
                                             .priority: NSAccessibilityPriorityLevel.medium.rawValue])
             return
         }
