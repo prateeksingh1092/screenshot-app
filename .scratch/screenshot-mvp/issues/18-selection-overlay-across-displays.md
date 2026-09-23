@@ -4,7 +4,7 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/18-selection-overlay-across-displays`)
 
 - [ ] A crosshair appears on every connected display, including over full-screen apps and after Space switches.
 - [ ] A selection is confined to its origin display (decision 33), including a display at negative coordinates.
