@@ -6,6 +6,7 @@ import FrisketCore
     private var onboarding: OnboardingPanel?
     private var about: AboutPanel?
     private var deferredRecovery = false
+    private var onboardingDismissedForLaunch = false
 
     init(preference: OnboardingPreference = OnboardingPreference(defaults: .standard)) {
         self.preference = preference
@@ -14,7 +15,8 @@ import FrisketCore
     func presentOnboardingIfNeeded(systemAlertPending: @escaping () -> Bool, permission: @escaping () -> CapturePermissionState,
                                    recover: @escaping (CapturePermissionState) -> Void) {
         let completion = OnboardingCompletion(isComplete: preference.isComplete)
-        guard FirstLaunch.surface(onboarding: completion, systemAlertPending: systemAlertPending()) == .onboarding else { return }
+        guard FirstLaunch.surface(onboarding: completion, systemAlertPending: systemAlertPending(),
+                                  dismissedForLaunch: onboardingDismissedForLaunch) == .onboarding else { return }
         let panel = OnboardingPanel(content: .current, acknowledge: { [weak self] in
             guard let self else { return }
             self.preference.markComplete()
@@ -27,6 +29,7 @@ import FrisketCore
                 self.deferredRecovery = true
             }
         }, later: { [weak self] in
+            self?.onboardingDismissedForLaunch = true
             self?.onboarding = nil
         })
         onboarding = panel

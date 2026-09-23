@@ -17,3 +17,25 @@ xcodebuild -project Frisket.xcodeproj -scheme Frisket -configuration Development
 Swift Testing: 101 passed, 3 existing opt-in tests skipped, 16 suites. Unsigned xcodebuild succeeded, and the notices file is in the app bundle.
 
 **Prateek:** `docs/manual-checks/25-onboarding-and-about.md` covers first-launch copy, VoiceOver and keyboard, the permission handoff without covering the system alert, the once-only flag outside History, and About. Those checks were not run here.
+
+## Fix pass
+
+2026-09-23 — Codex. Validated and fixed the review's P3 finding: Later left the persistent completion preference unset, so `systemAlertEnded` could present onboarding again in the same launch. `LaunchSurfaces` now keeps an in-memory `onboardingDismissedForLaunch` flag, sets it on Later, and passes it into `FirstLaunch.surface`. The persistent `hasCompletedOnboarding` preference remains unchanged; a new launch may present onboarding again. No review findings remain open.
+
+Regression test: `laterKeepsOnboardingDismissedUntilTheNextLaunch`, at the existing public `FirstLaunch` seam. After adding the dismissal input without changing behavior, the test failed because the post-alert surface was `.onboarding` instead of `.ready`. After the fix, all four onboarding/About tests passed. The test also covers a pending system alert and the next launch with the incomplete preference.
+
+Full verification used Xcode's Swift toolchain and in-worktree caches:
+
+```sh
+env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache" \
+  SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache" \
+  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test \
+  --disable-sandbox --disable-keychain --disable-xctest \
+  --cache-path .build/cache --scratch-path .build \
+  --config-path .build/config --security-path .build/security
+```
+
+Result: exit 0; Swift Testing reported 102 tests in 16 suites passed, with three existing opt-in tests skipped. The suite's repository static checks also passed.
+
+An additional unsigned x86_64 app build was attempted with the report's Xcode build options and in-worktree derived data/package checkout paths. It exited 74 before compilation because the sandbox denied SwiftPM diagnostic output under `~/Library/Caches/org.swift.swiftpm/manifests/ManifestLoading/grdb.swift.dia`. App build verification and runtime keyboard, VoiceOver, and system-alert checks were not completed in this fix pass. No git commands, ticket Status edits, or checkbox edits were made.

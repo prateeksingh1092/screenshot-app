@@ -46,6 +46,21 @@ private let repository = URL(fileURLWithPath: #filePath)
         #expect(relaunch.showsPermissionRecovery)
     }
 
+    @Test func laterKeepsOnboardingDismissedUntilTheNextLaunch() {
+        let incomplete = OnboardingCompletion(isComplete: false)
+        #expect(FirstLaunch.surface(onboarding: incomplete, systemAlertPending: false) == .onboarding)
+
+        // Later leaves completion unset, including across a permission alert.
+        #expect(FirstLaunch.surface(onboarding: incomplete, systemAlertPending: true,
+                                    dismissedForLaunch: true) == .hiddenWhileSystemAlertPending)
+        #expect(FirstLaunch.surface(onboarding: incomplete, systemAlertPending: false,
+                                    dismissedForLaunch: true) == .ready)
+        // A new launch uses the same incomplete preference with no dismissal.
+        #expect(!incomplete.isComplete)
+        #expect(FirstLaunch.surface(onboarding: incomplete, systemAlertPending: false,
+                                    dismissedForLaunch: false) == .onboarding)
+    }
+
     @Test func aboutShowsTheBundleVersionAndThirdPartyNotices() throws {
         let notices = try String(contentsOf: repository.appendingPathComponent("THIRD-PARTY-NOTICES.md"), encoding: .utf8)
         let about = AboutContent(shortVersion: "0.1.0", build: "8", notices: notices)

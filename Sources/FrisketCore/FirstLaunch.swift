@@ -29,9 +29,10 @@ public struct OnboardingHandoff: Equatable, Sendable {
 }
 
 public enum FirstLaunch {
-    public static func surface(onboarding: OnboardingCompletion, systemAlertPending: Bool) -> LaunchSurface {
+    public static func surface(onboarding: OnboardingCompletion, systemAlertPending: Bool,
+                               dismissedForLaunch: Bool = false) -> LaunchSurface {
         if systemAlertPending { return .hiddenWhileSystemAlertPending }
-        return onboarding.shouldPresent ? .onboarding : .ready
+        return onboarding.shouldPresent && !dismissedForLaunch ? .onboarding : .ready
     }
 
     /// Recovery is ticket 23's request path. This does not request permission itself.
