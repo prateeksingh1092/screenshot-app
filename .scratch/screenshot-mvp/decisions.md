@@ -74,8 +74,27 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
 47. **Xcode version (2026-09-22):** pin Xcode 26.5 (17F42, macOS SDK 26.5, Swift 6.3.2), installed from the Mac App Store, instead of the planned 26.6. Revisit 26.6 later. Swift tests run with Xcode's toolchain via `DEVELOPER_DIR`, because the Command Line Tools lack Swift Testing (found in ticket 02).
 48. **Stitcher: port (2026-09-22, ticket 05):** Ticket 34 ports the adapted Snapzy stitcher from `Trials/StitcherTrial/` instead of writing a fresh one. The evidence: 29 trial tests pass; a 5120×57,600 capture stitches in full at a 1.28 GB peak, under the 2 GB limit; Vision alignment works outside Codex's sandbox. Codex's low-confidence estimate is 2–4 hours to port versus 8–16 hours fresh. The BSD-3 notices and provenance stay. Reassess with a bounded fresh prototype if real scroll sequences reveal broad correctness problems. Report: `reports/05-port-or-fresh.md`.
 49. **Manual checks while Prateek is away (2026-09-22 23:55):** ticket 08 merges once its automated checks, review, and integration pass. Its manual criteria stay open and are listed as pending in the ticket: first launch, the Screen Recording grant, real capture and Copy, and the grant surviving two rebuilds. Downstream tickets continue where they can be verified without real screen capture. Each carries its own manual items as pending, to be run with Prateek on his return. Nothing captures the real screen before his grant.
+50. **Standing approvals for unattended work (2026-09-23 00:17):** this amends decision 46. Prateek approves:
+    - installing and replacing signed Frisket debug builds (`io.github.prateeksingh1092.frisket.debug`) at the single path `~/Applications/Frisket.app`;
+    - launching those builds;
+    - once he has granted Screen Recording, capturing only Frisket's synthetic test-pattern window;
+    - writing those synthetic images to the clipboard.
 
-## Evaluation update: Xcode question resolved narrowly
+    Never capture any other window, the full screen, or real content, and never keep captures in the repo. Apple ID, keychain and signing-identity changes, other installs, and any paid usage remain gated on Prateek.
+51. **Blanket approval (2026-09-23 02:18):** Prateek set Cursor to allow all permissions ("Everything is allowed"). This amends decisions 46 and 50. Agents may now, without asking:
+    - run any local command, including `bash`, `ditto` and `codesign`;
+    - make signed Frisket rebuilds and installs, using the existing identity;
+    - build Snapzy from the read-only clone into a scratch location;
+    - launch Snapzy and the macOS screenshot tool for ticket 37's baselines, capturing only the synthetic test pattern;
+    - run the automatable parts of the manual checks.
+
+    Still unchanged:
+    - the billing policy: included allowances only, never paid usage;
+    - the AGENTS.md kernel rules: no secrets in markdown, and never touching passwords or the DEAD memory paths;
+    - no Apple ID or signing-identity changes;
+    - no captures of real content, and no captures kept in the repo;
+    - checks that need Prateek's eyes or keyboard stay pending for him.
+: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).
 
@@ -97,10 +116,3 @@ Research has not yet established buildability or capture reliability on this Mac
 ## Subsequent work
 
 Resolve behavior and acceptance criteria, confirm the shared understanding and testing boundaries, publish the specification, then create implementation tickets. Do not treat pending recommendations as requirements.
-50. **Standing approvals for unattended work (2026-09-23 00:17):** this amends decision 46. Prateek approves:
-    - installing and replacing signed Frisket debug builds (`io.github.prateeksingh1092.frisket.debug`) at the single path `~/Applications/Frisket.app`;
-    - launching those builds;
-    - once he has granted Screen Recording, capturing only Frisket's synthetic test-pattern window;
-    - writing those synthetic images to the clipboard.
-
-    Never capture any other window, the full screen, or real content, and never keep captures in the repo. Apple ID, keychain and signing-identity changes, other installs, and any paid usage remain gated on Prateek.
