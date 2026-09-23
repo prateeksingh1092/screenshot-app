@@ -676,8 +676,8 @@ import FrisketCore
                 }
                 if case .finalized(let revision, _) = result, let panel = panels[revision.captureID] {
                     panel.model.dismissFailed = true
-                    panel.model.busy = false
                 }
+                for panel in panels.values { panel.model.busy = false }
                 terminating = false
                 reopenAfterQuit = false
                 sender.reply(toApplicationShouldTerminate: false)

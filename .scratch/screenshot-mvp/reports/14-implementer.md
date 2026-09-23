@@ -19,3 +19,7 @@ TDD: red compile for `autoDismiss: .never`, then green never/zero/preference/pol
 Validation: **246 tests / 36 suites passed**. Unsigned x86_64 `xcodebuild` succeeded (`CODE_SIGNING_ALLOWED=NO`). Manual: `docs/manual-checks/14-thumbnail-system-events.md` (quit, lock, unplug, Settings persist; not run).
 
 Stopped before review. Ticket Status/checkboxes unchanged.
+
+## Fix pass
+
+Coordinator, one pass. Failed quit now clears `busy` on every remaining card so later thumbnails stay actionable. Review: `.scratch/screenshot-mvp/reviews/14-code-review.md`.
