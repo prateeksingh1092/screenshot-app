@@ -5,7 +5,7 @@ public enum DiagnosticEventName: String, Codable, Sendable {
     case capturePending, captureFailed, captureDiscarded, captureFinalized, finalizationFailed, deliverySucceeded, deliveryFailed, commandRejected
 }
 
-public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done }
+public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done, deleteHistory }
 public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history, fileExport, drag }
 public enum DiagnosticErrorCode: String, Codable, Sendable {
     case rootLocked, missingHistoryImage
@@ -88,6 +88,7 @@ extension DiagnosticEvent {
             }
         case .drag: operation = .drag
         case .done: operation = .done
+        case .deleteHistory: operation = .deleteHistory
         }
         let name: DiagnosticEventName
         let error: DiagnosticError?
@@ -120,6 +121,9 @@ extension DiagnosticEvent {
             name = .captureFailed
             error = DiagnosticError(domain: .captureSource, code: notice == .pixelCap ? .pixelCap : .memoryBudget)
         case .discarded:
+            name = .captureDiscarded
+            error = nil
+        case .historyDeleted:
             name = .captureDiscarded
             error = nil
         case .permissionRequired:

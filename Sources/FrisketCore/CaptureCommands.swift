@@ -29,6 +29,8 @@ public enum CaptureCommand: Sendable {
     case drag(CaptureRevision, DragFileOperation)
     /// Finishes an edit: renders the edits over the current revision and finalizes the result as the next revision.
     case done(CaptureRevision, DocumentEdits)
+    /// Removes a finalized History item. Pending Delete capture stays `.discard`.
+    case deleteHistory(CaptureID)
 }
 
 public enum CommitOutcome: Equatable, Sendable {
@@ -86,6 +88,7 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case scrollingLimited(CaptureRevision, ScrollingCaptureNotice)
     case scrollingRefused(ScrollingCaptureNotice)
     case rejected(CommandRejection)
+    case historyDeleted(CaptureID)
 }
 
 /// The sole action interface. The coordinator owns lifecycle policy and memory.
@@ -153,6 +156,15 @@ public struct CaptureCommandLayer: Sendable {
 
     public func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {
         await coordinator.historyEntries()
+    }
+
+    /// Newest first. Presentation rows carry no file names or paths.
+    public func historyItems() async -> Result<[HistoryItem], HistoryFailure> {
+        await coordinator.historyItems()
+    }
+
+    public func historyImage(_ id: CaptureID) async -> CaptureImage? {
+        await coordinator.historyImage(id)
     }
 
     /// Read-only presentation query; the coordinator remains the owner of pending bytes.

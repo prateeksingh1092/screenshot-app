@@ -26,6 +26,7 @@ import FrisketCore
     private var historySettings: HistorySettings?
     private var thumbnailSettings: ThumbnailSettings?
     private var settingsWindow: ExportSettingsWindow?
+    private var historyWindow: HistoryWindow?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var screens: [CaptureID: NSScreen] = [:]
     private var editors: [CaptureID: EditorWindow] = [:]
@@ -74,6 +75,12 @@ import FrisketCore
         if let commands {
             historySettings.connect(commands)
             thumbnailSettings.connect(commands)
+            let historyWindow = HistoryWindow()
+            historyWindow.model.connect(commands)
+            historyWindow.startDrag = { [weak self] row, view, event in
+                self?.startHistoryDrag(row, from: view, event: event)
+            }
+            self.historyWindow = historyWindow
         }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -92,6 +99,7 @@ import FrisketCore
         add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
         add("Capture Scrolling Page", action: #selector(captureScrolling), to: menu)
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
+        add("History", action: #selector(showHistory), to: menu)
         menu.addItem(.separator())
         let history = NSMenuItem(title: "Dismiss captures to keep in History", action: nil, keyEquivalent: "")
         history.isEnabled = false
@@ -144,6 +152,10 @@ import FrisketCore
         command("About Frisket", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), "", in: app)
         app.addItem(.separator())
         addSettings(to: app)
+        let historyItem = NSMenuItem(title: "History", action: #selector(showHistory), keyEquivalent: "y")
+        historyItem.keyEquivalentModifierMask = [.command, .control]
+        historyItem.target = self
+        app.addItem(historyItem)
         app.addItem(.separator())
         let services = NSMenu(title: "Services")
         let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
@@ -192,6 +204,20 @@ import FrisketCore
     @objc private func showSettings() {
         settingsWindow?.show()
         Task { await historySettings?.refresh() }
+    }
+
+    @objc private func showHistory() {
+        historyWindow?.show()
+    }
+
+    private func startHistoryDrag(_ row: HistoryWindowModel.Row, from view: NSView, event: NSEvent) {
+        guard !terminating, let commands, let dragAdapter else { return }
+        guard dragAdapter.beginSession(from: view, event: event, image: row.preview) else { return }
+        Task {
+            _ = await commands.execute(.drag(row.revision, .copy))
+            dragAdapter.endHandoff()
+            await historyWindow?.model.reload()
+        }
     }
 
     private func add(_ title: String, action: Selector, to menu: NSMenu) {

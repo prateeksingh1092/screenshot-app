@@ -336,6 +336,16 @@ memory (decision 31). A new command layer on the same History root sees no
 pending cards and no History rows. The app observes `didChangeScreenParameters`
 and `com.apple.screenIsLocked` / `com.apple.screenIsUnlocked`.
 
+## Ticket 15 History window
+
+`historyItems()` is newest first and carries no paths. `historyImage` reads the
+finalized PNG. `execute(.copy/.save/.drag)` on a History revision reuses the
+delivery adapters, stages a copy for drag, and leaves the owned file. Repeat
+Copy is allowed. `deleteHistory` uses the same `deleting` → unlink → row-removed
+path as quota eviction; an interrupted delete finishes at the next launch.
+Done is `alreadyFinalized`. The History window is a Frisket surface, so capture
+already excludes it with the rest of the app.
+
 ## Ticket 12 drag handoff
 
 `execute(.drag(revision, operation))` is another exit through the same finalization

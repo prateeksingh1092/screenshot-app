@@ -17,3 +17,7 @@
 ### 2026-09-23 — coordinator
 
 Claimed on `331dd49` after ticket 14 closed. Coordinator chat implements (Codex/Other Models still limited).
+
+### 2026-09-23 — implementer
+
+Report: [15-implementer.md](../reports/15-implementer.md). Seam 1 covers delete, newest-first items, copy/save/drag from disk, and interrupted-delete recovery. History window added. Manual not run. Status/checkboxes unchanged pending review.

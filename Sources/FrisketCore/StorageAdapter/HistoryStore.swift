@@ -315,6 +315,38 @@ public actor HistoryStore: CaptureHistory {
         return finalizeAfterRecovery(request)
     }
 
+    public func delete(_ id: CaptureID) async -> Result<Void, HistoryFailure> {
+        await ensureLaunchRecovery()
+        do {
+            guard !closed else { throw HistoryFailure.unavailable }
+            if let recoveryFailure { throw recoveryFailure }
+            try acquireRootLockIfPresent()
+            guard let database else { throw HistoryFailure.unavailable }
+            let entries = try readEntries(database)
+            guard let entry = entries.first(where: { $0.captureID == id }) else { throw HistoryFailure.unavailable }
+            try evict(entry, database: database)
+            return .success(())
+        } catch let failure as HistoryFailure { return .failure(failure) }
+        catch { return .failure(.unavailable) }
+    }
+
+    public func finalizedImage(_ id: CaptureID) async -> Result<(revision: UInt64, pngData: Data), HistoryFailure> {
+        await ensureLaunchRecovery()
+        do {
+            guard !closed else { throw HistoryFailure.unavailable }
+            if let recoveryFailure { throw recoveryFailure }
+            try acquireRootLockIfPresent()
+            guard let database else { throw HistoryFailure.unavailable }
+            let entries = try readEntries(database)
+            guard let entry = entries.first(where: { $0.captureID == id }) else { throw HistoryFailure.unavailable }
+            let image = try ownedLocations(entry)[0]
+            let data = try Data(contentsOf: image)
+            guard !data.isEmpty else { throw HistoryFailure.invalidImage }
+            return .success((entry.revision, data))
+        } catch let failure as HistoryFailure { return .failure(failure) }
+        catch { return .failure(.unavailable) }
+    }
+
     private func finalizeAfterRecovery(_ request: AuthorizedFinalization) -> CommitOutcome {
         var committed = false
         var imageWriteAttempted = false
