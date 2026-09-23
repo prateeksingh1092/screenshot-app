@@ -62,6 +62,21 @@ private struct FixtureSource: CapturePixelSource {
 }
 
 extension AreaCaptureCommandsTests {
+    @Test func acceptedAreaStartsLatencyButCancelledSelectionDoesNot() async {
+        let platform = RecordingCapturePlatform()
+        var rows: [Data] = []
+        let log = CaptureLatencyLog(enabled: true, clock: { 42 }, write: { rows.append($0) })
+        let source = AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug", latency: log)
+        _ = await source.capture(maximumBytes: 1_000_000)
+        #expect(rows.isEmpty)
+        log.thumbnailSubmitted()
+        #expect(rows == [Data("{\"run\":1,\"start_ns\":42,\"end_ns\":42}\n".utf8)])
+        platform.selection = nil
+        _ = await source.capture(maximumBytes: 1_000_000)
+        log.thumbnailSubmitted()
+        #expect(rows.count == 1)
+    }
+
     @Test func areaCapturePrefetchesHidesOverlayAndExcludesOwnIdentityBeforeCopy() async throws {
         let platform = RecordingCapturePlatform()
         let destination = RecordingPasteboard()

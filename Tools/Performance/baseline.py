@@ -65,7 +65,9 @@ def parse_app_row(line, expected_run):
 
 
 def parse_app_log(contents):
-    rows = [line for line in contents.splitlines() if line.strip()]
+    if not contents.endswith("\n"):
+        raise ValueError("app log must end with a committed newline")
+    rows = contents.splitlines()
     if len(rows) != 20:
         raise ValueError("app log must contain exactly 20 rows")
     return [parse_app_row(line, i) for i, line in enumerate(rows, 1)]
@@ -106,7 +108,9 @@ def format_report(metadata, idle_runs, latency_runs, method, dry_run=False):
                   "Polling bounds exclude HID delivery and window-to-visible-pixels bias; those are uncalibrated.",
                   "This is not a validated visible-thumbnail latency or comparable directly to app timestamps."]
     else:
-        lines += ["App timestamps share one monotonic clock. Zero polling interval does not imply zero clock/instrumentation error."]
+        lines += ["App interval: selection acceptance to thumbnail presentation submission (full-screen: display selection acceptance).",
+                  "Physical display presentation is not measured; keep capture modes in separate sessions.",
+                  "App timestamps share one monotonic clock. Zero polling interval does not imply zero clock/instrumentation error."]
     lines += ["", "Per-run latency brackets (ms):", "",
               "| Run | Lower | Upper | Half-width |", "| --- | ---: | ---: | ---: |"]
     for index, row in enumerate(latency, 1):

@@ -17,13 +17,15 @@ struct FullScreenDisplay {
 @MainActor final class FullScreenCaptureSource: CapturePixelSource {
     private let platform: any FullScreenCapturePlatform
     private let bundleIdentifier: String
-
+    private let latency: CaptureLatencyLog?
     private let exclusions: @MainActor () -> Set<String>
     init(platform: any FullScreenCapturePlatform, bundleIdentifier: String,
-         exclusions: @escaping @MainActor () -> Set<String> = { [] }) {
+         exclusions: @escaping @MainActor () -> Set<String> = { [] },
+         latency: CaptureLatencyLog? = nil) {
         self.platform = platform
         self.bundleIdentifier = bundleIdentifier
         self.exclusions = exclusions
+        self.latency = latency
     }
 
     func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
@@ -35,6 +37,7 @@ struct FullScreenDisplay {
         guard let display = platform.displayUnderPointer(), display.scale.isFinite, display.scale > 0 else {
             return .failure(.unavailable)
         }
+        latency?.selectionAccepted()
         let width = (display.frame.width * display.scale).rounded()
         let height = (display.frame.height * display.scale).rounded()
         guard width.isFinite, height.isFinite, width > 0, height > 0,

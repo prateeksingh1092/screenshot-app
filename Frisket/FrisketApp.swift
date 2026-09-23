@@ -14,6 +14,7 @@ import FrisketCore
 @MainActor final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKey = CarbonHotKey()
     private lazy var shortcutSettings = ShortcutSettings(system: hotKey)
+    private let latency = CaptureLatencyLog.standardOutput()
     private let permission = ScreenCapturePermissionAdapter(access: SystemScreenRecordingAccess())
     private let exclusions = CaptureExclusionList(defaults: .standard)
     private lazy var platform = ScreenCapturePlatform(permission: permission, exclusions: { [exclusions] in exclusions.bundleIdentifiers })
@@ -56,8 +57,8 @@ import FrisketCore
         self.dragAdapter = dragAdapter
         let scrolling = ManualScrollingCapture(platform: platform, bundleIdentifier: identity.bundleIdentifier)
         self.scrolling = scrolling
-        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }),
-            fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }),
+        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency),
+            fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency),
             windowSource: WindowCaptureSource(platform: windowPlatform, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                 bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
@@ -206,7 +207,7 @@ import FrisketCore
         if surfaces.focusOnboardingIfVisible() { return }
         capturing = true
         Task {
-            defer { capturing = false; scrolling?.hide(); refreshPermissionIndicator() }
+            defer { latency.cancel(); capturing = false; scrolling?.hide(); refreshPermissionIndicator() }
             let result = await commands.execute(command)
             switch result {
             case let .scrollingLimited(revision, notice):
@@ -246,6 +247,9 @@ import FrisketCore
         panels[id] = makePanel(id, revision: revision, preview: preview, displayID: displayID(of: screen))
         arrivalOrder.append(id)
         await settleThumbnails()
+        // Downsampling and orderFrontRegardless have completed. This is
+        // presentation submission, not a physical-display timestamp.
+        latency.thumbnailSubmitted()
     }
 
     private func makePanel(_ id: CaptureID, revision: CaptureRevision, preview: CGImage, displayID: UInt32?) -> ThumbnailPanel {

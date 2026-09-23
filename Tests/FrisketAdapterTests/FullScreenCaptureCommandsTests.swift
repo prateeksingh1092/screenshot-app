@@ -42,6 +42,17 @@ private actor FixtureClipboard: ImageClipboard {
 }
 
 @Suite @MainActor struct FullScreenCaptureCommandsTests {
+    @Test func selectedDisplayStartsLatencyBeforeThumbnailSubmission() async {
+        let platform = FixtureDisplayPlatform(frame: CGRect(x: 0, y: 0, width: 8, height: 6), scale: 1)
+        var rows: [Data] = []
+        let log = CaptureLatencyLog(enabled: true, clock: { 73 }, write: { rows.append($0) })
+        let source = FullScreenCaptureSource(platform: platform, bundleIdentifier: "test.debug", latency: log)
+        _ = await source.capture(maximumBytes: 1_000_000)
+        #expect(rows.isEmpty)
+        log.thumbnailSubmitted()
+        #expect(rows == [Data("{\"run\":1,\"start_ns\":73,\"end_ns\":73}\n".utf8)])
+    }
+
     @Test(arguments: [
         (0.0, 0.0, 1.0, 800, 600),
         (0.0, 0.0, 2.0, 1600, 1200),
