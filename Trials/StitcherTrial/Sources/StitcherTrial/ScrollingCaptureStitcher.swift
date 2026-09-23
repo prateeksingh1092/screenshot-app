@@ -308,10 +308,72 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
     }
   }
 
-  private struct ContentSlice {
-    let raster: RasterImage
-    let startRow: Int
+  // Own only copied rows, never a frame raster. All completed strips are 256 rows.
+  private struct ContentStrip {
     let rowCount: Int
+    let data: Data
+    let isCompressed: Bool
+
+    init(rows: Data, rowCount: Int) {
+      self.rowCount = rowCount
+      if let compressed = try? (rows as NSData).compressed(using: .lzfse) {
+        data = compressed as Data
+        isCompressed = true
+      } else {
+        data = rows
+        isCompressed = false
+      }
+    }
+
+    func decoded() -> Data? {
+      if !isCompressed { return data }
+      return (try? (data as NSData).decompressed(using: .lzfse)) as Data?
+    }
+  }
+
+  // An immutable output snapshot owns compressed rows, not input frames. Core
+  // Graphics can request arbitrary byte ranges without a second full bitmap.
+  private final class StripSnapshot {
+    let strips: [ContentStrip]
+    let bytesPerRow: Int
+    let byteCount: Int
+    private let lock = NSLock()
+    private var cachedIndex = -1
+    private var cachedRows = Data()
+
+    init(strips: [ContentStrip], bytesPerRow: Int) {
+      self.strips = strips
+      self.bytesPerRow = bytesPerRow
+      byteCount = strips.reduce(0) { $0 + $1.rowCount * bytesPerRow }
+    }
+
+    func read(into buffer: UnsafeMutableRawPointer, position: Int, count: Int) -> Int {
+      guard position >= 0, position < byteCount, count > 0 else { return 0 }
+      lock.lock()
+      defer { lock.unlock() }
+      let length = min(count, byteCount - position)
+      var copied = 0
+      while copied < length {
+        let offset = position + copied
+        let index = offset / (256 * bytesPerRow)
+        let withinStrip = offset % (256 * bytesPerRow)
+        let readCount: Int = autoreleasepool {
+          if cachedIndex != index {
+            guard let rows = strips[index].decoded() else { return 0 }
+            cachedRows = rows
+            cachedIndex = index
+          }
+          let amount = min(length - copied, cachedRows.count - withinStrip)
+          guard amount > 0 else { return 0 }
+          cachedRows.copyBytes(to: buffer.advanced(by: copied).assumingMemoryBound(to: UInt8.self),
+            from: withinStrip..<(withinStrip + amount))
+          return amount
+        }
+        guard readCount > 0 else { break }
+        copied += readCount
+      }
+      return copied
+    }
   }
 
   private struct Match {
@@ -345,9 +407,9 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
     let deltaSpread: Int
   }
 
-  private var baseRaster: RasterImage?
+  private var imageWidth = 0
   private var lastRaster: RasterImage?
-  private var contentSlices: [ContentSlice] = []
+  private var contentSlices: [ContentStrip] = []
   private var headerHeight = 0
   private var footerHeight = 0
   private var leadingStaticWidth = 0
@@ -366,22 +428,23 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
   func start(with image: CGImage) -> ScrollingCaptureStitchUpdate? {
     guard let raster = RasterImage(cgImage: image) else { return nil }
 
-    baseRaster = raster
+    imageWidth = raster.width
     lastRaster = raster
-    contentSlices = [ContentSlice(raster: raster, startRow: 0, rowCount: raster.height)]
+    contentSlices = []
+    appendRows(from: raster, startRow: 0, rowCount: raster.height)
     headerHeight = 0
     footerHeight = 0
     leadingStaticWidth = 0
     trailingStaticWidth = 0
     mergeDirection = .unresolved
-    cachedMergedImage = image
+    cachedMergedImage = nil
     lastMatch = nil
     matchNotFoundCount = 0
     acceptedFrameCount = 1
 
     return ScrollingCaptureStitchUpdate(
       outcome: .initialized,
-      mergedImage: image,
+      mergedImage: mergedImage(),
       acceptedFrameCount: acceptedFrameCount,
       outputHeight: outputHeight,
       matchFailureCount: matchNotFoundCount,
@@ -407,7 +470,7 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
     renderMergedImage: Bool = true,
     allowsSettledPartialStep: Bool = false
   ) -> ScrollingCaptureStitchUpdate? {
-    guard let lastRaster, let baseRaster else { return start(with: image) }
+    guard let lastRaster else { return start(with: image) }
     guard let raster = RasterImage(cgImage: image) else { return nil }
     let expectedDeltaPixels = expectedSignedDeltaPixels.map(abs)
     guard raster.width == lastRaster.width, raster.height == lastRaster.height else {
@@ -614,7 +677,7 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
       footerHeight = inferredFooterHeight
       leadingStaticWidth = inferredLeadingStaticWidth
       trailingStaticWidth = inferredTrailingStaticWidth
-      bootstrapContentSlices(with: baseRaster)
+      bootstrapContentSlices(with: lastRaster)
     }
 
     let remainingHeight = maxOutputHeight - outputHeight
@@ -649,7 +712,7 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
       )
     }
 
-    contentSlices.append(ContentSlice(raster: raster, startRow: sliceStart, rowCount: acceptedDelta))
+    appendRows(from: raster, startRow: sliceStart, rowCount: acceptedDelta)
     self.lastRaster = raster
     self.lastMatch = Match(
       direction: match.direction,
@@ -687,45 +750,45 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
       return cachedMergedImage
     }
 
-    guard let baseRaster else { return nil }
-    let width = baseRaster.width
-    let bytesPerRow = baseRaster.bytesPerRow
+    guard imageWidth > 0 else { return nil }
+    let width = imageWidth
     let height = outputHeight
     guard height > 0 else { return nil }
-
-    var mergedPixels = [UInt8](repeating: 0, count: height * bytesPerRow)
-    var destinationRow = 0
-
-    for slice in contentSlices {
-      slice.raster.copyRows(
-        startRow: slice.startRow,
-        rowCount: slice.rowCount,
-        into: &mergedPixels,
-        destinationRow: destinationRow
-      )
-      destinationRow += slice.rowCount
+    let snapshot = StripSnapshot(strips: contentSlices, bytesPerRow: width * 4)
+    let retained = Unmanaged.passRetained(snapshot)
+    var callbacks = CGDataProviderDirectCallbacks(version: 0,
+      getBytePointer: nil, releaseBytePointer: nil,
+      getBytesAtPosition: { info, buffer, position, count in
+        guard let info else { return 0 }
+        return Unmanaged<StripSnapshot>.fromOpaque(info).takeUnretainedValue()
+          .read(into: buffer, position: Int(position), count: count)
+      },
+      releaseInfo: { info in
+        if let info { Unmanaged<StripSnapshot>.fromOpaque(info).release() }
+      })
+    guard let provider = CGDataProvider(directInfo: retained.toOpaque(), size: off_t(snapshot.byteCount),
+      callbacks: &callbacks) else {
+      retained.release()
+      return nil
     }
-
-    cachedMergedImage = RasterImage.makeCGImage(
-      width: width,
-      height: height,
-      bytesPerRow: bytesPerRow,
-      pixels: mergedPixels
-    )
+    cachedMergedImage = CGImage(width: width, height: height, bitsPerComponent: 8,
+      bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+      provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     return cachedMergedImage
   }
 
   func previewImage(maxPixelWidth: Int, maxPixelHeight: Int) -> CGImage? {
-    guard let baseRaster else { return nil }
+    guard imageWidth > 0 else { return nil }
     let safeMaxPixelWidth = max(1, maxPixelWidth)
     let safeMaxPixelHeight = max(1, maxPixelHeight)
     let targetScale = min(
       1,
-      Double(safeMaxPixelWidth) / Double(baseRaster.width),
+      Double(safeMaxPixelWidth) / Double(imageWidth),
       Double(safeMaxPixelHeight) / Double(max(outputHeight, 1))
     )
 
-    let targetWidth = max(1, Int((Double(baseRaster.width) * targetScale).rounded()))
+    let targetWidth = max(1, Int((Double(imageWidth) * targetScale).rounded()))
     let targetHeight = max(1, Int((Double(outputHeight) * targetScale).rounded()))
     let bytesPerRow = targetWidth * 4
     let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -749,17 +812,9 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
 
     var destinationRow = 0
     for slice in contentSlices {
-      guard
-        let sliceImage = slice.raster.makeCroppedCGImage(
-          xStart: 0,
-          xEnd: slice.raster.width,
-          startRow: slice.startRow,
-          rowCount: slice.rowCount
-        )
-      else {
-        destinationRow += slice.rowCount
-        continue
-      }
+      guard let rows = slice.decoded(),
+        let sliceImage = RasterImage.makeCGImage(width: imageWidth, height: slice.rowCount,
+          bytesPerRow: imageWidth * 4, pixels: Array(rows)) else { return nil }
 
       let sourceTop = CGFloat(destinationRow) / CGFloat(max(outputHeight, 1))
       let sourceBottom = CGFloat(destinationRow + slice.rowCount) / CGFloat(max(outputHeight, 1))
@@ -828,7 +883,47 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
   private func bootstrapContentSlices(with baseRaster: RasterImage) {
     let contentStart = headerHeight
     let contentHeight = max(1, baseRaster.height - headerHeight - footerHeight)
-    contentSlices = [ContentSlice(raster: baseRaster, startRow: contentStart, rowCount: contentHeight)]
+    contentSlices = []
+    appendRows(from: baseRaster, startRow: contentStart, rowCount: contentHeight)
+  }
+
+  /// Delivers top-to-bottom lossless strips; only the final strip may be short.
+  /// Callers can encode/render incrementally without materializing a full bitmap.
+  func forEachStrip(_ body: (CGImage) throws -> Void) rethrows {
+    for strip in contentSlices {
+      try autoreleasepool {
+        // Compression is produced in memory by this instance; no external payloads.
+        guard let rows = strip.decoded(),
+          let image = RasterImage.makeCGImage(width: imageWidth, height: strip.rowCount,
+            bytesPerRow: imageWidth * 4, pixels: Array(rows)) else {
+          preconditionFailure("In-memory strip could not be decoded")
+        }
+        try body(image)
+      }
+    }
+  }
+
+  private func appendRows(from raster: RasterImage, startRow: Int, rowCount: Int) {
+    let bytesPerRow = raster.bytesPerRow
+    var sourceRow = startRow
+    let endRow = startRow + rowCount
+    var pending = Data()
+    if let last = contentSlices.last, last.rowCount < 256 {
+      pending = last.decoded()!
+      contentSlices.removeLast()
+    }
+    while sourceRow < endRow {
+      let count = min(256 - pending.count / bytesPerRow, endRow - sourceRow)
+      pending.append(contentsOf: raster.pixels[sourceRow * bytesPerRow..<(sourceRow + count) * bytesPerRow])
+      sourceRow += count
+      if pending.count == 256 * bytesPerRow {
+        contentSlices.append(ContentStrip(rows: pending, rowCount: 256))
+        pending = Data()
+      }
+    }
+    if !pending.isEmpty {
+      contentSlices.append(ContentStrip(rows: pending, rowCount: pending.count / bytesPerRow))
+    }
   }
 
   private func sliceStartRow(
@@ -856,14 +951,13 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
     fromTop: Bool
   ) -> Int {
     let maxBandHeight = min(previous.height / 5, 160)
-    let step = max(2, min(8, previous.height / 180))
     let xInset = max(20, previous.width / 18)
     let xStart = xInset
     let xEnd = previous.width - xInset
     let columnStride = max(2, (xEnd - xStart) / 44)
     var bandHeight = 0
 
-    for offset in stride(from: 0, to: maxBandHeight, by: step) {
+    for offset in 0..<maxBandHeight {
       let row = fromTop ? offset : previous.height - 1 - offset
       let difference = previous.rowDifference(
         comparedTo: current,
@@ -875,8 +969,8 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
       )
 
       if difference < 5.0 {
-        bandHeight = offset + step
-      } else if offset >= step * 2 {
+        bandHeight = offset + 1
+      } else {
         break
       }
     }
