@@ -87,3 +87,33 @@ import FrisketCore
         return true
     }
 }
+
+@MainActor final class BlurTool: EditorTool {
+    let title = "Blur"
+    let accessibilityLabel = "Blur effect tool"
+    let keyEquivalent = "b"
+
+    func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
+        let originX = edits.crop?.x ?? 0
+        let originY = edits.crop?.y ?? 0
+        guard let effect = DocumentEffect(.blur(x: min(start.x, end.x) + originX, y: min(start.y, end.y) + originY,
+                                                width: abs(end.x - start.x), height: abs(end.y - start.y))) else { return false }
+        edits.effects.append(effect)
+        return true
+    }
+}
+
+@MainActor final class MagnifyTool: EditorTool {
+    let title = "Magnify"
+    let accessibilityLabel = "Magnify effect tool"
+    let keyEquivalent = "m"
+
+    func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
+        let originX = edits.crop?.x ?? 0
+        let originY = edits.crop?.y ?? 0
+        guard let effect = DocumentEffect(.magnify(x: min(start.x, end.x) + originX, y: min(start.y, end.y) + originY,
+                                                   width: abs(end.x - start.x), height: abs(end.y - start.y))) else { return false }
+        edits.effects.append(effect)
+        return true
+    }
+}

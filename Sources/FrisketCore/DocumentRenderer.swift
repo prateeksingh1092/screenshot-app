@@ -5,7 +5,8 @@ import Foundation
 /// Crop is applied first. Each Solid redaction is then shifted into the cropped document,
 /// scaled to output pixels, snapped outward (down on the minimum edges, up on the maximum
 /// edges), clipped to the cropped image, and copied as opaque fill with no blending or
-/// antialiasing.
+/// antialiasing. Sampling effects read that redacted composite; redactions are stamped
+/// again afterwards. Stroke annotations draw last.
 public enum DocumentRenderer {
     public static func render(_ document: EditorDocument) -> Bitmap {
         var output = croppedBase(document.base, crop: document.edits.crop, scale: document.edits.scale)
@@ -13,26 +14,94 @@ public enum DocumentRenderer {
         let scale = document.edits.scale
         let originX = document.edits.crop?.x ?? 0
         let originY = document.edits.crop?.y ?? 0
-        for redaction in document.edits.redactions {
-            // Clamp in floating point first: Int conversion traps on out-of-range values.
-            func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(output.width))) }
-            func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(output.height))) }
-            let minX = column(((redaction.x - originX) * scale).rounded(.down))
-            let minY = row(((redaction.y - originY) * scale).rounded(.down))
-            let maxX = column(((redaction.x - originX + redaction.width) * scale).rounded(.up))
-            let maxY = row(((redaction.y - originY + redaction.height) * scale).rounded(.up))
-            guard minX < maxX, minY < maxY else { continue }
-            for y in minY..<maxY {
-                for x in minX..<maxX {
+        fillRedactions(document.edits.redactions, on: &output, scale: scale, originX: originX, originY: originY,
+                       fill: fill)
+        for effect in document.edits.effects {
+            apply(effect, on: &output, scale: scale, originX: originX, originY: originY)
+        }
+        // Covered pixels stay fill after a sampling effect, so a blur halo cannot
+        // pull neighbouring colours into a redaction and a magnifier cannot enlarge
+        // anything that was already replaced.
+        fillRedactions(document.edits.redactions, on: &output, scale: scale, originX: originX, originY: originY,
+                       fill: fill)
+        for annotation in document.edits.annotations {
+            draw(annotation, on: &output, scale: scale, originX: originX, originY: originY)
+        }
+        return output
+    }
+
+    private static func fillRedactions(_ redactions: [SolidRedaction], on output: inout Bitmap, scale: Double,
+                                       originX: Double, originY: Double, fill: RGBAPixel) {
+        for redaction in redactions {
+            guard let bounds = snapped(x: redaction.x, y: redaction.y, width: redaction.width, height: redaction.height,
+                                       scale: scale, originX: originX, originY: originY, in: output) else { continue }
+            for y in bounds.minY..<bounds.maxY {
+                for x in bounds.minX..<bounds.maxX {
                     let index = (y * output.width + x) * 4
                     output.bytes.replaceSubrange(index..<index + 4, with: [fill.red, fill.green, fill.blue, fill.alpha])
                 }
             }
         }
-        for annotation in document.edits.annotations {
-            draw(annotation, on: &output, scale: scale, originX: originX, originY: originY)
+    }
+
+    private static func apply(_ effect: DocumentEffect, on output: inout Bitmap, scale: Double,
+                              originX: Double, originY: Double) {
+        let rectangle: (x: Double, y: Double, width: Double, height: Double)
+        switch effect.kind {
+        case let .blur(x, y, width, height), let .magnify(x, y, width, height):
+            rectangle = (x, y, width, height)
         }
-        return output
+        guard let bounds = snapped(x: rectangle.x, y: rectangle.y, width: rectangle.width, height: rectangle.height,
+                                   scale: scale, originX: originX, originY: originY, in: output) else { return }
+        var next = output
+        switch effect.kind {
+        case .blur:
+            for y in bounds.minY..<bounds.maxY {
+                for x in bounds.minX..<bounds.maxX {
+                    var red = 0, green = 0, blue = 0, alpha = 0
+                    for dy in -1...1 {
+                        for dx in -1...1 {
+                            let sampleX = min(max(x + dx, 0), output.width - 1)
+                            let sampleY = min(max(y + dy, 0), output.height - 1)
+                            let pixel = output.pixel(x: sampleX, y: sampleY)!
+                            red += Int(pixel.red)
+                            green += Int(pixel.green)
+                            blue += Int(pixel.blue)
+                            alpha += Int(pixel.alpha)
+                        }
+                    }
+                    write(RGBAPixel(red: UInt8(red / 9), green: UInt8(green / 9),
+                                    blue: UInt8(blue / 9), alpha: UInt8(alpha / 9)),
+                          x: x, y: y, on: &next)
+                }
+            }
+        case .magnify:
+            for y in bounds.minY..<bounds.maxY {
+                for x in bounds.minX..<bounds.maxX {
+                    let sampleX = bounds.minX + (x - bounds.minX) / 2
+                    let sampleY = bounds.minY + (y - bounds.minY) / 2
+                    write(output.pixel(x: sampleX, y: sampleY)!, x: x, y: y, on: &next)
+                }
+            }
+        }
+        output = next
+    }
+
+    private static func snapped(x: Double, y: Double, width: Double, height: Double, scale: Double,
+                                originX: Double, originY: Double, in output: Bitmap)
+    -> (minX: Int, minY: Int, maxX: Int, maxY: Int)? {
+        func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(output.width))) }
+        func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(output.height))) }
+        let minX = column(((x - originX) * scale).rounded(.down))
+        let minY = row(((y - originY) * scale).rounded(.down))
+        let maxX = column(((x - originX + width) * scale).rounded(.up))
+        let maxY = row(((y - originY + height) * scale).rounded(.up))
+        return minX < maxX && minY < maxY ? (minX, minY, maxX, maxY) : nil
+    }
+
+    private static func write(_ pixel: RGBAPixel, x: Int, y: Int, on output: inout Bitmap) {
+        let index = (y * output.width + x) * 4
+        output.bytes.replaceSubrange(index..<index + 4, with: [pixel.red, pixel.green, pixel.blue, pixel.alpha])
     }
 
     private static func draw(_ annotation: DocumentAnnotation, on output: inout Bitmap, scale: Double,
