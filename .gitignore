@@ -79,3 +79,6 @@ Codex.local.md
 
 # Per-ticket git worktrees (see docs/agents/implementation-workflow.md).
 /.worktrees/
+
+# Xcode's sandbox fallback plug-in/specification cache (not project source).
+/com.apple.DeveloperTools/

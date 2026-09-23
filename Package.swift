@@ -7,6 +7,9 @@ let package = Package(
     products: [.library(name: "FrisketCore", type: .static, targets: ["FrisketCore"])],
     targets: [
         .target(name: "FrisketCore"),
-        .testTarget(name: "FrisketCoreTests", dependencies: ["FrisketCore"])
+        .testTarget(name: "FrisketCoreTests", dependencies: ["FrisketCore"]),
+        // Compile the same app adapters without an app host for seam-1 tests.
+        .target(name: "FrisketAdapters", dependencies: ["FrisketCore"], path: "Frisket/Adapters"),
+        .testTarget(name: "FrisketAdapterTests", dependencies: ["FrisketCore", "FrisketAdapters"])
     ]
 )

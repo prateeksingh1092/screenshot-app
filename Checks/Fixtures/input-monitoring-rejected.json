@@ -1,0 +1,14 @@
+{
+  "check": "input-monitoring",
+  "repositoryFiles": {
+    "Package.swift": "// fixture",
+    "Frisket/Bad.swift": "import AppKit\nlet tap = CGEvent.tapCreate\nNSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { _ in }",
+    "Sources/Bad.swift": "CGEventTapCreateForPid(0)",
+    "Frisket/Alias.swift": "let factory = CGEvent.self\nfactory.tapCreate(tap: .cgSessionEventTap)"
+  },
+  "expected": [
+    "Frisket/Alias.swift: event tap or global event monitor is forbidden",
+    "Frisket/Bad.swift: event tap or global event monitor is forbidden",
+    "Sources/Bad.swift: event tap or global event monitor is forbidden"
+  ]
+}

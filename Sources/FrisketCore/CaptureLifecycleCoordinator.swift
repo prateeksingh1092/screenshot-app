@@ -17,6 +17,11 @@ actor CaptureLifecycleCoordinator {
         self.clipboard = clipboard
     }
 
+    func image(for revision: CaptureRevision) -> CaptureImage? {
+        guard revision.number == 1 else { return nil }
+        return images[revision.captureID]
+    }
+
     func execute(_ command: CaptureCommand) async -> CaptureCommandOutcome {
         switch command {
         case let .discard(id):

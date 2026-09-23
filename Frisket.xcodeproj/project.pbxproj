@@ -1,0 +1,49 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+		000000000000000000000064 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Frisket/Adapters/AreaCaptureSource.swift"; sourceTree = SOURCE_ROOT; };
+		0000000000000000000000C8 = { isa = PBXBuildFile; fileRef = 000000000000000000000064; };
+		000000000000000000000065 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Frisket/Adapters/PasteboardAdapter.swift"; sourceTree = SOURCE_ROOT; };
+		0000000000000000000000C9 = { isa = PBXBuildFile; fileRef = 000000000000000000000065; };
+		000000000000000000000066 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Frisket/Adapters/ScreenCapturePlatform.swift"; sourceTree = SOURCE_ROOT; };
+		0000000000000000000000CA = { isa = PBXBuildFile; fileRef = 000000000000000000000066; };
+		000000000000000000000067 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Frisket/Adapters/SelectionOverlay.swift"; sourceTree = SOURCE_ROOT; };
+		0000000000000000000000CB = { isa = PBXBuildFile; fileRef = 000000000000000000000067; };
+		000000000000000000000068 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Frisket/Adapters/ThumbnailImage.swift"; sourceTree = SOURCE_ROOT; };
+		0000000000000000000000CC = { isa = PBXBuildFile; fileRef = 000000000000000000000068; };
+		000000000000000000000069 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Frisket/AppIdentity.swift"; sourceTree = SOURCE_ROOT; };
+		0000000000000000000000CD = { isa = PBXBuildFile; fileRef = 000000000000000000000069; };
+		00000000000000000000006A = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Frisket/CarbonHotKey.swift"; sourceTree = SOURCE_ROOT; };
+		0000000000000000000000CE = { isa = PBXBuildFile; fileRef = 00000000000000000000006A; };
+		00000000000000000000006B = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Frisket/FrisketApp.swift"; sourceTree = SOURCE_ROOT; };
+		0000000000000000000000CF = { isa = PBXBuildFile; fileRef = 00000000000000000000006B; };
+		00000000000000000000006C = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Frisket/ThumbnailPanel.swift"; sourceTree = SOURCE_ROOT; };
+		0000000000000000000000D0 = { isa = PBXBuildFile; fileRef = 00000000000000000000006C; };
+		000000000000000000000001 = { isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2650; }; buildConfigurationList = 00000000000000000000000A; preferredProjectObjectVersion = 77; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = 000000000000000000000002; productRefGroup = 000000000000000000000003; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000004, 00000000000000000000001F); };
+		000000000000000000000002 = { isa = PBXGroup; children = (000000000000000000000064, 000000000000000000000065, 000000000000000000000066, 000000000000000000000067, 000000000000000000000068, 000000000000000000000069, 00000000000000000000006A, 00000000000000000000006B, 00000000000000000000006C, 00000000000000000000001E, 000000000000000000000003); sourceTree = "<group>"; };
+		000000000000000000000003 = { isa = PBXGroup; children = (000000000000000000000005, 000000000000000000000020); name = Products; sourceTree = "<group>"; };
+		000000000000000000000004 = { isa = PBXNativeTarget; buildConfigurationList = 00000000000000000000000B; buildPhases = (000000000000000000000006, 000000000000000000000007, 000000000000000000000008); buildRules = (); dependencies = (000000000000000000000021); name = Frisket; productName = Frisket; productReference = 000000000000000000000005; productType = "com.apple.product-type.application"; };
+		000000000000000000000005 = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Frisket.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000006 = { isa = PBXShellScriptBuildPhase; alwaysOutOfDate = 1; buildActionMask = 2147483647; files = (); inputPaths = (); outputPaths = (); name = "Reject Event Taps and Global Monitors"; runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "set -eu
+/usr/bin/python3 \"$SRCROOT/Checks/check_repository.py\" --root \"$SRCROOT\" --check input-monitoring
+"; };
+		000000000000000000000007 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (0000000000000000000000C8, 0000000000000000000000C9, 0000000000000000000000CA, 0000000000000000000000CB, 0000000000000000000000CC, 0000000000000000000000CD, 0000000000000000000000CE, 0000000000000000000000CF, 0000000000000000000000D0); runOnlyForDeploymentPostprocessing = 0; };
+		000000000000000000000008 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000016); runOnlyForDeploymentPostprocessing = 0; };
+		00000000000000000000000A = { isa = XCConfigurationList; buildConfigurations = (00000000000000000000000C); defaultConfigurationIsVisible = 0; defaultConfigurationName = Development; };
+		00000000000000000000000B = { isa = XCConfigurationList; buildConfigurations = (00000000000000000000000D); defaultConfigurationIsVisible = 0; defaultConfigurationName = Development; };
+		00000000000000000000000C = { isa = XCBuildConfiguration; name = Development; buildSettings = { ARCHS = x86_64; ONLY_ACTIVE_ARCH = YES; SDKROOT = macosx26.5; MACOSX_DEPLOYMENT_TARGET = 26.0; SWIFT_VERSION = 6.0; CLANG_ENABLE_MODULES = YES; ENABLE_USER_SCRIPT_SANDBOXING = NO; }; };
+		00000000000000000000000D = { isa = XCBuildConfiguration; name = Development; buildSettings = { PRODUCT_NAME = Frisket; PRODUCT_BUNDLE_IDENTIFIER = io.github.prateeksingh1092.frisket.debug; INFOPLIST_FILE = Frisket/Info.plist; GENERATE_INFOPLIST_FILE = NO; CODE_SIGN_STYLE = Manual; CODE_SIGN_IDENTITY = "Apple Development"; DEVELOPMENT_TEAM = 9M43Q952NK; CODE_SIGN_ENTITLEMENTS = Frisket/Frisket.entitlements; CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO; ENABLE_HARDENED_RUNTIME = YES; ENABLE_DEBUG_DYLIB = NO; ENABLE_APP_SANDBOX = NO; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; DEBUG_INFORMATION_FORMAT = dwarf; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; }; };
+		000000000000000000000016 = { isa = PBXBuildFile; fileRef = 000000000000000000000020; };
+        00000000000000000000001E = { isa = PBXFileSystemSynchronizedRootGroup; path = Sources/FrisketCore; sourceTree = SOURCE_ROOT; };
+        00000000000000000000001F = { isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000022; buildPhases = (000000000000000000000024); buildRules = (); dependencies = (); fileSystemSynchronizedGroups = (00000000000000000000001E); name = FrisketCore; productName = FrisketCore; productReference = 000000000000000000000020; productType = "com.apple.product-type.library.static"; };
+        000000000000000000000020 = { isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libFrisketCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
+        000000000000000000000021 = { isa = PBXTargetDependency; target = 00000000000000000000001F; };
+        000000000000000000000022 = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000023); defaultConfigurationIsVisible = 0; defaultConfigurationName = Development; };
+        000000000000000000000023 = { isa = XCBuildConfiguration; name = Development; buildSettings = { PRODUCT_NAME = FrisketCore; PRODUCT_MODULE_NAME = FrisketCore; DEFINES_MODULE = YES; SKIP_INSTALL = YES; SWIFT_INSTALL_OBJC_HEADER = NO; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
+        000000000000000000000024 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+    };
+    rootObject = 000000000000000000000001;
+}

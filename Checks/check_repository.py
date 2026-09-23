@@ -170,6 +170,19 @@ def capture_memory_issues(files):
     return issues
 
 
+def input_monitoring_issues(files):
+    issues = []
+    for path, text in sorted(files.items()):
+        if not path.endswith((".swift", ".m", ".mm", ".h", ".c", ".cc", ".cpp")):
+            continue
+        if not path.startswith(("Sources/", "Frisket/")):
+            continue
+        code = swift_code(text).replace("`", "")
+        if re.search(r'\b(?:CGEventTap\w*|CGEvent\s*\.\s*tap\w*|tapCreate\w*|tapEnable|tapIsEnabled|addGlobalMonitorForEvents\w*)\b', code):
+            issues.append(f"{path}: event tap or global event monitor is forbidden")
+    return issues
+
+
 def upstream_identity(text):
     normalized = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().casefold()
     normalized = " ".join(normalized.split())
@@ -311,6 +324,8 @@ def repository_issues(root, check):
         resolved = json.loads(lockfile.read_text()) if lockfile.exists() else None
         return dependency_issues(dumped_manifest(root), resolved)
     files = product_files(root)
+    if check == "input-monitoring":
+        return input_monitoring_issues(files)
     if check == "imports":
         return import_issues(files)
     if check == "diagnostics":
@@ -328,7 +343,7 @@ if __name__ == "__main__":
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--fixture", type=pathlib.Path)
     mode.add_argument("--root", type=pathlib.Path)
-    parser.add_argument("--check", choices=["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory"])
+    parser.add_argument("--check", choices=["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory", "input-monitoring"])
     args = parser.parse_args()
     try:
         if args.fixture:
