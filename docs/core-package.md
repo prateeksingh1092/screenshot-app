@@ -4,7 +4,9 @@
 the core test target `FrisketCoreTests`, plus a test-only `FrisketAdapters`
 module and `FrisketAdapterTests` compiling the app adapter sources. It targets macOS 26.
 GRDB 7.11.1 is its only external dependency, pinned to the official HTTPS source
-and linked statically; there are no executable targets. The core implements
+and linked statically. `HistoryCrashHelper` is a test-only executable under
+`Tests/Helpers/`, built as a dependency of the core tests and absent from the
+Xcode project and app bundle. The core implements
 capture, Copy, and dismiss-to-History, with app capture and pasteboard adapters.
 See the [History contract](history-storage.md) for ticket 09 storage and recovery seams. SwiftPM's default
 build uses the host architecture; no cross-compilation flags are set.
@@ -365,3 +367,22 @@ Focused verification: `sh scripts/test-core.sh --filter
 SQLite/files in temporary directories, and one held delivery stand-in to test
 in-flight command gating. See [manual checks](manual-checks/11-save-and-settings.md)
 for the runtime items that remain pending.
+
+## Ticket 10 crash recovery
+
+`sh scripts/test-core.sh --filter HistoryRecoveryTests` exercises the launch
+sweep through seam 1 with real SQLite and temporary files. The command uses the
+standard `.build` scratch path; tests locate `.build/debug/HistoryCrashHelper`.
+Tier 1 throws after every named commit point. Tier 2 launches that helper with
+`Process` and requires actual `SIGKILL` termination at every point. Both rebuild
+History over the same directory and compare entries, logical sizes and every
+file's bytes after two sweeps. Explicit point lists in both tiers are checked
+against `HistoryCommitPoint.allCases`; omitting a point must fail the check.
+
+Additional cases cover a separate process holding the root lock, release on
+process death, invalid records and undecodable pixel streams, missing images
+and thumbnails, interrupted deletions, archive accounting, root relocation,
+future migrations with outstanding WAL, symlink refusal and launch ordering.
+See [History storage](history-storage.md) for the launch interface and failure
+behavior. These tests launch only the helper, never the app, and use synthetic
+PNGs and a recording clipboard stand-in.

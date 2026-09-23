@@ -1,7 +1,7 @@
 import Foundation
 
 public enum HistoryFailure: Error, Equatable, Sendable {
-    case unavailable, unknownMigrations, invalidImage, recoveryRequired
+    case unavailable, unknownMigrations, invalidImage, recoveryRequired, rootLocked
 }
 
 public enum HistoryState: String, Codable, Sendable { case finalized, deleting }
@@ -34,13 +34,19 @@ public struct AuthorizedFinalization: Sendable {
 }
 
 public protocol CaptureHistory: Sendable {
+    func recover() async -> Result<HistoryRecoveryReport, HistoryFailure>
     func finalize(_ request: AuthorizedFinalization) async -> CommitOutcome
     func entries() async -> Result<[HistoryEntry], HistoryFailure>
 }
 
 /// Recovery/fault-injection contract. Each point means the named operation has
-/// completed; ticket 10 must cover every case, including the post-commit cache.
+/// completed. Both crash-recovery tiers must cover every case, including the cache.
 public enum HistoryCommitPoint: String, CaseIterable, Codable, Sendable {
     case pngStaged, pngSynced, recordStaged, recordSynced
     case imageRenamed, recordRenamed, directorySynced, rowCommitted, thumbnailCached
+}
+
+public struct HistoryRecoveryReport: Equatable, Sendable {
+    public let logicalBytes: Int64
+    public let removedMissingImages: Int
 }

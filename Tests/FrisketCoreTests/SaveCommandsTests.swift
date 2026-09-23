@@ -23,7 +23,7 @@ private struct UnusedClipboard: ImageClipboard {
         defer { try? FileManager.default.removeItem(at: directory) }
         let root = directory.appendingPathComponent("History.noindex")
         let folder = directory.appendingPathComponent("Pictures/Frisket")
-        let commands = CaptureCommandLayer(source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
             history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.capture(revision.captureID, maximumBytes: 1024)) == .pending(revision))
@@ -57,7 +57,7 @@ extension SaveCommandsTests {
         // A regular file blocks directory creation until the user repairs the destination.
         try Data("occupied".utf8).write(to: folder)
         let diagnostics = LocalDiagnosticLog()
-        let commands = CaptureCommandLayer(source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: SavePixels().bytes.count,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: SavePixels().bytes.count,
             diagnostics: diagnostics, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
@@ -109,7 +109,7 @@ extension SaveCommandsTests {
             folder = directory.appendingPathComponent("HISTORY.NOINDEX/exports")
         default: folder = root
         }
-        let commands = CaptureCommandLayer(source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
             history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
@@ -131,7 +131,7 @@ extension SaveCommandsTests {
         try Data("existing export".utf8).write(to: folder.appendingPathComponent(existing))
         // Even an existing symlink must count as a collision, without touching its target.
         try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent(second), withDestinationURL: folder.appendingPathComponent(existing))
-        let commands = CaptureCommandLayer(source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
             history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(UUID(uuidString: "11111111-2222-3333-4444-555555555555")!), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
@@ -154,7 +154,7 @@ extension SaveCommandsTests {
         try Data("blocked history".utf8).write(to: root)
         if retry { try Data("blocked export".utf8).write(to: folder) }
         let diagnostics = LocalDiagnosticLog()
-        let commands = CaptureCommandLayer(source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
             diagnostics: diagnostics, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
@@ -182,7 +182,7 @@ extension SaveCommandsTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let root = directory.appendingPathComponent("History.noindex")
         let folder = directory.appendingPathComponent("Exports")
-        let commands = CaptureCommandLayer(source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
             history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.save(revision)) == .rejected(.unknownCapture))
@@ -205,7 +205,7 @@ extension SaveCommandsTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
         let root = directory.appendingPathComponent("History.noindex")
-        let commands = CaptureCommandLayer(source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
             history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
@@ -236,7 +236,7 @@ extension SaveCommandsTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let exporter = HeldExport()
-        let commands = CaptureCommandLayer(source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
             history: HistoryStore(root: root), exporter: exporter)
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
