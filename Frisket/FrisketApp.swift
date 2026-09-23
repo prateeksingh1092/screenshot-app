@@ -24,6 +24,7 @@ import FrisketCore
     private var scrolling: ManualScrollingCapture?
     private var statusItem: NSStatusItem?
     private var historySettings: HistorySettings?
+    private var thumbnailSettings: ThumbnailSettings?
     private var settingsWindow: ExportSettingsWindow?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var screens: [CaptureID: NSScreen] = [:]
@@ -44,11 +45,14 @@ import FrisketCore
         let identity = AppIdentity(bundleIdentifier: identifier)
         let exportSettings = ExportSettings(historyRoot: identity.historyRoot)
         let historySettings = HistorySettings()
+        let thumbnailSettings = ThumbnailSettings()
         self.historySettings = historySettings
+        self.thumbnailSettings = thumbnailSettings
         historySettings.onQuotaEviction = { [weak self] in
             self?.notice("History size limit reached", "Older captures were removed from History to meet its size limit. Saved exports are unchanged. You can adjust the limit in Settings.")
         }
-        settingsWindow = ExportSettingsWindow(settings: exportSettings, history: historySettings, exclusions: exclusions, shortcuts: shortcutSettings)
+        settingsWindow = ExportSettingsWindow(settings: exportSettings, history: historySettings, thumbnails: thumbnailSettings,
+                                              exclusions: exclusions, shortcuts: shortcutSettings)
         let windowPlatform = WindowScreenCapturePlatform(permission: permission, bundleIdentifier: identity.bundleIdentifier,
             exclusions: { [exclusions] in exclusions.bundleIdentifiers })
         self.windowPlatform = windowPlatform
@@ -64,9 +68,20 @@ import FrisketCore
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
             history: HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits),
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
-            drag: dragAdapter, dragStaging: dragStaging, codec: PNGBitmapCodec(),
+            drag: dragAdapter, dragStaging: dragStaging, thumbnailPolicy: thumbnailSettings.policy,
+            codec: PNGBitmapCodec(),
             scrollingFrames: scrolling, scrollingPreview: scrolling)
-        if let commands { historySettings.connect(commands) }
+        if let commands {
+            historySettings.connect(commands)
+            thumbnailSettings.connect(commands)
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        let lockCenter = DistributedNotificationCenter.default()
+        lockCenter.addObserver(self, selector: #selector(screenLocked),
+            name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
+        lockCenter.addObserver(self, selector: #selector(screenUnlocked),
+            name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
@@ -244,8 +259,10 @@ import FrisketCore
         }
         let id = revision.captureID
         screens[id] = screen
-        panels[id] = makePanel(id, revision: revision, preview: preview, displayID: displayID(of: screen))
+        let assignedDisplay = displayID(of: screen)
+        panels[id] = makePanel(id, revision: revision, preview: preview, displayID: assignedDisplay)
         arrivalOrder.append(id)
+        if let assignedDisplay { await commands.assignThumbnailDisplay(id, displayID: assignedDisplay) }
         await settleThumbnails()
         // Downsampling and orderFrontRegardless have completed. This is
         // presentation submission, not a physical-display timestamp.
@@ -495,13 +512,15 @@ import FrisketCore
             }
             if let exit = card.dueExit {
                 leave(id, by: exit)
-            } else if timeouts[id] == nil {
+            } else if let expiresAt = card.expiresAt, expiresAt > .now, timeouts[id] == nil {
                 timeouts[id] = Task { [weak self] in
-                    try? await Task.sleep(until: card.expiresAt, clock: .continuous)
+                    try? await Task.sleep(until: expiresAt, clock: .continuous)
                     guard !Task.isCancelled else { return }
                     self?.timeouts[id] = nil
                     await self?.settleThumbnails()
                 }
+            } else {
+                timeouts.removeValue(forKey: id)?.cancel()
             }
         }
     }
@@ -540,6 +559,42 @@ import FrisketCore
     }
     @objc private func showAbout() { surfaces.presentAbout() }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    @objc private func screensChanged() {
+        Task { await rehomeThumbnails() }
+    }
+
+    @objc private func screenLocked() {
+        Task {
+            _ = await commands?.handleSystemEvent(.screenLocked)
+            await settleThumbnails()
+        }
+    }
+
+    @objc private func screenUnlocked() {
+        Task {
+            _ = await commands?.handleSystemEvent(.screenUnlocked)
+            await settleThumbnails()
+        }
+    }
+
+    private func connectedDisplayIDs() -> [UInt32] {
+        let ids = NSScreen.screens.compactMap(displayID(of:))
+        guard let main = NSScreen.main.flatMap(displayID(of:)) else { return ids }
+        return [main] + ids.filter { $0 != main }
+    }
+
+    private func rehomeThumbnails() async {
+        guard let commands else { return }
+        _ = await commands.handleSystemEvent(.displaysChanged(remaining: connectedDisplayIDs()))
+        for card in await commands.thumbnails() {
+            let id = card.revision.captureID
+            guard let panel = panels[id], let display = card.displayID else { continue }
+            panel.displayID = display
+            screens[id] = NSScreen.screens.first { displayID(of: $0) == display }
+        }
+        await settleThumbnails()
+    }
 
     private func resumeLaunchSurfaces() {
         surfaces.systemAlertEnded(
@@ -609,22 +664,24 @@ import FrisketCore
         }
         guard !panels.isEmpty, let commands else { return prepareAcceptedQuit() ? .terminateNow : .terminateCancel }
         terminating = true
+        for panel in panels.values { panel.model.busy = true }
         Task {
-            for id in arrivalOrder {
-                guard let panel = panels[id] else { continue }
-                panel.model.busy = true
-                let result = await commands.execute(.dismiss(panel.revision))
-                await historySettings?.refresh()
+            let results = await commands.handleSystemEvent(.quit)
+            await historySettings?.refresh()
+            for result in results {
                 if case .finalized(_, let commit) = result { showOversizedNotice(commit) }
-                guard case .finalized(_, .committed) = result else {
-                    panel.model.dismissFailed = true
-                    panel.model.busy = false
-                    terminating = false
-                    reopenAfterQuit = false
-                    sender.reply(toApplicationShouldTerminate: false)
-                    return
+                if case .finalized(let revision, .committed) = result {
+                    remove(revision.captureID)
+                    continue
                 }
-                remove(id)
+                if case .finalized(let revision, _) = result, let panel = panels[revision.captureID] {
+                    panel.model.dismissFailed = true
+                }
+                for panel in panels.values { panel.model.busy = false }
+                terminating = false
+                reopenAfterQuit = false
+                sender.reply(toApplicationShouldTerminate: false)
+                return
             }
             // Only prepare relaunch after every pending capture is safely in History.
             let accepted = prepareAcceptedQuit()

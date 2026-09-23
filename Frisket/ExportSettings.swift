@@ -57,12 +57,14 @@ import FrisketCore
 private struct ExportSettingsView: View {
     @ObservedObject var settings: ExportSettings
     @ObservedObject var history: HistorySettings
+    @ObservedObject var thumbnails: ThumbnailSettings
     let exclusions: CaptureExclusionList
     @ObservedObject var shortcuts: ShortcutSettings
 
     var body: some View {
         Form {
             ShortcutSettingsView(settings: shortcuts)
+            ThumbnailSettingsSection(settings: thumbnails)
             HistorySettingsSection(settings: history)
             Section("Export folder") {
                 Text(settings.folder.path)
@@ -89,15 +91,17 @@ private struct ExportSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
-        .frame(width: 680, height: 600)
+        .frame(width: 680, height: 680)
     }
 }
 
 @MainActor final class ExportSettingsWindow {
     private let window: NSWindow
 
-    init(settings: ExportSettings, history: HistorySettings, exclusions: CaptureExclusionList, shortcuts: ShortcutSettings) {
-        window = NSWindow(contentViewController: NSHostingController(rootView: ExportSettingsView(settings: settings, history: history, exclusions: exclusions, shortcuts: shortcuts)))
+    init(settings: ExportSettings, history: HistorySettings, thumbnails: ThumbnailSettings,
+         exclusions: CaptureExclusionList, shortcuts: ShortcutSettings) {
+        window = NSWindow(contentViewController: NSHostingController(rootView: ExportSettingsView(
+            settings: settings, history: history, thumbnails: thumbnails, exclusions: exclusions, shortcuts: shortcuts)))
         window.title = "Frisket Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false

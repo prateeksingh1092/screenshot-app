@@ -274,3 +274,120 @@ extension ThumbnailStackCommandsTests {
         #expect(ThumbnailKeys.command(characters: "x", keyCode: 7) == nil)
     }
 }
+
+extension ThumbnailStackCommandsTests {
+    @Test func neverAutoDismissRejectsTimeoutWhileOverflowStillFinalizes() async throws {
+        let fixture = StackFixture(policy: ThumbnailStackPolicy(maximumCount: 1, autoDismiss: .never))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let first = try await fixture.capture()
+        fixture.clock.advance(by: .seconds(86_400))
+        #expect(await fixture.commands.thumbnails().map(\.dueExit) == [nil])
+        #expect(await fixture.commands.execute(.exitThumbnail(first, .timeout)) == .rejected(.thumbnailExitNotDue))
+        let second = try await fixture.capture()
+        #expect(await fixture.commands.thumbnails().map(\.dueExit) == [nil, .overflow])
+        #expect(await fixture.commands.execute(.exitThumbnail(first, .overflow)) == .finalized(first, .committed))
+        #expect(await fixture.commands.thumbnails().map(\.revision) == [second])
+        #expect(try await fixture.historyIDs() == [first.captureID])
+    }
+
+    @Test func zeroSecondDelayTimesOutImmediatelyAndIsNotNever() async throws {
+        let fixture = StackFixture(policy: ThumbnailStackPolicy(autoDismiss: .after(.zero)))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        #expect(await fixture.commands.thumbnails().map(\.dueExit) == [.timeout])
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .timeout)) == .finalized(revision, .committed))
+        #expect(try await fixture.historyIDs() == [revision.captureID])
+    }
+
+    @Test func preferenceKeepsZeroSecondsDistinctFromNever() {
+        #expect(ThumbnailAutoDismissPreference.load(never: false, seconds: 0).autoDismiss == .after(.zero))
+        #expect(ThumbnailAutoDismissPreference.load(never: true, seconds: 0).autoDismiss == .never)
+        #expect(ThumbnailAutoDismissPreference.load(never: false, seconds: nil).autoDismiss == .after(.seconds(10)))
+        #expect(ThumbnailAutoDismissPreference(never: true, seconds: 15).autoDismiss == .never)
+        #expect(ThumbnailAutoDismissPreference(never: false, seconds: 15).autoDismiss == .after(.seconds(15)))
+    }
+
+    @Test func applyingNeverThenADelayUsesTheNewPolicyOnExistingCards() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        await fixture.commands.setThumbnailPolicy(ThumbnailStackPolicy(autoDismiss: .never))
+        fixture.clock.advance(by: ThumbnailStackPolicy().autoDismissDelay)
+        #expect(await fixture.commands.thumbnails().map(\.dueExit) == [nil])
+        await fixture.commands.setThumbnailPolicy(ThumbnailStackPolicy(autoDismiss: .after(.zero)))
+        #expect(await fixture.commands.thumbnails().map(\.dueExit) == [.timeout])
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .timeout)) == .finalized(revision, .committed))
+    }
+}
+
+extension ThumbnailStackCommandsTests {
+    @Test func quitFinalizesUneditedThumbnailsOldestFirst() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let first = try await fixture.capture()
+        let second = try await fixture.capture()
+        #expect(await fixture.commands.handleSystemEvent(.quit) == [
+            .finalized(first, .committed), .finalized(second, .committed)
+        ])
+        #expect(await fixture.commands.thumbnails().isEmpty)
+        #expect(try await fixture.historyIDs() == [first.captureID, second.captureID])
+    }
+
+    @Test func quitStopsWhenACommitFailsAndLeavesLaterCardsPending() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let first = try await fixture.capture()
+        let second = try await fixture.capture()
+        try Data("blocked history root".utf8).write(to: fixture.root)
+        #expect(await fixture.commands.handleSystemEvent(.quit) == [
+            .finalized(first, .notCommitted(.historyUnavailable))
+        ])
+        try FileManager.default.removeItem(at: fixture.root)
+        #expect(await fixture.commands.thumbnails().map(\.revision) == [second, first])
+        #expect(try await fixture.historyIDs().isEmpty)
+    }
+
+    @Test func screenLockLeavesPendingAndPausesTimeoutWhileOverflowStillFinalizes() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let first = try await fixture.capture()
+        #expect(await fixture.commands.handleSystemEvent(.screenLocked).isEmpty)
+        fixture.clock.advance(by: ThumbnailStackPolicy().autoDismissDelay)
+        #expect(await fixture.commands.thumbnails().map(\.dueExit) == [nil])
+        #expect(await fixture.commands.execute(.exitThumbnail(first, .timeout)) == .rejected(.thumbnailExitNotDue))
+        var newest = first
+        for _ in 0..<4 { newest = try await fixture.capture() }
+        #expect(await fixture.commands.thumbnails().map(\.dueExit) == [nil, nil, nil, nil, .overflow])
+        #expect(await fixture.commands.execute(.exitThumbnail(first, .overflow)) == .finalized(first, .committed))
+        #expect(await fixture.commands.thumbnails().first?.revision == newest)
+        #expect(await fixture.commands.handleSystemEvent(.screenUnlocked).isEmpty)
+        fixture.clock.advance(by: ThumbnailStackPolicy().autoDismissDelay)
+        #expect(await fixture.commands.thumbnails().allSatisfy { $0.dueExit == .timeout })
+    }
+
+    @Test func unpluggingADisplayMovesItsCardsAndLeavesThemPending() async throws {
+        let fixture = StackFixture(policy: ThumbnailStackPolicy(autoDismiss: .never))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let external = try await fixture.capture()
+        let builtIn = try await fixture.capture()
+        await fixture.commands.assignThumbnailDisplay(external.captureID, displayID: 2)
+        await fixture.commands.assignThumbnailDisplay(builtIn.captureID, displayID: 1)
+        #expect(await fixture.commands.thumbnails().map(\.displayID) == [1, 2])
+        #expect(await fixture.commands.handleSystemEvent(.displaysChanged(remaining: [1])).isEmpty)
+        #expect(await fixture.commands.thumbnails().map(\.displayID) == [1, 1])
+        #expect(await fixture.commands.thumbnails().map(\.revision) == [builtIn, external])
+        #expect(try await fixture.historyIDs().isEmpty)
+        fixture.clock.advance(by: .seconds(86_400))
+        #expect(await fixture.commands.thumbnails().allSatisfy { $0.dueExit == nil })
+    }
+
+    @Test func crashLosesUneditedPendingCapturesAndWritesNothing() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        #expect(await fixture.commands.image(for: revision)?.pngData == StackPixels.bytes)
+        #expect(try await fixture.historyIDs().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("history.sqlite").path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("images").path))
+    }
+}

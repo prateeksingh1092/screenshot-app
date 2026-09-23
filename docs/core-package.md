@@ -284,12 +284,13 @@ The coordinator holds a pure `ThumbnailStack` containing exactly its Pending
 captures: a card arrives with `.pending` and leaves whenever the capture stops
 being pending (a committed exit, Delete, or a successful Copy, Save or Drag). The public interface:
 
-- `ThumbnailStackPolicy(maximumCount: 4, autoDismissDelay: .seconds(10))` and a
+- `ThumbnailStackPolicy(maximumCount: 4, autoDismiss: .after(.seconds(10)))` and a
   `clock: () -> ContinuousClock.Instant`, both optional on the command layer's
   initializer. Decision 54 selects these working defaults; Settings can change
   them later.
 - `thumbnails() -> [ThumbnailCard]`: newest first. Each card has its revision,
-  `expiresAt` (arrival plus the delay, on the injected clock), and `dueExit`:
+  `expiresAt` (arrival plus the delay on the injected clock, or nil when
+  auto-dismiss is never), optional `displayID`, and `dueExit`:
   `.overflow` beyond the maximum count, otherwise `.timeout` once expired, else nil.
 - `execute(.exitThumbnail(revision, exit))`, with `ThumbnailExit.outcome`:
 
@@ -308,10 +309,32 @@ being pending (a committed exit, Delete, or a successful Copy, Save or Drag). Th
 Overflow is a separate command rather than a side effect of capture, so the
 `capture-memory` rule that capture can't authorize persistence still holds.
 The app queries `thumbnails()` after each arrival and removal, and when a card's
-`expiresAt` passes, then issues the due exits. Quit, display unplug, screen lock,
-the auto-dismiss setting and pausing under focus belong to tickets 14 and 32.
+`expiresAt` passes, then issues the due exits. Pausing under focus belongs to
+ticket 32. Ticket 14 owns quit, display unplug, screen lock, and the
+auto-dismiss setting.
 `sh scripts/test-core.sh --filter ThumbnailStackCommandsTests` runs the seam 1
 tests with a manual clock, real files and SQLite.
+
+## Ticket 14 system events and auto-dismiss
+
+`ThumbnailAutoDismiss.after(Duration)` or `.never`. Zero seconds expire
+immediately; never is an explicit flag (`ThumbnailAutoDismissPreference`), not a
+zero delay. Overflow still finalizes under never. Settings persist the flag and
+seconds separately and call `setThumbnailPolicy`.
+
+`handleSystemEvent`:
+
+| Event | Outcome |
+| --- | --- |
+| quit | finalize every unedited pending card, oldest first; stop on the first failed commit |
+| screenLocked | leave pending and pause timeout; overflow still due |
+| screenUnlocked | resume timeout against the original arrival |
+| displaysChanged(remaining) | move cards whose display left to `remaining.first`; cards stay pending |
+
+A crash loses unedited pending captures: they exist only in the coordinator's
+memory (decision 31). A new command layer on the same History root sees no
+pending cards and no History rows. The app observes `didChangeScreenParameters`
+and `com.apple.screenIsLocked` / `com.apple.screenIsUnlocked`.
 
 ## Ticket 12 drag handoff
 

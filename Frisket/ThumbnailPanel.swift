@@ -186,7 +186,7 @@ private final class ThumbnailCardPanel: NSPanel {
 
 @MainActor final class ThumbnailPanel {
     let revision: CaptureRevision
-    let displayID: UInt32?
+    var displayID: UInt32?
     let model = ThumbnailModel()
     private let panel: ThumbnailCardPanel
     private var shown = false
