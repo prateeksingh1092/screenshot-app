@@ -1,0 +1,14 @@
+{
+  "check": "provenance",
+  "repositoryFiles": {
+    "Package.swift": "// Fixture manifest\n",
+    "docs/ported-files.json": "[]\n",
+    "Trials/StitcherTrial/Sources/StitcherTrial/Stitcher.swift": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\nstruct Stitcher {}\n",
+    "Trials/StitcherTrial/Tests/StitcherTrialTests/StitcherTests.swift": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\nstruct StitcherTests {}\n",
+    "Trials/StitcherTrial/.build/Generated.swift": "// Frisket-Port: generated cache, not source\n"
+  },
+  "expected": [
+    "Trials/StitcherTrial/Sources/StitcherTrial/Stitcher.swift: port has no provenance entry",
+    "Trials/StitcherTrial/Tests/StitcherTrialTests/StitcherTests.swift: port has no provenance entry"
+  ]
+}

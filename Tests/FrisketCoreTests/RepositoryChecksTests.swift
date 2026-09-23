@@ -32,7 +32,8 @@ func repositorySatisfiesStaticChecks(check: String) throws {
     "identity-rejected", "identity-accepted", "identity-after-header-rejected",
     "provenance-rejected", "provenance-accepted", "provenance-tampered",
     "diagnostics-rejected", "diagnostics-accepted", "diagnostics-collection-rejected",
-    "capture-memory-rejected", "capture-memory-accepted"
+    "capture-memory-rejected", "capture-memory-accepted",
+    "trial-provenance-inventory", "trial-identity-inventory", "trial-imports-inventory"
 ])
 func staticCheckFixturesHaveExpectedOutcomes(fixture: String) throws {
     let path = repository.appendingPathComponent("Checks/Fixtures/\(fixture).json")

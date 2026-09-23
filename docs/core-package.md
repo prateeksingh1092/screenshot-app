@@ -9,7 +9,8 @@ build uses the host architecture; no cross-compilation flags are set.
 ## Build and test commands
 
 Run from the repository root. Decision 46 and the ticket implementation request
-authorize these builds. Use Xcode 26.5 for Swift Testing. No signing, keychain
+authorize these builds. Use the pinned Xcode 26.5 toolchain for Swift Testing
+(decision 47); the library also builds with the CLT. No signing, keychain
 access, network, app launch, real screen capture, or real clipboard is involved.
 
 ```sh
@@ -38,10 +39,19 @@ For a single test, append `--filter CaptureCommandsTests` or
 build 25G229, with Apple Swift 6.3.3 (swiftlang-6.3.3.1.3,
 clang-2100.1.1.101). Swift Testing compilation fails with
 `error: no such module 'Testing'`. The Swift Testing tests are **Xcode-only
-for this installed toolchain**, per ticket 02's explicit fallback. Ticket 06 now executes these Swift Testing tests with Xcode 26.5
-(17F42), Swift 6.3.2, on the same x86_64 macOS build; there is no XCTest
-substitution.
+for this installed toolchain**, per ticket 02's explicit fallback. Ticket 04
+subsequently runs these with Xcode 26.5; see its
+[verification draft](../.scratch/screenshot-mvp/reports/04-implementer.md).
+Ticket 06 also executes these Swift Testing tests with Xcode 26.5 (17F42),
+Swift 6.3.2, on the same x86_64 macOS build. There is no XCTest substitution.
 **arm64 not executed.**
+
+## Isolated stitcher trial
+
+`Trials/StitcherTrial/` is a separate scratch package. The root manifest and
+Frisket's dependency graph do not reference it. Its reproduction commands,
+source revision, dependencies, changes, limitations, and ticket 05 cost notes
+are in its [README](../Trials/StitcherTrial/README.md).
 
 ## Static-check interface
 
@@ -88,18 +98,39 @@ done
   duplicate, or stale entries fail. Entirely unmarked copied code cannot be
   identified mechanically; the port review must register it before acceptance.
 
-`docs/ported-files.json` is currently empty: no application code is ported.
+The inventory explicitly includes `Trials/StitcherTrial/Package.swift`,
+`LICENSE`, `Sources/`, `Tests/`, and `Resources/`. Trial source imports obey the
+same AppKit/SwiftUI restrictions; trial tests receive provenance checks and,
+like root tests, are not app identity. The same leading-licence exception
+applies to trial sources; no trial-wide identity or provenance exclusion exists.
+Trial README material and nested `.build/` output are not build inputs. Three
+on-disk fixtures first failed before this inventory was added (identity,
+imports, and unregistered source/test provenance); unlike scanner-only fixtures,
+they exercise file discovery. The generated-cache fixture also verifies that
+build output is not attributed as source.
+
+Manifest evaluation uses `xcrun swift`, honoring the caller's `DEVELOPER_DIR`
+(and defaulting to pinned Xcode), instead of silently forcing CLT inside tests.
+The dependency check remains scoped to the root Frisket manifest; the isolated
+trial manifest has no external dependencies and is documented separately.
+
+`docs/ported-files.json` contains three trial-only ports; no Frisket application
+code is ported.
 When an approved trial ports a file, retain its original header verbatim and
-record it as `licenseHeader`, alongside `path`, `upstreamURL`, `revision`, and
+record the retained licence preamble as `licenseHeader`, alongside `path`, `upstreamURL`, `revision`, and
 `originalPath`. Retain a full copyright/licence comment (including an SPDX
 identifier or licence grant). Add any necessary complete third-party notice
 separately. The fixture ledger entries are synthetic examples, not real ports.
 
 The fixture interface compares checker output with independent literal
-diagnostics in JSON. Each of the four checks was first exercised with a failing
+diagnostics in JSON. Each of the original four checks was first exercised with a failing
 fixture before its implementation. The Swift Testing target runs both the
 repository checks and these fixtures with the Xcode toolchain.
 
+For this trial the upstream files had descriptive banners, not per-file licence
+text. The complete upstream BSD licence is prepended, each original banner is
+preserved, and `licenseHeader` records both. `originalSHA256` records each
+unmodified upstream source as additional evidence.
 
 ## Ticket 06 command interface
 
