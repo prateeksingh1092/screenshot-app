@@ -51,7 +51,11 @@ public enum DocumentRenderer {
     }
 
     public static func outputSize(_ document: EditorDocument) -> (width: Int, height: Int) {
-        cropBounds(document.base, crop: document.edits.crop, scale: document.edits.scale)
+        outputSize(width: document.base.width, height: document.base.height, edits: document.edits)
+    }
+
+    public static func outputSize(width: Int, height: Int, edits: DocumentEdits) -> (width: Int, height: Int) {
+        cropBounds(width: width, height: height, crop: edits.crop, scale: edits.scale)
     }
 
     private static func renderWindow(edits: DocumentEdits, startRow: Int, rowCount: Int,

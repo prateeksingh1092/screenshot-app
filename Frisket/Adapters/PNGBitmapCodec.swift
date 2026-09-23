@@ -36,8 +36,19 @@ struct PNGBitmapCodec: BitmapCodec {
     }
 
     func encode(_ pngData: Data, edits: DocumentEdits) -> Data? {
-        guard let base = decode(pngData) else { return nil }
-        return encode(EditorDocument(base: base, edits: edits))
+        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(pngData as CFData, options),
+              CGImageSourceGetType(source) as String? == "public.png",
+              let image = CGImageSourceCreateImageAtIndex(source, 0, options) else { return nil }
+        let size = DocumentRenderer.outputSize(width: image.width, height: image.height, edits: edits)
+        guard let encoder = StripPNGEncoder(width: size.width, height: size.height) else { return nil }
+        var ok = true
+        DocumentRenderer.forEachStrip(width: image.width, height: image.height, edits: edits) { start, count in
+            rows(from: image, crop: edits.crop, scale: edits.scale, startRow: start, rowCount: count)
+        } body: { strip in
+            if ok { ok = encoder.append(strip) }
+        }
+        return ok ? encoder.finish() : nil
     }
 
     func encode(_ document: EditorDocument) -> Data? {
@@ -60,6 +71,33 @@ struct PNGBitmapCodec: BitmapCodec {
                 ?? properties[kCGImagePropertyPixelHeight] as? Int,
               width > 0, height > 0 else { return nil }
         return (width, height)
+    }
+
+    private func rows(from image: CGImage, crop: DocumentCrop?, scale: Double,
+                      startRow: Int, rowCount: Int) -> Bitmap? {
+        guard let edits = DocumentEdits(scale: scale, crop: crop) else { return nil }
+        let bounds = DocumentRenderer.outputSize(width: image.width, height: image.height, edits: edits)
+        guard startRow >= 0, rowCount > 0, startRow + rowCount <= bounds.height,
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        var minX = 0, minY = 0
+        if let crop {
+            func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(image.width))) }
+            func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(image.height))) }
+            minX = column((crop.x * scale).rounded(.down))
+            minY = row((crop.y * scale).rounded(.down))
+        }
+        var bytes = [UInt8](repeating: 0, count: bounds.width * rowCount * 4)
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: bounds.width, height: rowCount,
+                                          bitsPerComponent: 8, bytesPerRow: bounds.width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.setBlendMode(.copy)
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: -minX, y: -(minY + startRow),
+                                           width: image.width, height: image.height))
+            return true
+        }
+        return drawn ? Bitmap(width: bounds.width, height: rowCount, bytes: bytes) : nil
     }
 
     func bitmap(from image: CGImage) -> Bitmap? {

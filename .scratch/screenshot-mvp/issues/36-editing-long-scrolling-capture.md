@@ -22,3 +22,9 @@ Claimed on `5c0396f` after ticket 33 closed. Coordinator chat implements (Codex/
 Report: [36-implementer.md](../reports/36-implementer.md). Strip render/encode,
 downsampled editor proxy, tall canary, and a 586 MB peak on the 5120×57,600
 edit. Manual not run. Status/checkboxes unchanged pending review.
+
+### 2026-09-23 — review
+
+In-chat review vs `05bce68`: [36-code-review.md](../reviews/36-code-review.md). One justified
+fix: Done streams the pending PNG in strips instead of decoding a full base
+bitmap.
