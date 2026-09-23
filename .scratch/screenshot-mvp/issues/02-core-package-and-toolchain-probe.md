@@ -4,16 +4,16 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** in-progress (branch `ticket/02-core-package`)
+**Status:** resolved (tested on `main` at `bd31f16`)
 
-- [ ] The package targets macOS 26 and builds for the native architecture only.
-- [ ] One Swift Testing test runs green under `swift test` with the Command Line Tools; if it can't, the blocker is reported accurately and the test is marked Xcode-only.
-- [ ] Static check: the only allowed dependency is GRDB (no networking, analytics, updater, or image-format libraries).
-- [ ] Static check: core modules never import AppKit, SwiftUI, or concrete GRDB types outside the storage adapter.
-- [ ] Static check: Snapzy's name or author appears nowhere outside licence headers and notices.
-- [ ] Static check: every ported file keeps its licence header and has a provenance entry.
-- [ ] The verification report states the architecture and OS it ran on and that arm64 was not executed.
-- [ ] Running the build needs Prateek's approval at the time.
+- [x] The package targets macOS 26 and builds for the native architecture only.
+- [x] One Swift Testing test runs green under `swift test` with the Command Line Tools; if it can't, the blocker is reported accurately and the test is marked Xcode-only. (The CLT lack the Testing module; tests are Xcode-only and now pass under Xcode 26.5.)
+- [x] Static check: the only allowed dependency is GRDB (no networking, analytics, updater, or image-format libraries).
+- [x] Static check: core modules never import AppKit, SwiftUI, or concrete GRDB types outside the storage adapter.
+- [x] Static check: Snapzy's name or author appears nowhere outside licence headers and notices.
+- [x] Static check: every ported file keeps its licence header and has a provenance entry.
+- [x] The verification report states the architecture and OS it ran on and that arm64 was not executed.
+- [x] Running the build needs Prateek's approval at the time. (Approved under decision 46.)
 
 ## Comments
 
@@ -110,3 +110,9 @@ rechecked the fix and found no introduced issue. **Spec: 0 substantive
 findings**; the explicit Xcode-only fallback satisfies the probe criterion.
 Final ticket bookkeeping completed here. Ticket 01's notices and `.gitignore`
 were not edited. Coordinator retains commit ownership.
+
+### 2026-09-22 — coordinator integration and close
+
+- Fresh Codex review (GPT-6 Astra, high) against `d03f009`: Standards 1 should-fix (implementer set ticket status; restored for the coordinator), Spec 0. Verdict fix-then-merge. Recorded in `../reviews/02-code-review-codex.md`.
+- Integration branch `integrate/02` (current `main` plus `ticket/02-core-package`), with `DEVELOPER_DIR` set to Xcode 26.5: `swift test` passed 3 Swift Testing tests (17 cases) on x86_64, macOS 26.7 (25G229); all 4 static checks passed. The library's object file has minos 26.0 and SDK 26.5; SwiftPM's test runner reports macOS 14.0 for its own host. arm64 was not executed.
+- `main` fast-forwarded to `bd31f16`.
