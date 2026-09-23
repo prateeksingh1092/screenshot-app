@@ -4,7 +4,7 @@ import QuartzCore
 import ImageIO
 import UniformTypeIdentifiers
 
-@MainActor final class ScreenCapturePlatform: AreaCapturePlatform {
+@MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
     private let overlay = SelectionOverlay()
     private var content: Task<ShareableSnapshot, Error>?
     private(set) var captureDisplayID: UInt32?
@@ -23,6 +23,17 @@ import UniformTypeIdentifiers
         let selection = await overlay.select(on: screen)
         captureDisplayID = selection?.displayID
         return selection
+    }
+
+    func displayUnderPointer() -> FullScreenDisplay? {
+        let pointer = NSEvent.mouseLocation
+        captureDisplayID = nil
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }),
+              let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+            return nil
+        }
+        captureDisplayID = number.uint32Value
+        return FullScreenDisplay(displayID: number.uint32Value, frame: screen.frame, scale: screen.backingScaleFactor)
     }
 
     func hideSelection() {

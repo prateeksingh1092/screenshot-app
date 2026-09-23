@@ -41,30 +41,48 @@ import ImageIO
             catch { fputs("FAIL: pasted PNG dimensions or marker pixels do not match the synthetic pattern\n", stderr); exit(1) }
             return
         }
-        guard args.count == 2, args[1] == "--show" else {
-            fputs("Usage: FrisketTestPattern --show | --verify /path/to/pasted.png 1|2\n", stderr)
+        if args.count == 6, args[1] == "--verify-full",
+           let width = Int(args[3]), let height = Int(args[4]),
+           let scale = Int(args[5]), [1, 2].contains(scale),
+           width >= 320 * scale, height >= 180 * scale {
+            do {
+                try verify(path: args[2], scale: scale, fullSize: (width, height))
+                print("PASS: full display dimensions, four sRGB quadrant pixels and black marker")
+            } catch {
+                fputs("FAIL: full-display PNG dimensions or marker pixels do not match the synthetic pattern\n", stderr)
+                exit(1)
+            }
+            return
+        }
+        guard args.count == 2, ["--show", "--show-all"].contains(args[1]) else {
+            fputs("Usage: FrisketTestPattern --show | --show-all | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
             exit(2)
         }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        guard let screen = NSScreen.main else { exit(1) }
-        let window = PatternWindow(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.colorSpace = .sRGB
-        window.isReleasedWhenClosed = false
-        window.title = "Frisket Synthetic Test Pattern"
-        let view = PatternView(frame: CGRect(origin: .zero, size: screen.frame.size))
-        window.contentView = view
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(view)
+        let screens = args[1] == "--show-all" ? NSScreen.screens : NSScreen.main.map { [$0] } ?? []
+        guard !screens.isEmpty else { exit(1) }
+        let windows = screens.map { screen in
+            let window = PatternWindow(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.colorSpace = .sRGB
+            window.isReleasedWhenClosed = false
+            window.title = "Frisket Synthetic Test Pattern"
+            let view = PatternView(frame: CGRect(origin: .zero, size: screen.frame.size))
+            window.contentView = view
+            window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(view)
+            return window
+        }
         app.activate(ignoringOtherApps: true)
-        withExtendedLifetime(window) { app.run() }
+        withExtendedLifetime(windows) { app.run() }
     }
 
     private enum Mismatch: Error { case image }
-    private static func verify(path: String, scale: Int) throws {
+    private static func verify(path: String, scale: Int, fullSize: (width: Int, height: Int)? = nil) throws {
         guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
-              image.width == 320 * scale, image.height == 180 * scale,
+              image.width == (fullSize?.width ?? 320 * scale),
+              image.height == (fullSize?.height ?? 180 * scale),
               let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { throw Mismatch.image }
         var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
         try pixels.withUnsafeMutableBytes { bytes in
@@ -79,8 +97,10 @@ import ImageIO
                 (12, 168, [0, 0, 0, 255])
             ]
             let buffer = bytes.bindMemory(to: UInt8.self)
+            let originX = (image.width - 320 * scale) / 2
+            let originY = (image.height - 180 * scale) / 2
             for (x, y, expected) in samples {
-                let offset = ((y * scale) * image.width + x * scale) * 4
+                let offset = ((originY + y * scale) * image.width + originX + x * scale) * 4
                 for channel in 0..<4 {
                     // Display color management can round channels by a few levels.
                     guard abs(Int(buffer[offset + channel]) - Int(expected[channel])) <= 3 else { throw Mismatch.image }

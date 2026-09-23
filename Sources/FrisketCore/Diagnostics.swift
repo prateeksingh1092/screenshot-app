@@ -70,7 +70,7 @@ extension DiagnosticEvent {
     init(command: CaptureCommand, outcome: CaptureCommandOutcome) {
         let operation: DiagnosticOperation
         switch command {
-        case .capture: operation = .capture
+        case .capture, .captureFullScreen: operation = .capture
         case .copy: operation = .copy
         case .retryCopy: operation = .retryCopy
         case .discard: operation = .discard
