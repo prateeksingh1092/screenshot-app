@@ -85,3 +85,10 @@ public struct CaptureCommandLayer: Sendable {
         return outcome
     }
 }
+
+// Launch action at seam 1; recovery details stay behind CaptureHistory.
+extension CaptureCommandLayer {
+    public func recoverHistory() async -> Result<HistoryRecoveryReport, HistoryFailure> {
+        await coordinator.recoverHistory()
+    }
+}

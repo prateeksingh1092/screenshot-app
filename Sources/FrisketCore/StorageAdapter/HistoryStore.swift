@@ -4,23 +4,292 @@ import GRDB
 import ImageIO
 
 /// Disk access is lazy: initialization and an empty query create nothing.
-/// A single instance owns the root during this process; launch locking and
-/// reconciliation belong to ticket 10.
+/// The directory lock is held until this store is released, including while
+/// History queries and authorized commits run.
 public actor HistoryStore: CaptureHistory {
     private let root: URL
     private let clock: @Sendable () -> Date
     private let commitPoint: @Sendable (HistoryCommitPoint) throws -> Void
+    private let diagnostics: any DiagnosticSink
+    private var recoveryFailure: HistoryFailure?
+    private var launchRecoveryPending = false
+    private var closed = false
     private var database: DatabaseQueue?
+    private var rootLock: HistoryRootLock?
+
+    deinit { try? database?.close() }
 
     public init(root: URL, clock: @escaping @Sendable () -> Date = { Date() },
+                diagnostics: any DiagnosticSink = LocalDiagnosticLog(),
                 commitPoint: @escaping @Sendable (HistoryCommitPoint) throws -> Void = { _ in }) {
+        self.diagnostics = diagnostics
         self.root = root
         self.clock = clock
         self.commitPoint = commitPoint
     }
 
-    public func entries() -> Result<[HistoryEntry], HistoryFailure> {
+    /// Starts one launch sweep. Queries and finalizations also join the startup
+    /// gate, so scheduling the task cannot expose unrecovered History.
+    public static func launch(root: URL, diagnostics: any DiagnosticSink = LocalDiagnosticLog()) -> HistoryStore {
+        let store = HistoryStore(launchRoot: root, diagnostics: diagnostics)
+        Task { await store.ensureLaunchRecovery() }
+        return store
+    }
+
+    private init(launchRoot: URL, diagnostics: any DiagnosticSink) {
+        root = launchRoot
+        clock = { Date() }
+        commitPoint = { _ in }
+        self.diagnostics = diagnostics
+        launchRecoveryPending = true
+    }
+
+    private func ensureLaunchRecovery() async {
+        guard launchRecoveryPending else { return }
+        _ = await recover()
+    }
+
+    /// Deterministic shutdown for owners rebuilding over the same root. A closed
+    /// instance never reopens; construct a new store for the next session.
+    public func close() -> Result<Void, HistoryFailure> {
+        closed = true
+        launchRecoveryPending = false
         do {
+            try database?.close()
+            database = nil
+            rootLock = nil
+            return .success(())
+        } catch { return .failure(.unavailable) }
+    }
+
+    public func recover() async -> Result<HistoryRecoveryReport, HistoryFailure> {
+        launchRecoveryPending = false
+        let result = performRecovery()
+        switch result {
+        case let .success(report):
+            recoveryFailure = nil
+            if report.removedMissingImages > 0 {
+                await diagnostics.record(DiagnosticEvent(name: .historyImageMissing, operation: .launchRecovery,
+                    error: DiagnosticError(domain: .history, code: .missingHistoryImage)))
+            }
+            await diagnostics.record(DiagnosticEvent(name: .historyRecovered, operation: .launchRecovery))
+        case let .failure(failure):
+            recoveryFailure = failure
+            let code: DiagnosticErrorCode
+            switch failure {
+            case .unavailable: code = .unavailable
+            case .unknownMigrations: code = .unknownMigrations
+            case .invalidImage: code = .invalidImage
+            case .recoveryRequired: code = .recoveryRequired
+            case .rootLocked: code = .rootLocked
+            }
+            await diagnostics.record(DiagnosticEvent(name: .historyRecoveryFailed, operation: .launchRecovery,
+                error: DiagnosticError(domain: .history, code: code)))
+        }
+        return result
+    }
+
+    private func performRecovery() -> Result<HistoryRecoveryReport, HistoryFailure> {
+        do {
+            guard !closed else { throw HistoryFailure.unavailable }
+            guard FileManager.default.fileExists(atPath: root.path) else {
+                return .success(HistoryRecoveryReport(logicalBytes: 0, removedMissingImages: 0))
+            }
+            try acquireRootLock()
+            try validateRootLayout()
+            if try isReconciled() {
+                return .success(HistoryRecoveryReport(logicalBytes: try totalLogicalBytes(), removedMissingImages: 0))
+            }
+            let database = try writableDatabase(recovering: true)
+            let removedMissingImages = try reconcileRows(database)
+            for file in try children("staging") { try FileManager.default.removeItem(at: file) }
+            let known = Set(try readEntries(database).map { $0.captureID.rawValue.uuidString })
+            for file in try children("images")
+                where file.pathExtension == "png" {
+                let identifier = file.deletingPathExtension().lastPathComponent
+                guard !known.contains(identifier) else { continue }
+                guard UUID(uuidString: identifier)?.uuidString == identifier else {
+                    try FileManager.default.removeItem(at: file)
+                    continue
+                }
+                let recordLocation = "images/\(identifier).finalization.json"
+                let recordURL = root.appendingPathComponent(recordLocation)
+                guard let record = try validRecord(identifier: identifier, imageURL: file, recordURL: recordURL) else {
+                    try FileManager.default.removeItem(at: file)
+                    try removeIfPresent(recordURL)
+                    continue
+                }
+                let imageBytes = try logicalSize(file)
+                let recordBytes = try logicalSize(recordURL)
+                try database.write { db in
+                    try db.execute(sql: """
+                        INSERT INTO history (capture_identifier, revision, image_location, record_location,
+                            width, height, image_bytes, record_bytes, finalized_at, state)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'finalized')
+                        """, arguments: [identifier, Int64(record.revision), "images/\(identifier).png", recordLocation,
+                                          record.width, record.height, imageBytes, recordBytes, record.finalizedAt.timeIntervalSince1970])
+                }
+            }
+            let entries = try readEntries(database)
+            let records = Set(entries.map(\.recordLocation))
+            for file in try children("images") where file.lastPathComponent.hasSuffix(".finalization.json") {
+                if !records.contains("images/" + file.lastPathComponent) { try FileManager.default.removeItem(at: file) }
+            }
+            let thumbnails = Set(entries.compactMap(\.thumbnailLocation))
+            for file in try children("thumbnails") {
+                if !thumbnails.contains("thumbnails/" + file.lastPathComponent) { try FileManager.default.removeItem(at: file) }
+            }
+            for directory in ["images", "staging", "thumbnails"] {
+                let url = root.appendingPathComponent(directory)
+                if FileManager.default.fileExists(atPath: url.path) { try syncDirectory(url) }
+            }
+            _ = try database.writeWithoutTransaction { db in try db.checkpoint(.truncate) }
+            try database.close()
+            self.database = nil
+            return .success(HistoryRecoveryReport(logicalBytes: try totalLogicalBytes(), removedMissingImages: removedMissingImages))
+        } catch let failure as HistoryFailure { return .failure(failure) }
+        catch { return .failure(.unavailable) }
+    }
+
+    private func reconcileRows(_ database: DatabaseQueue) throws -> Int {
+        let rows = try database.read { db in try Row.fetchAll(db, sql: "SELECT * FROM history ORDER BY id") }
+        var missingImages = 0
+        for row in rows {
+            let identifier: String = row["capture_identifier"]
+            let imageLocation: String = row["image_location"]
+            let recordLocation: String = row["record_location"]
+            let thumbnailLocation: String? = row["thumbnail_location"]
+            try validateLocations(identifier: identifier, image: imageLocation, record: recordLocation, thumbnail: thumbnailLocation)
+            let imageURL = root.appendingPathComponent(imageLocation)
+            let missing = !FileManager.default.fileExists(atPath: imageURL.path)
+            if row["state"] as String == "deleting" || missing {
+                for location in [imageLocation, recordLocation, thumbnailLocation].compactMap({ $0 }) {
+                    try removeIfPresent(root.appendingPathComponent(location))
+                }
+                // Unlink before row removal so a second sweep can finish this deletion.
+                for directory in ["images", "thumbnails"] {
+                    let url = root.appendingPathComponent(directory)
+                    if FileManager.default.fileExists(atPath: url.path) { try syncDirectory(url) }
+                }
+                try database.write { db in try db.execute(sql: "DELETE FROM history WHERE capture_identifier = ?", arguments: [identifier]) }
+                if missing && row["state"] as String == "finalized" { missingImages += 1 }
+                continue
+            }
+            let imageBytes = try logicalSize(imageURL)
+            let recordURL = root.appendingPathComponent(recordLocation)
+            let recordBytes = FileManager.default.fileExists(atPath: recordURL.path) ? try logicalSize(recordURL) : 0
+            let thumbnail = thumbnailLocation.flatMap { location in
+                FileManager.default.fileExists(atPath: root.appendingPathComponent(location).path) ? location : nil
+            }
+            let thumbnailBytes = try thumbnail.map { try logicalSize(root.appendingPathComponent($0)) } ?? 0
+            if imageBytes != row["image_bytes"] || recordBytes != row["record_bytes"] || thumbnailBytes != row["thumbnail_bytes"] || thumbnail != thumbnailLocation {
+                try database.write { db in
+                    try db.execute(sql: "UPDATE history SET image_bytes = ?, record_bytes = ?, thumbnail_location = ?, thumbnail_bytes = ? WHERE capture_identifier = ?",
+                        arguments: [imageBytes, recordBytes, thumbnail, thumbnailBytes, identifier])
+                }
+            }
+        }
+        return missingImages
+    }
+
+    private func validateLocations(identifier: String, image: String, record: String, thumbnail: String?) throws {
+        guard let uuid = UUID(uuidString: identifier), uuid.uuidString == identifier,
+              image == "images/\(identifier).png", record == "images/\(identifier).finalization.json",
+              thumbnail == nil || thumbnail == "thumbnails/\(identifier).png" else { throw HistoryFailure.unavailable }
+    }
+
+    // A no-op sweep must not even open a writer: SQLite can alter its header
+    // or shared-memory bookkeeping without changing any History rows.
+    private func isReconciled() throws -> Bool {
+        guard database == nil, FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) else { return false }
+        let reader: DatabaseQueue
+        do { reader = try readOnlyDatabase() }
+        catch HistoryFailure.recoveryRequired { return false }
+        defer { try? reader.close() }
+        try validateMigrations(reader)
+        let entries = try readEntries(reader)
+        let count = try reader.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM history") }
+        guard count == entries.count, try children("staging").isEmpty else { return false }
+        var expectedImages = Set<String>()
+        var expectedThumbnails = Set<String>()
+        for entry in entries {
+            try validateLocations(identifier: entry.captureID.rawValue.uuidString, image: entry.imageLocation,
+                                  record: entry.recordLocation, thumbnail: entry.thumbnailLocation)
+            expectedImages.insert(entry.imageLocation)
+            for (location, bytes) in [(entry.imageLocation, entry.imageBytes), (entry.recordLocation, entry.recordBytes)] {
+                let file = root.appendingPathComponent(location)
+                if FileManager.default.fileExists(atPath: file.path) {
+                    expectedImages.insert(location)
+                    guard try logicalSize(file) == bytes else { return false }
+                } else if location == entry.imageLocation || bytes != 0 { return false }
+            }
+            if let location = entry.thumbnailLocation {
+                expectedThumbnails.insert(location)
+                let file = root.appendingPathComponent(location)
+                guard FileManager.default.fileExists(atPath: file.path), try logicalSize(file) == entry.thumbnailBytes else { return false }
+            } else if entry.thumbnailBytes != 0 { return false }
+        }
+        return try Set(children("images").map { "images/" + $0.lastPathComponent }) == expectedImages
+            && Set(try children("thumbnails").map { "thumbnails/" + $0.lastPathComponent }) == expectedThumbnails
+    }
+
+    private func acquireRootLockIfPresent() throws {
+        if FileManager.default.fileExists(atPath: root.path) { try acquireRootLock() }
+    }
+
+    private func acquireRootLock() throws {
+        guard rootLock == nil else { return }
+        guard root.lastPathComponent.hasSuffix(".noindex") else { throw HistoryFailure.unavailable }
+        rootLock = try HistoryRootLock.acquire(root)
+    }
+
+    private func children(_ directory: String) throws -> [URL] {
+        let url = root.appendingPathComponent(directory)
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        guard try fileKind(url) == S_IFDIR else { throw HistoryFailure.unavailable }
+        return try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil).sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private func removeIfPresent(_ url: URL) throws {
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    }
+
+    private func validRecord(identifier: String, imageURL: URL, recordURL: URL) throws -> FinalizationRecord? {
+        guard FileManager.default.fileExists(atPath: recordURL.path) else { return nil }
+        let data = try Data(contentsOf: recordURL)
+        let imageData = try Data(contentsOf: imageURL)
+        guard let record = try? JSONDecoder().decode(FinalizationRecord.self, from: data),
+              record.marker == "frisket.finalized.v1", record.captureIdentifier == identifier,
+              record.revision > 0, record.revision <= UInt64(Int64.max),
+              record.finalizedAt.timeIntervalSince1970.isFinite,
+              let source = CGImageSourceCreateWithData(imageData as CFData, nil),
+              CGImageSourceGetType(source) as String? == "public.png",
+              let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
+              image.width == record.width, image.height == record.height,
+              let pixels = image.dataProvider?.data, CFDataGetLength(pixels) > 0 else { return nil }
+        guard record.imageBytes == (try logicalSize(imageURL)) else { return nil }
+        return record
+    }
+
+    private func totalLogicalBytes() throws -> Int64 {
+        var total: Int64 = 0
+        func count(_ directory: URL) throws {
+            for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey]) {
+                if try file.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true { try count(file) }
+                else { total += try logicalSize(file) }
+            }
+        }
+        try count(root)
+        return total
+    }
+
+    public func entries() async -> Result<[HistoryEntry], HistoryFailure> {
+        await ensureLaunchRecovery()
+        do {
+            guard !closed else { throw HistoryFailure.unavailable }
+            if let recoveryFailure { throw recoveryFailure }
+            try acquireRootLockIfPresent()
             if let database { return .success(try readEntries(database)) }
             let path = root.appendingPathComponent("history.sqlite")
             guard FileManager.default.fileExists(atPath: path.path) else { return .success([]) }
@@ -32,7 +301,12 @@ public actor HistoryStore: CaptureHistory {
         catch { return .failure(.unavailable) }
     }
 
-    public func finalize(_ request: AuthorizedFinalization) -> CommitOutcome {
+    public func finalize(_ request: AuthorizedFinalization) async -> CommitOutcome {
+        await ensureLaunchRecovery()
+        return finalizeAfterRecovery(request)
+    }
+
+    private func finalizeAfterRecovery(_ request: AuthorizedFinalization) -> CommitOutcome {
         var committed = false
         do {
             guard let source = CGImageSourceCreateWithData(request.pngData as CFData, nil),
@@ -115,7 +389,7 @@ public actor HistoryStore: CaptureHistory {
     private func readOnlyDatabase() throws -> DatabaseQueue {
         // SQLite READONLY alone may create/change -shm. An immutable read
         // creates no sidecars, but ignores WAL: refuse outstanding WAL first.
-        // Ticket 10 must reconcile it under its exclusive recovery lock.
+        // Launch recovery reconciles it under the exclusive root lock.
         for suffix in ["-wal", "-journal"] {
             let journal = root.appendingPathComponent("history.sqlite" + suffix)
             if FileManager.default.fileExists(atPath: journal.path), try logicalSize(journal) > 0 {
@@ -134,27 +408,55 @@ public actor HistoryStore: CaptureHistory {
         }
     }
 
-    private func writableDatabase() throws -> DatabaseQueue {
+    // A crashed WAL/rollback journal must be applied to see migration state.
+    // Do that to a disposable metadata-only copy first: refusing a future
+    // schema must not create SHM or recover a journal in the original root.
+    private func validateRecoverySnapshot() throws {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        for suffix in ["", "-wal", "-journal"] {
+            let name = "history.sqlite" + suffix
+            let source = root.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: source.path) {
+                try FileManager.default.copyItem(at: source, to: temporary.appendingPathComponent(name))
+            }
+        }
+        let reader = try DatabaseQueue(path: temporary.appendingPathComponent("history.sqlite").path)
+        defer { try? reader.close() }
+        try validateMigrations(reader)
+    }
+
+    private func writableDatabase(recovering: Bool = false) throws -> DatabaseQueue {
+        guard !closed else { throw HistoryFailure.unavailable }
+        if !recovering, let recoveryFailure { throw recoveryFailure }
+        try acquireRootLockIfPresent()
         if let database { return database }
         guard root.lastPathComponent.hasSuffix(".noindex") else { throw HistoryFailure.unavailable }
         // Refuse future schemas before setting attributes, PRAGMAs, or creating files.
         if FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) {
-            let reader = try readOnlyDatabase()
-            defer { try? reader.close() }
-            try validateMigrations(reader)
+            if recovering { try validateRecoverySnapshot() }
+            else {
+                let reader = try readOnlyDatabase()
+                defer { try? reader.close() }
+                try validateMigrations(reader)
+            }
         }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try acquireRootLock()
         var excludedRoot = root
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try excludedRoot.setResourceValues(values)
         for directory in ["staging", "images"] {
-            try FileManager.default.createDirectory(at: root.appendingPathComponent(directory), withIntermediateDirectories: false)
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(directory), withIntermediateDirectories: true)
         }
+        let isNewDatabase = !FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path)
         var configuration = Configuration()
         configuration.prepareDatabase { db in
             // Must precede creation of the first table. secure_delete is per connection.
-            try db.execute(sql: "PRAGMA auto_vacuum = INCREMENTAL; PRAGMA secure_delete = ON; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA checkpoint_fullfsync = ON")
+            if isNewDatabase { try db.execute(sql: "PRAGMA auto_vacuum = INCREMENTAL") }
+            try db.execute(sql: "PRAGMA secure_delete = ON; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA checkpoint_fullfsync = ON")
         }
         let opened = try DatabaseQueue(path: root.appendingPathComponent("history.sqlite").path, configuration: configuration)
         do {
@@ -241,9 +543,35 @@ public actor HistoryStore: CaptureHistory {
     }
 
     private func logicalSize(_ location: URL) throws -> Int64 {
-        let values = try location.resourceValues(forKeys: [.fileSizeKey])
-        guard let size = values.fileSize else { throw HistoryFailure.unavailable }
-        return Int64(size)
+        var metadata = stat()
+        guard lstat(location.path, &metadata) == 0,
+              metadata.st_mode & S_IFMT == S_IFREG else { throw HistoryFailure.unavailable }
+        return Int64(metadata.st_size)
+    }
+
+    private func fileKind(_ location: URL) throws -> mode_t {
+        var metadata = stat()
+        guard lstat(location.path, &metadata) == 0 else { throw HistoryFailure.unavailable }
+        return metadata.st_mode & S_IFMT
+    }
+
+    private func validateRootLayout() throws {
+        // Reject links before opening SQLite or reading/removing any owned file.
+        // Recurse through archives as well so size accounting cannot escape root.
+        func validate(_ directory: URL) throws {
+            for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+                switch try fileKind(file) {
+                case S_IFDIR: try validate(file)
+                case S_IFREG: break
+                default: throw HistoryFailure.unavailable
+                }
+            }
+        }
+        try validate(root)
+        for name in ["images", "staging", "thumbnails"] {
+            let url = root.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: url.path), try fileKind(url) != S_IFDIR { throw HistoryFailure.unavailable }
+        }
     }
 }
 
@@ -257,4 +585,22 @@ private struct FinalizationRecord: Codable {
     let height: Int
     let imageBytes: Int64
     let finalizedAt: Date
+}
+
+// A directory descriptor avoids creating a lock file on an unused root. Each
+// open file description gets its own nonblocking flock, even in one process.
+private final class HistoryRootLock: Sendable {
+    private let descriptor: Int32
+    private init(descriptor: Int32) { self.descriptor = descriptor }
+    static func acquire(_ root: URL) throws -> HistoryRootLock {
+        let descriptor = Darwin.open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw HistoryFailure.unavailable }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            let code = errno
+            Darwin.close(descriptor)
+            throw code == EWOULDBLOCK ? HistoryFailure.rootLocked : HistoryFailure.unavailable
+        }
+        return HistoryRootLock(descriptor: descriptor)
+    }
+    deinit { Darwin.close(descriptor) }
 }

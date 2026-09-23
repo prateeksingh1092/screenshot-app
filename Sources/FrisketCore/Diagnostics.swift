@@ -1,12 +1,14 @@
 import Foundation
 
 public enum DiagnosticEventName: String, Codable, Sendable {
+    case historyRecovered, historyRecoveryFailed, historyImageMissing
     case capturePending, captureFailed, captureDiscarded, captureFinalized, finalizationFailed, deliverySucceeded, deliveryFailed, commandRejected
 }
 
-public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, discard, dismiss }
+public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, discard, dismiss, launchRecovery }
 public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history }
 public enum DiagnosticErrorCode: String, Codable, Sendable {
+    case rootLocked, missingHistoryImage
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired

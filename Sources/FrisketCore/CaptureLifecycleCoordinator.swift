@@ -24,6 +24,11 @@ actor CaptureLifecycleCoordinator {
         self.history = history
     }
 
+    func recoverHistory() async -> Result<HistoryRecoveryReport, HistoryFailure> {
+        guard let history else { return .failure(.unavailable) }
+        return await history.recover()
+    }
+
     func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {
         guard let history else { return .failure(.unavailable) }
         return await history.entries()

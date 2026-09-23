@@ -171,5 +171,13 @@ This typecheck does not establish Xcode linking, packaging, signing, or runtime
 behavior. Manual ticket 09 checks: authorized synthetic capture, Dismiss and
 focused Escape, “Kept in History” visual/VoiceOver announcement, Quit persistence,
 Delete leaving no pending image on disk, and actual backup exclusion. Continue
-ticket 08's permission and signed-rebuild checklist with Prateek. Recovery,
-retention/quota, and database-failure recovery UI are not implemented here.
+ticket 08's permission and signed-rebuild checklist with Prateek. Launch recovery is now wired by ticket 10 through `HistoryStore.launch(root:)`.
+Retention/quota and database-failure recovery UI remain later work. The test-only
+`HistoryCrashHelper` target exists only in SwiftPM, outside the synchronized core
+and app folders; it is not linked or copied into the app.
+
+Ticket 10 manual checks for Prateek: with an authorized synthetic capture, force
+quit and relaunch the signed app, check History consistency, attempt a second
+instance and confirm the active instance remains intact, and verify a relocated
+or restored History root. No app launches, screen capture, or clipboard use were
+performed by the ticket 10 implementer.
