@@ -4,7 +4,7 @@
 
 **Blocked by:** 08, 11
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/22-capture-exclusion-list`)
 
 - [ ] The list is empty by default (decision 37).
 - [ ] Every capture mode applies the list through the capture content filter alongside Frisket's self-exclusion.

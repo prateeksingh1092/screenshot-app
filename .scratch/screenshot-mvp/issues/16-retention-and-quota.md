@@ -4,7 +4,7 @@
 
 **Blocked by:** 09, 11
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/16-retention-and-quota`)
 
 - [ ] Usage is the recorded logical sizes of all app-owned files plus the database, WAL, and shared-memory files, re-measured at launch; a failed size read blocks the commit.
 - [ ] Enforcement runs after each commit from indexed stored sizes, oldest first, with deterministic tie-breaking for equal timestamps.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 08, 11
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/24-shortcut-defaults-and-remapping`)
 
 - [ ] Defaults avoid every enabled system screenshot shortcut, including ⇧⌘3/4/5 and the Touch Bar ⇧⌘6 (decision 29).
 - [ ] Remapping validates against the enabled system shortcuts and fails closed when it can't verify.

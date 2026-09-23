@@ -106,7 +106,13 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Medium:** implementation of the interface and mechanical tickets 12, 13, 14, 15, 21, 22, 24, 25, 27, 28, 30, 31 and 38. For Codex that is `model_reasoning_effort="medium"`; for Grok, `grok-4.7-medium` (not -fast).
     - **Unlisted tickets:** implementation stays at High.
     - Runs already in flight are not restarted.
-: Xcode question resolved narrowly
+54. **No blocking product picks (2026-09-23 03:44):** Prateek will not choose among design forks. Alternate approaches are vetted by parallel agents against primary sources, then the coordinator applies the best-evidenced option and records it here. Architecture-wide changes still go through spec and tickets. Billing, secrets, real-content capture, and Apple ID / signing-identity changes stay forbidden.
+
+    Immediate forks under this rule (provisional until the parallel vetting reports land):
+    - **Snapzy Release baseline:** do not treat a Debug or patched Snapzy as decision 22's "signed Snapzy release". Ticket 37/38 compare against the macOS screenshot tool only. Snapzy stays a read-only reference. The 500 ms placeholder stays until macOS numbers exist.
+    - **Thumbnail defaults:** stack max 4 and auto-dismiss 10s are working defaults for ticket 13. Spec already makes auto-dismiss configurable, including never. Settings can change them later. They are not ratified user-visible policy.
+
+## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).
 
