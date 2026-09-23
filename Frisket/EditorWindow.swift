@@ -92,7 +92,13 @@ import FrisketCore
     private var toolButtons: [NSButton] = []
     private let undoButton = NSButton(title: "Undo", target: nil, action: nil)
     private let closeButton = NSButton(title: "Close Without Changes", target: nil, action: nil)
+    private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
+    private let saveButton = NSButton(title: "Save", target: nil, action: nil)
+    private let dragWell = HistoryDragView()
     private let doneButton = NSButton(title: "Done", target: nil, action: nil)
+    var onFileDrag: ((NSView, NSEvent) -> Void)?
+    var currentEdits: DocumentEdits { edits }
+    var dragPreview: NSImage? { canvas.rendered }
     private var finishing = false
     /// Close only after the command accepts the edits (or the unchanged close).
     private var finish: ((EditorLeave) async -> Bool)?
@@ -150,9 +156,21 @@ import FrisketCore
                   label: "Undo last edit", tip: "Undo last edit (⌘Z)")
         configure(closeButton, action: #selector(closeWithoutChanges), key: "\u{1b}", modifiers: [],
                   label: "Close editor without changes", tip: "Close without changes (Esc)")
+        configure(copyButton, action: #selector(copyRendered), key: "c", modifiers: .command,
+                  label: "Copy the edited capture", tip: "Copy the edited result (⌘C)")
+        configure(saveButton, action: #selector(saveRendered), key: "s", modifiers: .command,
+                  label: "Save the edited capture", tip: "Save the edited result (⌘S)")
         configure(doneButton, action: #selector(done), key: "\r", modifiers: [],
                   label: "Done: keep the redacted capture", tip: "Finish editing and keep the redacted result (Return)")
-        for button in [undoButton, closeButton, doneButton] { bar.addView(button, in: .trailing) }
+        dragWell.setAccessibilityLabel("Drag the edited capture")
+        dragWell.toolTip = "Drag the edited result"
+        dragWell.setFrameSize(NSSize(width: 56, height: 36))
+        dragWell.onDrag = { [weak self] view, event in
+            guard let self, !self.finishing else { return }
+            self.onFileDrag?(view, event)
+        }
+        for button in [undoButton, closeButton, copyButton, saveButton, doneButton] { bar.addView(button, in: .trailing) }
+        bar.addView(dragWell, in: .trailing)
         content.addSubview(canvas)
         content.addSubview(bar)
         window.contentView = content
@@ -203,7 +221,11 @@ import FrisketCore
         }
         undoButton.isEnabled = !finishing && !undoStack.isEmpty
         closeButton.isEnabled = !finishing && unchanged
+        copyButton.isEnabled = !finishing
+        saveButton.isEnabled = !finishing
         doneButton.isEnabled = !finishing
+        dragWell.image = canvas.rendered
+        dragWell.alphaValue = finishing ? 0.4 : 1
     }
 
     private func applyDrag(from start: CGPoint, to end: CGPoint) {
@@ -230,6 +252,14 @@ import FrisketCore
 
     @objc private func closeWithoutChanges() {
         window.performClose(nil)
+    }
+
+    @objc private func copyRendered() {
+        end(.deliver(edits, .copy))
+    }
+
+    @objc private func saveRendered() {
+        end(.deliver(edits, .save))
     }
 
     @objc private func done() {

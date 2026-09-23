@@ -366,6 +366,7 @@ import FrisketCore
                 notice("Editor unavailable", "This capture can't be edited. Copy, dismiss, or delete it instead.")
                 return
             }
+            editor.onFileDrag = { [weak self] view, event in self?.startEditorDrag(id, from: view, event: event) }
             storeEditor(editor, for: id)
             editor.show()
         }
@@ -392,7 +393,8 @@ import FrisketCore
             storeEditor(nil, for: id)
             remove(id)
             return true
-        case let .finalize(edits?):
+        case let .finalize(edits?), let .deliver(edits, _):
+        let delivery: EditorDelivery? = if case let .deliver(_, kind) = leave { kind } else { nil }
         guard case let .edited(revision, commit, clipboardFailure) = await commands.execute(.done(panel.revision, edits)) else {
             notice("Could not finish editing", "Your edits are still open. Done could not prepare the redacted result. Retry Done to finish editing.")
             return false
@@ -412,6 +414,15 @@ import FrisketCore
         refreshed.model.historyCommitted = commit == .committed
         refreshed.model.editingUnavailable = commit == .notCommitted(.recoveryRequired)
         refreshed.model.dismissFailed = commit != .committed
+        if let delivery {
+            let delivered = await commands.execute(delivery.command(for: revision))
+            if case .copy(let outcome) = delivered, case .failed = outcome.delivery { refreshed.model.copyFailed = true }
+            if case .save(let outcome) = delivered, case .failed = outcome.delivery { refreshed.model.saveFailed = true }
+            if case .rejected = delivered, delivery == .copy { refreshed.model.copyFailed = true }
+            if case .rejected = delivered, delivery == .save { refreshed.model.saveFailed = true }
+            if case .drag(let outcome) = delivered, outcome.delivery != .copied { refreshed.model.dragFailed = true }
+            if case .rejected = delivered, delivery == .drag { refreshed.model.dragFailed = true }
+        }
         panels[id] = refreshed
         await settleThumbnails()
         if clipboardFailure != nil {
@@ -455,6 +466,15 @@ import FrisketCore
                 panel.model.dismissFailed = !panel.model.historyCommitted
                 settleSoon()
             }
+        }
+    }
+
+    private func startEditorDrag(_ id: CaptureID, from view: NSView, event: NSEvent) {
+        guard !terminating, let editor = editors[id], let dragAdapter else { return }
+        guard dragAdapter.beginSession(from: view, event: event, image: editor.dragPreview) else { return }
+        Task {
+            _ = await finishEditing(id, .deliver(editor.currentEdits, .drag))
+            dragAdapter.endHandoff()
         }
     }
 
