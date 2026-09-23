@@ -1,0 +1,121 @@
+import Foundation
+
+public enum DiagnosticEventName: String, Codable, Sendable {
+    case capturePending, captureFailed, captureDiscarded, deliverySucceeded, deliveryFailed, commandRejected
+}
+
+public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, discard }
+public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history }
+public enum DiagnosticErrorCode: String, Codable, Sendable {
+    case unavailable, emptyImage, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
+    case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
+    case invalidByteAllowance
+}
+
+public struct DiagnosticError: Equatable, Codable, Sendable {
+    public let domain: DiagnosticErrorDomain
+    public let code: DiagnosticErrorCode
+    public init(domain: DiagnosticErrorDomain, code: DiagnosticErrorCode) {
+        self.domain = domain
+        self.code = code
+    }
+}
+
+/// The only allowed field is a closed operation value. No strings, identifiers or payloads.
+public struct DiagnosticEvent: Equatable, Codable, Sendable {
+    public let name: DiagnosticEventName
+    public let operation: DiagnosticOperation
+    public let error: DiagnosticError?
+    public init(name: DiagnosticEventName, operation: DiagnosticOperation, error: DiagnosticError? = nil) {
+        self.name = name
+        self.operation = operation
+        self.error = error
+    }
+}
+
+public protocol DiagnosticSink: Sendable {
+    func record(_ event: DiagnosticEvent) async
+}
+
+public struct DiagnosticRecord: Equatable, Codable, Sendable {
+    public let recordedAt: Date
+    public let event: DiagnosticEvent
+}
+
+/// Local, in-memory diagnostics. No filesystem or system-log adapter is installed by the core.
+public actor LocalDiagnosticLog: DiagnosticSink {
+    private let clock: @Sendable () -> Date
+    private var records: [DiagnosticRecord] = []
+
+    public init(clock: @escaping @Sendable () -> Date = { Date() }) { self.clock = clock }
+
+    public func record(_ event: DiagnosticEvent) {
+        let now = clock()
+        expire(at: now)
+        records.append(DiagnosticRecord(recordedAt: now, event: event))
+    }
+
+    public func entries() -> [DiagnosticRecord] {
+        expire(at: clock())
+        return records
+    }
+
+    private func expire(at now: Date) {
+        let cutoff = now.addingTimeInterval(-604_800)
+        records.removeAll { $0.recordedAt <= cutoff }
+    }
+}
+
+extension DiagnosticEvent {
+    init(command: CaptureCommand, outcome: CaptureCommandOutcome) {
+        let operation: DiagnosticOperation
+        switch command {
+        case .capture: operation = .capture
+        case .copy: operation = .copy
+        case .retryCopy: operation = .retryCopy
+        case .discard: operation = .discard
+        }
+        let name: DiagnosticEventName
+        let error: DiagnosticError?
+        switch outcome {
+        case .pending:
+            name = .capturePending
+            error = nil
+        case .discarded:
+            name = .captureDiscarded
+            error = nil
+        case let .captureFailed(failure):
+            name = .captureFailed
+            switch failure {
+            case .unavailable: error = DiagnosticError(domain: .captureSource, code: .unavailable)
+            case .emptyImage: error = DiagnosticError(domain: .captureSource, code: .emptyImage)
+            }
+        case let .copy(result):
+            switch result.delivery {
+            case .copied:
+                name = .deliverySucceeded
+                error = DiagnosticError(domain: .history, code: .unavailable)
+            case .failed:
+                name = .deliveryFailed
+                error = DiagnosticError(domain: .clipboard, code: .unavailable)
+            }
+        case let .rejected(reason):
+            name = .commandRejected
+            let code: DiagnosticErrorCode
+            switch reason {
+            case .unknownCapture: code = .unknownCapture
+            case .duplicateCapture: code = .duplicateCapture
+            case .staleRevision: code = .staleRevision
+            case .alreadyDelivered: code = .alreadyDelivered
+            case .retryNotAvailable: code = .retryNotAvailable
+            case .retryRequired: code = .retryRequired
+            case .discardedCapture: code = .discardedCapture
+            case .pendingByteBudgetExceeded: code = .pendingByteBudgetExceeded
+            case .commandInProgress: code = .commandInProgress
+            case .invalidByteAllowance: code = .invalidByteAllowance
+            }
+            error = DiagnosticError(domain: .lifecycle, code: code)
+        }
+        self.init(name: name, operation: operation, error: error)
+    }
+}

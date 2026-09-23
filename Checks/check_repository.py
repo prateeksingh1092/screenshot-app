@@ -113,6 +113,59 @@ def import_issues(files):
     return issues
 
 
+
+def diagnostic_issues(files):
+    issues = []
+    allowed_fields = {
+        "DiagnosticEvent": {"name": "DiagnosticEventName", "operation": "DiagnosticOperation", "error": "DiagnosticError?"},
+        "DiagnosticError": {"domain": "DiagnosticErrorDomain", "code": "DiagnosticErrorCode"},
+        "DiagnosticRecord": {"recordedAt": "Date", "event": "DiagnosticEvent"},
+    }
+    for path, text in sorted(files.items()):
+        if not path.endswith(".swift") or not path.startswith(("Sources/", "Frisket/")):
+            continue
+        code = swift_code(text).replace("`", "")
+        if re.search(r'\b(?:print|debugPrint|dump|NSLog|os_log|os_signpost|Logger|OSLog|assert|assertionFailure|precondition|preconditionFailure|fatalError)\b', code):
+            issues.append(f"{path}: raw logging or assertion route outside closed diagnostics")
+        for name, fields in allowed_fields.items():
+            for match in re.finditer(r'\bstruct\s+' + name + r'\b[^\{]*\{([^}]+)', code):
+                properties = re.findall(r'\b(?:let|var)\s+(\w+)\s*(?::\s*([^\s;=]+))?', match.group(1))
+                if any(fields.get(field) != kind for field, kind in properties):
+                    issues.append(f"{path}: diagnostic payload type is not closed")
+    return issues
+
+
+
+def capture_memory_issues(files):
+    issues = []
+    for path, text in sorted(files.items()):
+        if not path.startswith("Sources/FrisketCore/") or not path.endswith(".swift"):
+            continue
+        # Ticket 09 owns the only future disk-capable module. Lifecycle code cannot use it directly.
+        if path.startswith("Sources/FrisketCore/StorageAdapter/"):
+            continue
+        code = swift_code(text).replace("`", "")
+        imports = re.findall(r'\bimport\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(\w+)', code)
+        disk_symbols = r'\b(?:URL|NSURL|FileManager|FileHandle|OutputStream|InputStream|UserDefaults|Process|Bundle|NSFileCoordinator|StorageAdapter|GRDB|Darwin|Glibc|POSIX|fopen|freopen|open|openat|creat|fwrite|pwrite|writev|unlink|rename|mkdir|mmap)\b'
+        if (any(module not in {"Foundation", "Synchronization"} for module in imports)
+                or re.search(disk_symbols, code)
+                or re.search(r'\.\s*write\s*\(\s*to\s*:', code)):
+            issues.append(f"{path}: platform or filesystem capability in memory-only core")
+        invalid_clipboard = False
+        for match in re.finditer(r'\bprotocol\s+ImageClipboard\b[^\{]*\{([^}]+)', code):
+            body = match.group(1)
+            functions = re.findall(r'\bfunc\s+\w+', body)
+            writes = re.findall(r'\bfunc\s+write\s*\(\s*_\s+\w+\s*:\s*ClipboardImage\s*\)', body)
+            invalid_clipboard |= len(functions) != 1 or len(writes) != 1 or bool(re.search(r'\b(?:var|associatedtype)\b', body))
+        for match in re.finditer(r'\bstruct\s+ClipboardImage\b[^\{]*\{([^}]+)', code):
+            fields = re.findall(r'\b(?:let|var)\s+(\w+)\s*(?::\s*([\w?]+))?', match.group(1))
+            allowed = {"pngData": "Data", "currentHostOnly": "", "concealed": ""}
+            invalid_clipboard |= any(allowed.get(name) != kind for name, kind in fields)
+        if invalid_clipboard:
+            issues.append(f"{path}: clipboard contract must be image-only and write-only")
+    return issues
+
+
 def upstream_identity(text):
     normalized = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().casefold()
     normalized = " ".join(normalized.split())
@@ -180,6 +233,10 @@ def check_fixture(path):
         actual = dependency_issues(fixture["manifest"], fixture.get("resolved"))
     elif fixture["check"] == "imports":
         actual = import_issues(fixture["files"])
+    elif fixture["check"] == "diagnostics":
+        actual = diagnostic_issues(fixture["files"])
+    elif fixture["check"] == "capture-memory":
+        actual = capture_memory_issues(fixture["files"])
     elif fixture["check"] == "identity":
         actual = identity_issues(fixture["files"])
     elif fixture["check"] == "provenance":
@@ -209,11 +266,12 @@ def product_files(root):
 
 def dumped_manifest(root):
     scratch = root / ".build" / "repository-checks"
-    environment = dict(os.environ, DEVELOPER_DIR="/Library/Developer/CommandLineTools")
+    environment = dict(os.environ)
+    environment.setdefault("DEVELOPER_DIR", "/Applications/Xcode.app/Contents/Developer")
     environment["CLANG_MODULE_CACHE_PATH"] = str(root / ".build" / "clang-cache")
     environment["SWIFTPM_MODULECACHE_OVERRIDE"] = str(root / ".build" / "module-cache")
     command = [
-        "/Library/Developer/CommandLineTools/usr/bin/swift", "package", "--package-path", str(root),
+        "/usr/bin/xcrun", "swift", "package", "--package-path", str(root),
         "--disable-sandbox", "--disable-keychain", "--disable-netrc",
         "--cache-path", str(root / ".build" / "cache"),
         "--scratch-path", str(scratch), "--config-path", str(root / ".build" / "config"),
@@ -234,6 +292,10 @@ def repository_issues(root, check):
     files = product_files(root)
     if check == "imports":
         return import_issues(files)
+    if check == "diagnostics":
+        return diagnostic_issues(files)
+    if check == "capture-memory":
+        return capture_memory_issues(files)
     if check == "identity":
         return identity_issues({path: text for path, text in files.items() if not path.startswith("Tests/")})
     entries = json.loads((root / "docs" / "ported-files.json").read_text())
@@ -245,7 +307,7 @@ if __name__ == "__main__":
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--fixture", type=pathlib.Path)
     mode.add_argument("--root", type=pathlib.Path)
-    parser.add_argument("--check", choices=["dependencies", "imports", "identity", "provenance"])
+    parser.add_argument("--check", choices=["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory"])
     args = parser.parse_args()
     try:
         if args.fixture:

@@ -10,9 +10,7 @@ private func runCheck(_ arguments: [String]) throws -> (status: Int32, output: S
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
     process.arguments = [repository.appendingPathComponent("Checks/check_repository.py").path] + arguments
-    process.environment = ProcessInfo.processInfo.environment.merging([
-        "DEVELOPER_DIR": "/Library/Developer/CommandLineTools"
-    ]) { _, new in new }
+    process.environment = ProcessInfo.processInfo.environment
     let pipe = Pipe()
     process.standardOutput = pipe
     process.standardError = pipe
@@ -22,7 +20,7 @@ private func runCheck(_ arguments: [String]) throws -> (status: Int32, output: S
     return (process.terminationStatus, String(decoding: output, as: UTF8.self))
 }
 
-@Test(arguments: ["dependencies", "imports", "identity", "provenance"])
+@Test(arguments: ["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory"])
 func repositorySatisfiesStaticChecks(check: String) throws {
     let result = try runCheck(["--root", repository.path, "--check", check])
     #expect(result.status == 0, Comment(rawValue: result.output))
@@ -32,7 +30,9 @@ func repositorySatisfiesStaticChecks(check: String) throws {
     "dependencies-rejected", "dependencies-accepted", "dependencies-lockfile-rejected",
     "imports-rejected", "imports-accepted", "imports-qualified-type-rejected", "imports-interpolation-rejected",
     "identity-rejected", "identity-accepted", "identity-after-header-rejected",
-    "provenance-rejected", "provenance-accepted", "provenance-tampered"
+    "provenance-rejected", "provenance-accepted", "provenance-tampered",
+    "diagnostics-rejected", "diagnostics-accepted", "diagnostics-collection-rejected",
+    "capture-memory-rejected", "capture-memory-accepted"
 ])
 func staticCheckFixturesHaveExpectedOutcomes(fixture: String) throws {
     let path = repository.appendingPathComponent("Checks/Fixtures/\(fixture).json")

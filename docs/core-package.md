@@ -2,17 +2,18 @@
 
 `Frisket` is a Swift 6.3 package with one static library, `FrisketCore`, and
 one test target, `FrisketCoreTests`. It targets macOS 26. There are no external
-dependencies, executable targets, or capture behavior yet. SwiftPM's default
+dependencies or executable targets. The core implements the fixture capture-to-Copy
+command flow; platform capture, pasteboard, and History adapters are not installed. SwiftPM's default
 build uses the host architecture; no cross-compilation flags are set.
 
-## Command Line Tools commands
+## Build and test commands
 
 Run from the repository root. Decision 46 and the ticket implementation request
-authorize these builds. No signing, keychain access, network, or Xcode is needed
-to build the core library.
+authorize these builds. Use Xcode 26.5 for Swift Testing. No signing, keychain
+access, network, app launch, real screen capture, or real clipboard is involved.
 
 ```sh
-export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache"
 
@@ -30,36 +31,37 @@ disables SwiftPM's nested manifest sandbox because the agent sandbox rejects
 `sandbox_apply`; it does not disable the agent's filesystem restrictions.
 `--disable-keychain` avoids credential lookup, and `--disable-xctest` prevents
 SwiftPM from generating an XCTest runner. All authored tests import `Testing`.
-For a single test, append `--filter swiftTestingRunsOnSupportedMacOS` or
+For a single test, append `--filter CaptureCommandsTests` or
 `--filter repositorySatisfiesStaticChecks` to the test command.
 
 **Installed CLT result (2026-09-22):** the core builds on x86_64 macOS 26.7,
 build 25G229, with Apple Swift 6.3.3 (swiftlang-6.3.3.1.3,
 clang-2100.1.1.101). Swift Testing compilation fails with
 `error: no such module 'Testing'`. The Swift Testing tests are **Xcode-only
-for this installed toolchain**, per ticket 02's explicit fallback. They have
-not been executed or verified with Xcode; there is no XCTest substitution.
+for this installed toolchain**, per ticket 02's explicit fallback. Ticket 06 now executes these Swift Testing tests with Xcode 26.5
+(17F42), Swift 6.3.2, on the same x86_64 macOS build; there is no XCTest
+substitution.
 **arm64 not executed.**
 
 ## Static-check interface
 
-The test target invokes `Checks/check_repository.py` through the CLT's Python 3.
+The test target invokes `Checks/check_repository.py` through `/usr/bin/python3`.
 The script uses only the standard library; it is tooling, not an app dependency.
 It returns zero on success and a diagnostic plus nonzero exit on failure.
 The same checks can run independently while the Swift Testing runner is blocked:
 
 ```sh
-for check in dependencies imports identity provenance; do
-  DEVELOPER_DIR=/Library/Developer/CommandLineTools /usr/bin/python3 \
+for check in dependencies imports identity provenance diagnostics capture-memory; do
+  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /usr/bin/python3 \
     Checks/check_repository.py --root . --check "$check" || exit
 done
 for fixture in Checks/Fixtures/*.json; do
-  DEVELOPER_DIR=/Library/Developer/CommandLineTools /usr/bin/python3 \
+  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /usr/bin/python3 \
     Checks/check_repository.py --fixture "$fixture" || exit
 done
 ```
 
-- **Dependencies:** evaluate the real manifest with CLT `swift package
+- **Dependencies:** evaluate the real manifest with the selected toolchain (`DEVELOPER_DIR`) and `swift package
   dump-package` (no resolution or fetch). Only the official HTTPS
   `groue/GRDB.swift` source is allowed, with or without `.git`. Local, registry,
   lookalike, binary, system, plugin, and macro dependency routes are rejected.
@@ -96,4 +98,75 @@ separately. The fixture ledger entries are synthetic examples, not real ports.
 The fixture interface compares checker output with independent literal
 diagnostics in JSON. Each of the four checks was first exercised with a failing
 fixture before its implementation. The Swift Testing target runs both the
-repository checks and these fixtures when its module becomes available.
+repository checks and these fixtures with the Xcode toolchain.
+
+
+## Ticket 06 command interface
+
+`CaptureCommandLayer.execute(_:) async -> CaptureCommandOutcome` is seam 1.
+Construct one layer for the app, injecting `CapturePixelSource`, `ImageClipboard`,
+a `pendingByteLimit`, and optionally a `DiagnosticSink`. Copies of the layer
+share one actor-isolated Capture lifecycle coordinator; independent layer
+instances are independent sessions. There are no public lifecycle mutators or
+private-state queries.
+
+- `capture(CaptureID, maximumBytes:)` reserves that allowance across the entire
+  coordinator before awaiting the source. The source must respect the allowance
+  while producing encoded PNG bytes. Empty and oversized responses are refused;
+  failed/refused captures release their reservations and may be attempted again.
+  Accepted bytes replace the reservation with their actual byte count.
+- `copy(CaptureRevision)` delivers a frozen image. `CopyOutcome` reports the
+  revision, `commit`, and `delivery` separately. This ticket always reports
+  `notCommitted(historyUnavailable)`; it does not pretend an in-memory result
+  was committed to History. Persistence arrives in ticket 09.
+- `retryCopy(CaptureRevision)` is available only after a failed delivery and
+  uses the retained bytes of that same revision. A repeated Copy returns
+  `retryRequired`; a repeated successful delivery returns `alreadyDelivered`.
+- `discard(CaptureID)` drops pending or failed-delivery bytes. Discarded IDs
+  cannot be reused. Unknown IDs, incorrect revisions, duplicates, and commands
+  for an operation awaiting an adapter return typed rejections.
+
+The unedited revision is number 1; editing is outside this ticket. A nonpositive
+session budget admits no captures, and a capture allowance must be positive.
+Failed and in-flight delivery bytes remain charged; successful delivery and
+discard release them. Completed/discarded identifier tombstones remain for the
+session, preventing stale commands from creating another capture. This is an
+encoded-payload budget, not a bound on the capture adapter's transient decoding
+or platform allocations; ticket 08 must enforce its source allowance as well.
+
+`ImageClipboard` exposes only `write(ClipboardImage)` and returns a
+`ClipboardReceipt(changeCount:)` or a closed `ClipboardFailure`. Its payload
+contains PNG data and immutable `currentHostOnly = true` / `concealed = true`
+flags, with no file location, text alternative, or clipboard read method. The
+source adapter owns PNG encoding/validity; the core transports bytes unchanged.
+Tests use synthetic byte fixtures, not platform image encoding. The receipt is
+recorded in the returned delivery outcome. Honoring pasteboard flags and the
+real change count is ticket 08's adapter responsibility.
+
+## Diagnostics and memory-only checks
+
+`DiagnosticSink.record(DiagnosticEvent)` admits only closed event, operation,
+error-domain, and error-code enums. The fixed allowed event field is `operation`;
+there is no free-form field dictionary, identifier, image, string message, or
+underlying platform error. `LocalDiagnosticLog` is actor-isolated and in-memory,
+with a clock seam. It expires entries at seven days on both recording and querying;
+it does not schedule background work or persist logs. Any later local persistent
+adapter must maintain this schema and retention contract. The planted-canary
+command test checks exact events and serialized records while proving that the
+clipboard receives the synthetic pixel/text/path payload intact.
+
+Two additional lexical checks run with the existing checks and fixtures:
+
+- `diagnostics` rejects direct logging/assertion routes (including raw system
+  logging) and additions of non-allowlisted diagnostic payload fields. In this
+  core, all diagnostics use the closed event interface; no assertion message or
+  system-log string route is used.
+- `capture-memory` forbids platform imports and known filesystem capabilities
+  in the memory-only core, and checks the image-only, write-only clipboard
+  declaration. A future `StorageAdapter/` is the sole disk-capable exception;
+  direct references from the lifecycle remain forbidden. Capture and Copy have
+  no app-owned root, file store, or filesystem capability in this ticket.
+
+These are conservative lexical guards, not a Swift semantic or capability
+proof. New indirect filesystem routes and future platform adapters still need
+review. No real root or clipboard is touched by the command tests.
