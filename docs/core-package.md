@@ -152,6 +152,15 @@ endpoints, operator commands, limitations, and the pending comparison table.
 Live baselines, low-power GPU confirmation and Prateek's target ratification
 remain pending; the 500 ms placeholder is unchanged.
 
+Ticket 39 adds `firstRunRecordSatisfiesOfflineChecks`. It runs the
+standard-library Python tests in `Tools/FirstRun/` without app launches,
+network or capture. Standalone: `/usr/bin/python3 -B -m unittest discover -s
+Tools/FirstRun -p 'test_*.py'`. `scripts/first-run-record.sh` writes date, OS
+build, commit, architectures, signature, sanitized display layout, and
+permission state into ignored `.build/first-run/`. The bundled pattern is
+`Tools/FrisketTestPattern.swift` (320×180 points, display centre) with
+`--verify`. Hardware cases remain the [ticket 39 runbook](manual-checks/39-first-run.md).
+
 For the stitcher the upstream files had descriptive banners, not per-file licence
 text. The complete upstream BSD licence is prepended, each original banner is
 preserved, and `licenseHeader` records both. `originalSHA256` records each
