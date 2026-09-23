@@ -24,39 +24,38 @@ import ScreenCaptureKit
 
 @MainActor final class ScreenCapturePermissionAdapter: CapturePermissionSource {
     private let access: any ScreenRecordingAccess
-    private var observedGrant = false
-    private var requiresRelaunch = false
-    init(access: any ScreenRecordingAccess) { self.access = access }
+    private var policy: CapturePermissionPolicy
+    init(access: any ScreenRecordingAccess) {
+        self.access = access
+        policy = CapturePermissionPolicy(hasRequested: access.hasRequested)
+    }
 
     func capturePermission() -> CapturePermissionState { refresh() }
 
     func refresh() -> CapturePermissionState {
-        if requiresRelaunch { return .needsRelaunch }
-        if access.preflight() {
-            observedGrant = true
-            if !access.hasRequested { access.hasRequested = true }
-            return .granted
-        }
-        if observedGrant { return .revokedWhileRunning }
-        return access.hasRequested ? .denied : .notAsked
+        observe(.preflight(access.preflight()))
     }
 
     /// Only the explicit recovery action calls this, with selection UI absent.
     func requestPermission() -> CapturePermissionState {
-        if refresh() == .granted || requiresRelaunch { return refresh() }
+        let state = refresh()
+        guard policy.canRequest else { return state }
+        // Persist before invoking the OS, which may terminate this process.
         access.hasRequested = true
-        if access.request(), !access.preflight() { requiresRelaunch = true }
-        return refresh()
+        let accepted = access.request()
+        return observe(.requestCompleted(accepted: accepted, preflight: access.preflight()))
     }
 
     func failure(for error: Error) -> CaptureSourceFailure {
         let error = error as NSError
         guard error.domain == SCStreamErrorDomain,
               error.code == SCStreamError.Code.userDeclined.rawValue else { return .unavailable }
-        access.hasRequested = true
-        // Positive preflight plus SCK authorization refusal means this process
-        // cannot use the apparent grant. Keep recovery latched until relaunch.
-        if access.preflight() { requiresRelaunch = true }
-        return .permissionRequired(refresh())
+        return .permissionRequired(observe(.authorizationDenied(preflight: access.preflight())))
+    }
+
+    private func observe(_ observation: CapturePermissionPolicy.Observation) -> CapturePermissionState {
+        let state = policy.observe(observation)
+        if access.hasRequested != policy.hasRequested { access.hasRequested = policy.hasRequested }
+        return state
     }
 }

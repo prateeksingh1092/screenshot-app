@@ -24,6 +24,7 @@ import FrisketCore
     private var recoveryPanel: PermissionRecoveryPanel?
     private var permissionTimer: Timer?
     private var reopenAfterQuit = false
+    private var preparedRelaunch: InstalledAppRelaunch?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
@@ -174,7 +175,7 @@ import FrisketCore
         guard reopenAfterQuit else { return true }
         reopenAfterQuit = false
         do {
-            try InstalledAppRelaunch.scheduleAfterExit()
+            preparedRelaunch = try InstalledAppRelaunch()
             return true
         } catch {
             notice("Could not reopen Frisket", "Launch Frisket from ~/Applications/Frisket.app, then try Quit & Reopen again.")
@@ -214,6 +215,11 @@ import FrisketCore
     func applicationWillTerminate(_ notification: Notification) {
         permissionTimer?.invalidate()
         hotKey.stop()
+        do {
+            try preparedRelaunch?.openDuringTermination()
+        } catch {
+            notice("Could not reopen Frisket", "Frisket is quitting. Launch it from ~/Applications/Frisket.app to reopen it.")
+        }
     }
     private func notice(_ title: String, _ message: String) {
         let alert = NSAlert()

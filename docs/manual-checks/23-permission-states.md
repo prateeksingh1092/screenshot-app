@@ -79,8 +79,9 @@ prefer a fresh test account for a truthful not-asked state.
    on the panel. With it open, repeated capture hot keys must not start selection.
    With a system request pending, repeated hot keys must not draw an overlay.
    Quit & Reopen must respect the existing pending-capture quit confirmation:
-   Cancel keeps the app and captures; an accepted quit reopens only after the
-   old process exits. Test an ordinary Quit after cancelling a reopen request:
+   Cancel keeps the app and captures; an accepted quit starts reopening only
+   after termination begins. Confirm the old PID exits and exactly one new
+   instance remains at the installed path. Test an ordinary Quit after cancelling a reopen request:
    it must not unexpectedly reopen. Leave the original account's grant intact.
 
 Record failures verbatim without private image data. Runtime behavior, prompt

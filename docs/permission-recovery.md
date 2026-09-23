@@ -11,6 +11,14 @@ released on refusal. Copy and Delete of existing Pending captures still work.
 
 ## Platform evidence
 
+`CapturePermissionPolicy` owns grant history, request history and relaunch
+latching in the AppKit-free core. Its observation interface accepts preflight
+results, completed request results and authorization refusals; its outputs are
+the current state, whether an explicit request is allowed, and the marker to
+persist. Each process creates a fresh policy from that marker. The adapter only
+collects platform observations, performs allowed explicit requests and persists
+the marker. Pure core tests drive all five states without platform frameworks.
+
 The adapter uses the installed SDK's `CoreGraphics/CGWindow.h` Boolean functions
 `CGPreflightScreenCaptureAccess` and `CGRequestScreenCaptureAccess`, and the
 `SCStreamErrorDomain` / `SCStreamError.Code.userDeclined` authorization error
@@ -75,14 +83,18 @@ If opening fails, a static notice gives the equivalent System Settings path.
 The pane's actual title/routing on the installed OS is in the manual checklist.
 
 **Quit & Reopen** uses the same quit policy as normal Quit, including explicit
-pending-capture confirmation. Cancel clears the reopen intent. Only after quit
-is accepted does a small `/bin/sh` helper wait for the current PID to exit and
-call `/usr/bin/open` with `~/Applications/Frisket.app`. PID/path are quoted
-positional arguments, never interpolated shell code. The running bundle must
-match that fixed installed path and contain the app executable; otherwise quit
-is cancelled with a static notice. It never opens an Xcode build product or
-launches a second instance before the original exits. The helper is runtime
-code only; it was not executed by the implementer.
+pending-capture confirmation. Cancel clears the reopen intent. Before accepting
+quit, the running bundle must match `~/Applications/Frisket.app` and contain its
+executable; otherwise quit is cancelled with a static notice. Once termination
+begins, `applicationWillTerminate` starts `/usr/bin/open` directly with the fixed
+arguments `-n` and that installed path. There is no shell or command string.
+The separate process survives Frisket's exit, and `-n` requests a fresh instance
+instead of reusing the terminating one. This avoids depending on an asynchronous
+NSWorkspace completion in the exiting process. It never opens an Xcode build
+product. Launch may overlap the old process's final termination; this no longer
+uses a PID-wait loop. A helper-spawn failure displays a static notice, but an
+accepted termination cannot be cancelled at that stage. Actual launch success
+and ordering remain manual checks; the helper was not executed during the fix.
 
 See [the complete manual checklist](manual-checks/23-permission-states.md).
 The project remains stopped before review, signing, installation or runtime
