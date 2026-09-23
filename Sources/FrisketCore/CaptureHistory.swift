@@ -22,6 +22,22 @@ public struct HistoryEntry: Equatable, Sendable {
     public let state: HistoryState
 }
 
+/// History window row. No file names or paths.
+public struct HistoryItem: Equatable, Sendable {
+    public let captureID: CaptureID
+    public let revision: UInt64
+    public let width: Int
+    public let height: Int
+    public let finalizedAt: Date
+    public init(captureID: CaptureID, revision: UInt64, width: Int, height: Int, finalizedAt: Date) {
+        self.captureID = captureID
+        self.revision = revision
+        self.width = width
+        self.height = height
+        self.finalizedAt = finalizedAt
+    }
+}
+
 /// Only the lifecycle coordinator constructs this capability, after an explicit
 /// finalization command. It contains the frozen output, never an editor original.
 public struct AuthorizedFinalization: Sendable {
@@ -39,6 +55,8 @@ public protocol CaptureHistory: Sendable {
     func maintain(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure>
     func status(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure>
     func entries() async -> Result<[HistoryEntry], HistoryFailure>
+    func delete(_ id: CaptureID) async -> Result<Void, HistoryFailure>
+    func finalizedImage(_ id: CaptureID) async -> Result<(revision: UInt64, pngData: Data), HistoryFailure>
 }
 
 /// Recovery/fault-injection contract. Each point means the named operation has
@@ -82,6 +100,10 @@ public struct HistoryUsage: Equatable, Sendable {
 public extension CaptureHistory {
     func maintain(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure> { .failure(.unavailable) }
     func status(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure> { .failure(.unavailable) }
+    func delete(_ id: CaptureID) async -> Result<Void, HistoryFailure> { .failure(.unavailable) }
+    func finalizedImage(_ id: CaptureID) async -> Result<(revision: UInt64, pngData: Data), HistoryFailure> {
+        .failure(.unavailable)
+    }
 }
 
 /// Each callback occurs after the named durable step. Resume deleting rows at launch.

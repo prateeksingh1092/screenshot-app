@@ -381,3 +381,101 @@ extension HistoryCommandsTests {
         #expect(await commands.image(for: revision) == nil)
     }
 }
+
+extension HistoryCommandsTests {
+    @Test func deletingAHistoryItemUnlinksFilesAndRemovesTheRowWithoutTrash() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = HistoryPixels()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source,
+            clipboard: HistoryClipboard(), pendingByteLimit: source.bytes.count, history: HistoryStore(root: root))
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+        #expect(await commands.execute(.capture(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
+        #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
+        let entry = try #require(try await commands.historyEntries().get().first)
+        let image = root.appendingPathComponent(entry.imageLocation)
+        #expect(FileManager.default.fileExists(atPath: image.path))
+        #expect(await commands.execute(.deleteHistory(revision.captureID)) == .historyDeleted(revision.captureID))
+        #expect(try await commands.historyEntries().get().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: image.path))
+        #expect(!FileManager.default.fileExists(atPath: image.appendingPathExtension("Trash").path))
+        #expect(await commands.execute(.deleteHistory(revision.captureID)) == .rejected(.unknownCapture))
+    }
+
+    @Test func historyItemsListNewestFirstWithoutFileLocations() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = HistoryPixels()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source,
+            clipboard: HistoryClipboard(), pendingByteLimit: source.bytes.count, history: HistoryStore(root: root))
+        let first = try await finalize(commands, source: source)
+        let second = try await finalize(commands, source: source)
+        let items = try await commands.historyItems().get()
+        #expect(items.map(\.captureID) == [second.captureID, first.captureID])
+        #expect(items.allSatisfy { $0.width == 2 && $0.height == 1 })
+        #expect(await commands.historyImage(second.captureID)?.pngData == source.bytes)
+        #expect(await commands.execute(.done(second, try #require(DocumentEdits(scale: 1)))) == .rejected(.alreadyFinalized))
+    }
+
+    @Test func historyCopySaveAndDragReuseDeliveryAndLeaveTheOwnedFile() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("History.noindex")
+        let folder = directory.appendingPathComponent("Exports")
+        let source = HistoryPixels()
+        let handoff = RecordingDragHandoff()
+        let clipboard = HistoryClipboard()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: clipboard,
+            pendingByteLimit: source.bytes.count, history: HistoryStore(root: root),
+            exporter: PNGFileExporter(folder: { folder }, historyRoot: root),
+            drag: handoff, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")))
+        let revision = try await finalize(commands, source: source)
+        let owned = root.appendingPathComponent("images/\(revision.captureID.rawValue.uuidString).png")
+        #expect(await commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
+            commit: .committed, delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+        #expect(await commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
+            commit: .committed, delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+        guard case let .save(saved) = await commands.execute(.save(revision)), case let .saved(receipt) = saved.delivery else {
+            Issue.record("History Save should succeed"); return
+        }
+        #expect(saved.commit == .committed)
+        let exported = folder.appendingPathComponent(receipt.filename)
+        #expect(exported.path.hasPrefix(folder.path))
+        #expect(!exported.path.hasPrefix(root.path))
+        #expect(try Data(contentsOf: exported) == source.bytes)
+        #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision,
+            commit: .committed, delivery: .copied)))
+        #expect(await handoff.bytes() == [source.bytes])
+        #expect(try Data(contentsOf: owned) == source.bytes)
+        #expect(try await commands.historyItems().get().map(\.captureID) == [revision.captureID])
+        #expect(await commands.execute(.copy(CaptureRevision(captureID: revision.captureID, number: 2))) ==
+            .rejected(.staleRevision))
+    }
+
+    @Test func interruptedHistoryDeleteResumesOnTheNextLaunch() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = HistoryPixels()
+        var commands: CaptureCommandLayer? = CaptureCommandLayer(permission: GrantedTestPermission(), source: source,
+            clipboard: HistoryClipboard(), pendingByteLimit: source.bytes.count,
+            history: HistoryStore(root: root, evictionPoint: { if $0 == .markedDeleting { throw HistoryDeleteStop.interrupted } }))
+        let revision = try await finalize(commands!, source: source)
+        #expect(await commands!.execute(.deleteHistory(revision.captureID)) == .rejected(.unknownCapture))
+        commands = nil
+        let reopened = CaptureCommandLayer(permission: GrantedTestPermission(), source: source,
+            clipboard: HistoryClipboard(), pendingByteLimit: source.bytes.count, history: HistoryStore(root: root))
+        _ = try await reopened.recoverHistory().get()
+        #expect(try await reopened.historyItems().get().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent(
+            "images/\(revision.captureID.rawValue.uuidString).png").path))
+    }
+
+    private enum HistoryDeleteStop: Error { case interrupted }
+
+    private func finalize(_ commands: CaptureCommandLayer, source: HistoryPixels) async throws -> CaptureRevision {
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+        try #require(await commands.execute(.capture(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
+        try #require(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
+        return revision
+    }
+}

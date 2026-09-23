@@ -4,7 +4,7 @@
 
 **Blocked by:** 09, 11, 12
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/15-history-window`)
 
 - [ ] Items are finished images; there is no re-editing (decision 28).
 - [ ] Copy, drag, and export reuse the delivery adapters and never hand out app-owned files.
@@ -13,3 +13,15 @@
 - [ ] Full keyboard operation and VoiceOver labels for the list and its actions.
 
 ## Comments
+
+### 2026-09-23 — coordinator
+
+Claimed on `331dd49` after ticket 14 closed. Coordinator chat implements (Codex/Other Models still limited).
+
+### 2026-09-23 — implementer
+
+Report: [15-implementer.md](../reports/15-implementer.md). Seam 1 covers delete, newest-first items, copy/save/drag from disk, and interrupted-delete recovery. History window added. Manual not run. Status/checkboxes unchanged pending review.
+
+### 2026-09-23 — review and fix
+
+In-chat review vs `331dd49`: [15-code-review.md](../reviews/15-code-review.md). Fixes: keep delete errors; refresh an open History window when thumbnails finalize.
