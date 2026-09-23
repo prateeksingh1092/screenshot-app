@@ -5,14 +5,14 @@ public enum DiagnosticEventName: String, Codable, Sendable {
     case capturePending, captureFailed, captureDiscarded, captureFinalized, finalizationFailed, deliverySucceeded, deliveryFailed, commandRejected
 }
 
-public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery }
-public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history, fileExport }
+public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag }
+public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history, fileExport, drag }
 public enum DiagnosticErrorCode: String, Codable, Sendable {
     case rootLocked, missingHistoryImage
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired, insideHistory, unwritable
-    case permissionRequired, thumbnailExitNotDue
+    case permissionRequired, thumbnailExitNotDue, dragOperationRefused
 }
 
 public struct DiagnosticError: Equatable, Codable, Sendable {
@@ -85,6 +85,7 @@ extension DiagnosticEvent {
             case .finalizeToHistory: operation = .dismiss
             case .discard: operation = .discard
             }
+        case .drag: operation = .drag
         }
         let name: DiagnosticEventName
         let error: DiagnosticError?
@@ -119,6 +120,21 @@ extension DiagnosticEvent {
             case .cancelled: error = DiagnosticError(domain: .captureSource, code: .cancelled)
             case .emptyImage: error = DiagnosticError(domain: .captureSource, code: .emptyImage)
             case .permissionRequired: error = DiagnosticError(domain: .captureSource, code: .permissionRequired)
+            }
+        case let .drag(result):
+            switch result.delivery {
+            case .copied:
+                name = .deliverySucceeded
+                switch result.commit {
+                case .committed: error = nil
+                case .notCommitted(.historyUnavailable): error = DiagnosticError(domain: .history, code: .unavailable)
+                case .notCommitted(.unknownMigrations): error = DiagnosticError(domain: .history, code: .unknownMigrations)
+                case .notCommitted(.invalidImage): error = DiagnosticError(domain: .history, code: .invalidImage)
+                case .notCommitted(.recoveryRequired): error = DiagnosticError(domain: .history, code: .recoveryRequired)
+                }
+            case .failed:
+                name = .deliveryFailed
+                error = DiagnosticError(domain: .drag, code: .unavailable)
             }
         case let .copy(result):
             switch result.delivery {
@@ -170,6 +186,7 @@ extension DiagnosticEvent {
             case .commandInProgress: code = .commandInProgress
             case .invalidByteAllowance: code = .invalidByteAllowance
             case .thumbnailExitNotDue: code = .thumbnailExitNotDue
+            case .dragOperationRefused: code = .dragOperationRefused
             }
             error = DiagnosticError(domain: .lifecycle, code: code)
         }

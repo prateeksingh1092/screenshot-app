@@ -17,6 +17,7 @@ import FrisketCore
     private lazy var platform = ScreenCapturePlatform(permission: permission)
     private var windowPlatform: WindowScreenCapturePlatform?
     private var commands: CaptureCommandLayer?
+    private var dragAdapter: FilePromiseDragAdapter?
     private var statusItem: NSStatusItem?
     private var settingsWindow: ExportSettingsWindow?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
@@ -37,13 +38,17 @@ import FrisketCore
         settingsWindow = ExportSettingsWindow(settings: exportSettings)
         let windowPlatform = WindowScreenCapturePlatform(permission: permission, bundleIdentifier: identity.bundleIdentifier)
         self.windowPlatform = windowPlatform
+        let dragStaging = DragStagingLifetime(directory: identity.historyRoot.appendingPathComponent("staging/drag"))
+        let dragAdapter = FilePromiseDragAdapter(staging: dragStaging)
+        self.dragAdapter = dragAdapter
         commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             windowSource: WindowCaptureSource(platform: windowPlatform, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                 bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
             history: HistoryStore.launch(root: identity.historyRoot),
-            exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot))
+            exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
+            drag: dragAdapter, dragStaging: dragStaging)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
@@ -179,7 +184,8 @@ import FrisketCore
                                                   delete: { [weak self] in self?.discard(id) },
                                                   close: { [weak self] in self?.leave(id, by: .close) },
                                                   escape: { [weak self] in self?.leave(id, by: .escape) },
-                                                  swipe: { [weak self] in self?.leave(id, by: .swipe) }))
+                                                  swipe: { [weak self] in self?.leave(id, by: .swipe) }),
+                    startDrag: { [weak self] view, event in self?.startDrag(id, from: view, event: event) })
                 panels[id] = panel
                 arrivalOrder.append(id)
                 await settleThumbnails()
@@ -214,6 +220,33 @@ import FrisketCore
             } else {
                 panel.model.copyFailed = true
                 panel.model.dismissFailed = !panel.model.historyCommitted
+                settleSoon()
+            }
+        }
+    }
+
+    private func startDrag(_ id: CaptureID, from view: NSView, event: NSEvent) {
+        guard !terminating, let panel = panels[id], !panel.model.busy, let commands, let dragAdapter else { return }
+        let ghost = (view as? ThumbnailDragWellView)?.image
+        guard dragAdapter.beginSession(from: view, event: event, image: ghost) else { return }
+        panel.model.busy = true
+        Task {
+            let result = await commands.execute(.drag(panel.revision, .copy))
+            dragAdapter.endHandoff()
+            guard let panel = panels[id] else { return }
+            panel.model.busy = false
+            guard case .drag(let outcome) = result else {
+                panel.model.dragFailed = true
+                return
+            }
+            panel.model.historyCommitted = outcome.commit == .committed
+            if case .copied = outcome.delivery {
+                if case .notCommitted = outcome.commit {
+                    notice("Could not keep in History", "The capture was dragged out, but could not be kept in History.")
+                }
+                remove(id)
+            } else {
+                panel.model.dragFailed = true
                 settleSoon()
             }
         }

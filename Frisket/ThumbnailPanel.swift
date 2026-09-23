@@ -6,6 +6,7 @@ import FrisketCore
     @Published var busy = false
     @Published var copyFailed = false
     @Published var saveFailed = false
+    @Published var dragFailed = false
     @Published var dismissFailed = false
     @Published var keptInHistory = false
     @Published var historyCommitted = false
@@ -26,15 +27,16 @@ private struct ThumbnailCard: View {
     let image: NSImage
     @ObservedObject var model: ThumbnailModel
     let actions: ThumbnailCardActions
+    let startDrag: (NSView, NSEvent) -> Void
 
     var body: some View {
         VStack(spacing: 8) {
-            Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+            ThumbnailDragWell(image: image, enabled: !model.busy && !model.keptInHistory, start: startDrag)
                 .frame(maxWidth: 240, maxHeight: 120).accessibilityLabel("Pending capture preview")
             if !model.keptInHistory {
                 ThumbnailCardControls(model: model, actions: actions)
             }
-            Text(model.keptInHistory ? "Kept in History" : model.saveFailed ? (model.historyCommitted ? "Kept in History. Save failed. Retry Save or Close." : "Save failed. Check the export folder in Settings, then Retry Save.") : model.dismissFailed ? "Could not keep in History. Retry Close or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Close." : "Copy failed. Retry Copy or close to keep in History.") : "Close, swipe, or press Esc to keep in History.")
+            Text(model.keptInHistory ? "Kept in History" : model.saveFailed ? (model.historyCommitted ? "Kept in History. Save failed. Retry Save or Close." : "Save failed. Check the export folder in Settings, then Retry Save.") : model.dragFailed ? (model.historyCommitted ? "Kept in History. Drag failed. Drag again or Close." : "Drag failed. Drag again or close to keep in History.") : model.dismissFailed ? "Could not keep in History. Retry Close or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Close." : "Copy failed. Retry Copy or close to keep in History.") : "Close, swipe, or press Esc to keep in History.")
                 .font(.caption).fixedSize(horizontal: false, vertical: true)
         }.padding(14).frame(width: 260)
     }
@@ -133,7 +135,8 @@ private final class ThumbnailCardPanel: NSPanel {
     private let panel: ThumbnailCardPanel
     private var shown = false
 
-    init(revision: CaptureRevision, preview: CGImage, displayID: UInt32?, actions: ThumbnailCardActions) {
+    init(revision: CaptureRevision, preview: CGImage, displayID: UInt32?, actions: ThumbnailCardActions,
+         startDrag: @escaping (NSView, NSEvent) -> Void) {
         self.revision = revision
         self.displayID = displayID
         panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 290),
@@ -150,7 +153,7 @@ private final class ThumbnailCardPanel: NSPanel {
         panel.backgroundColor = .windowBackgroundColor
         panel.hasShadow = true
         let image = NSImage(cgImage: preview, size: NSSize(width: preview.width, height: preview.height))
-        panel.contentView = NSHostingView(rootView: ThumbnailCard(image: image, model: model, actions: actions))
+        panel.contentView = NSHostingView(rootView: ThumbnailCard(image: image, model: model, actions: actions, startDrag: startDrag))
         panel.setAccessibilityLabel("Pending capture")
     }
 
@@ -184,4 +187,25 @@ private final class ThumbnailCardPanel: NSPanel {
                                         .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
     func close() { panel.orderOut(nil); panel.contentView = nil }
+}
+
+private struct ThumbnailDragWell: NSViewRepresentable {
+    let image: NSImage
+    let enabled: Bool
+    let start: (NSView, NSEvent) -> Void
+
+    func makeNSView(context: Context) -> ThumbnailDragWellView {
+        let view = ThumbnailDragWellView()
+        view.image = image
+        view.dragEnabled = enabled
+        view.onMouseDown = start
+        return view
+    }
+
+    func updateNSView(_ view: ThumbnailDragWellView, context: Context) {
+        view.image = image
+        view.dragEnabled = enabled
+        view.onMouseDown = start
+        view.needsDisplay = true
+    }
 }

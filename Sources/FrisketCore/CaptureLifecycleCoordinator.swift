@@ -10,6 +10,8 @@ actor CaptureLifecycleCoordinator {
     private let clipboard: any ImageClipboard
     private let history: (any CaptureHistory)?
     private let exporter: (any CaptureExport)?
+    private let drag: (any DragHandoff)?
+    private let dragStaging: (any DragCopyStaging)?
     private var finalized: Set<CaptureID> = []
     private var deliveryCommits: [CaptureID: CommitOutcome] = [:]
     private var inProgress: Set<CaptureID> = []
@@ -26,6 +28,7 @@ actor CaptureLifecycleCoordinator {
     init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
          windowSource: (any CapturePixelSource)?,
          clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?, exporter: (any CaptureExport)?,
+         drag: (any DragHandoff)?, dragStaging: (any DragCopyStaging)?,
          thumbnailPolicy: ThumbnailStackPolicy, clock: @escaping @Sendable () -> ContinuousClock.Instant) {
         stack = ThumbnailStack(policy: thumbnailPolicy)
         self.clock = clock
@@ -37,6 +40,8 @@ actor CaptureLifecycleCoordinator {
         self.clipboard = clipboard
         self.history = history
         self.exporter = exporter
+        self.drag = drag
+        self.dragStaging = dragStaging
     }
 
     func recoverHistory() async -> Result<HistoryRecoveryReport, HistoryFailure> {
@@ -185,6 +190,50 @@ actor CaptureLifecycleCoordinator {
             case .finalizeToHistory: return await execute(.dismiss(revision))
             case .discard: return await execute(.discard(id))
             }
+        case let .drag(revision, operation):
+            guard operation == .copy else { return .rejected(.dragOperationRefused) }
+            let id = revision.captureID
+            guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+            guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
+            guard images[id] != nil || delivered.contains(id) else { return .rejected(.unknownCapture) }
+            guard revision.number == 1 else { return .rejected(.staleRevision) }
+            guard !delivered.contains(id) else { return .rejected(.alreadyDelivered) }
+            guard let image = images[id] else { return .rejected(.unknownCapture) }
+            inProgress.insert(id)
+            let request = AuthorizedFinalization(revision: revision, pngData: image.pngData)
+            let commit: CommitOutcome
+            if let prior = deliveryCommits[id] {
+                commit = prior
+            } else if finalized.contains(id) {
+                commit = .committed
+                deliveryCommits[id] = commit
+            } else {
+                commit = await history?.finalize(request) ?? .notCommitted(.historyUnavailable)
+                deliveryCommits[id] = commit
+                if commit == .committed { finalized.insert(id) }
+            }
+            var delivery: DragDelivery = .failed
+            if let dragStaging, let drag {
+                do {
+                    let stagedID = try await dragStaging.stage(request)
+                    delivery = try await drag.deliver(.copy, image: DragImage(pngData: image.pngData),
+                        events: DragCopyEventBridge(staging: dragStaging, id: stagedID))
+                } catch {
+                    delivery = .failed
+                }
+            }
+            if delivery == .copied {
+                delivered.insert(id)
+                failedDeliveries.removeValue(forKey: id)
+                automaticExitSuppressed.remove(id)
+                pendingBytes -= image.pngData.count
+                images.removeValue(forKey: id)
+                stack.remove(id)
+            } else {
+                automaticExitSuppressed.insert(id)
+            }
+            inProgress.remove(id)
+            return .drag(DragOutcome(revision: revision, commit: commit, delivery: delivery))
         }
     }
 
@@ -233,4 +282,11 @@ actor CaptureLifecycleCoordinator {
         }
         return outcome(commit, result)
     }
+}
+
+private struct DragCopyEventBridge: DragCopyEvents {
+    let staging: any DragCopyStaging
+    let id: DragStagingID
+    func promiseWriteReturned() async throws { try await staging.promiseWriteReturned(id) }
+    func dragSessionEnded() async { await staging.dragSessionEnded(id) }
 }

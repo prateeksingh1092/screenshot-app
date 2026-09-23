@@ -271,8 +271,13 @@ extension HistoryCommandsTests {
     }
 }
 
+private let historyFinalizationPoints: [HistoryCommitPoint] = [
+    .pngStaged, .pngSynced, .recordStaged, .recordSynced, .imageRenamed, .recordRenamed,
+    .directorySynced, .rowCommitted, .thumbnailCached
+]
+
 extension HistoryCommandsTests {
-    @Test(arguments: HistoryCommitPoint.allCases, HistoryCaptureKind.allCases)
+    @Test(arguments: historyFinalizationPoints, HistoryCaptureKind.allCases)
     private func eachCommitPointLeavesOnlyAuthorizedFilesAndNeverAPrematureRow(point: HistoryCommitPoint, kind: HistoryCaptureKind) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -300,6 +305,9 @@ extension HistoryCommandsTests {
             expected = ["images/\(id).png", "images/\(id).finalization.json"]
         case .thumbnailCached:
             expected = ["images/\(id).png", "images/\(id).finalization.json", "thumbnails/\(id).png"]
+        case .dragStaged, .dragPromiseWritten:
+            // Dismiss never reaches a drag point. DragHandoffTests injects those faults.
+            expected = []
         }
         var files = Set<String>()
         for subdirectory in ["staging", "images", "thumbnails"] {

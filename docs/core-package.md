@@ -267,12 +267,12 @@ is injected. The app now injects the lazy disk store.
 
 The coordinator holds a pure `ThumbnailStack` containing exactly its Pending
 captures: a card arrives with `.pending` and leaves whenever the capture stops
-being pending (a committed exit, Delete, or a successful Copy). The public interface:
+being pending (a committed exit, Delete, or a successful Copy, Save or Drag). The public interface:
 
 - `ThumbnailStackPolicy(maximumCount: 4, autoDismissDelay: .seconds(10))` and a
   `clock: () -> ContinuousClock.Instant`, both optional on the command layer's
-  initializer. These defaults are the implementer's choice and are not yet
-  ratified by Prateek.
+  initializer. Decision 54 selects these working defaults; Settings can change
+  them later.
 - `thumbnails() -> [ThumbnailCard]`: newest first. Each card has its revision,
   `expiresAt` (arrival plus the delay, on the injected clock), and `dueExit`:
   `.overflow` beyond the maximum count, otherwise `.timeout` once expired, else nil.
@@ -297,6 +297,23 @@ The app queries `thumbnails()` after each arrival and removal, and when a card's
 the auto-dismiss setting and pausing under focus belong to tickets 14 and 32.
 `sh scripts/test-core.sh --filter ThumbnailStackCommandsTests` runs the seam 1
 tests with a manual clock, real files and SQLite.
+
+## Ticket 12 drag handoff
+
+`execute(.drag(revision, operation))` is another exit through the same finalization
+policy as Copy and Dismiss. Only `.copy` is accepted; `.move` and `.delete` are
+rejected and do not touch History. A copy drag finalizes once, stages the rendered
+PNG under `staging/drag/`, and reports commit and delivery separately. The staging
+file is deleted only after the promise write completion has returned and the drag
+session has ended. `dragStaged` and `dragPromiseWritten` extend `HistoryCommitPoint`.
+The app adapter is an `NSFilePromiseProvider` whose dragging mask is `.copy`.
+Delivery reports `.copied` only after the destination write, completion callback,
+and session lifetime finish. A successful drag removes the thumbnail; a failed
+one retains it and suppresses timeout/overflow until an explicit action. Copy,
+Save and Drag share the cached History commit, including a failed commit.
+The recovery suite covers both drag interruption points in its throw and SIGKILL
+tiers, checks that staging survives interruption, then verifies two launch sweeps
+preserve History and remove the staging leftovers.
 
 ## Ticket 23 permission gate
 

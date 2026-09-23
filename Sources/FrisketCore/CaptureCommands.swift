@@ -25,6 +25,7 @@ public enum CaptureCommand: Sendable {
     case dismiss(CaptureRevision)
     case discard(CaptureID)
     case exitThumbnail(CaptureRevision, ThumbnailExit)
+    case drag(CaptureRevision, DragFileOperation)
 }
 
 public enum CommitOutcome: Equatable, Sendable {
@@ -50,7 +51,18 @@ public struct CopyOutcome: Equatable, Sendable {
     }
 }
 
-public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance, thumbnailExitNotDue }
+public struct DragOutcome: Equatable, Sendable {
+    public let revision: CaptureRevision
+    public let commit: CommitOutcome
+    public let delivery: DragDelivery
+    public init(revision: CaptureRevision, commit: CommitOutcome, delivery: DragDelivery) {
+        self.revision = revision
+        self.commit = commit
+        self.delivery = delivery
+    }
+}
+
+public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance, thumbnailExitNotDue, dragOperationRefused }
 
 public enum CaptureCommandOutcome: Equatable, Sendable {
     case pending(CaptureRevision)
@@ -58,6 +70,7 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case copy(CopyOutcome)
     case save(SaveOutcome)
     case finalized(CaptureRevision, CommitOutcome)
+    case drag(DragOutcome)
     case captureFailed(CaptureSourceFailure)
     case permissionRequired(CapturePermissionState)
     case rejected(CommandRejection)
@@ -72,11 +85,12 @@ public struct CaptureCommandLayer: Sendable {
                 windowSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
                 diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil, exporter: (any CaptureExport)? = nil,
+                drag: (any DragHandoff)? = nil, dragStaging: (any DragCopyStaging)? = nil,
                 thumbnailPolicy: ThumbnailStackPolicy = ThumbnailStackPolicy(),
                 clock: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, windowSource: windowSource, clipboard: clipboard,
-                                                  pendingByteLimit: pendingByteLimit, history: history, exporter: exporter,
+                                                  pendingByteLimit: pendingByteLimit, history: history, exporter: exporter, drag: drag, dragStaging: dragStaging,
                                                   thumbnailPolicy: thumbnailPolicy, clock: clock)
     }
 
