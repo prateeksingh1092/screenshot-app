@@ -1,0 +1,9 @@
+{
+  "check": "provenance",
+  "files": {
+    "Sources/FrisketCore/Stitcher.swift": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\nstruct Stitcher {}\n",
+    "Sources/FrisketCore/Port.swift": "// Frisket-Port: approved trial\nstruct Port {}\n"
+  },
+  "entries": [],
+  "expected": ["Sources/FrisketCore/Port.swift: port has no provenance entry", "Sources/FrisketCore/Stitcher.swift: port has no provenance entry"]
+}

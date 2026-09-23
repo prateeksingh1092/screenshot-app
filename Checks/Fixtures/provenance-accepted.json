@@ -1,0 +1,12 @@
+{
+  "check": "provenance",
+  "files": {"Sources/FrisketCore/Stitcher.swift": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\nstruct Stitcher {}\n"},
+  "entries": [{
+    "path": "Sources/FrisketCore/Stitcher.swift",
+    "upstreamURL": "https://github.com/duongductrong/Snapzy",
+    "revision": "1234567890123456789012345678901234567890",
+    "originalPath": "Snapzy/ScrollingCaptureStitcher.swift",
+    "licenseHeader": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\n"
+  }],
+  "expected": []
+}

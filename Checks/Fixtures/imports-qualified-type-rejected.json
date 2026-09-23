@@ -1,0 +1,5 @@
+{
+  "check": "imports",
+  "files": {"Sources/FrisketCore/Capture.swift": "let database: GRDB.Database? = nil\n"},
+  "expected": ["Sources/FrisketCore/Capture.swift: concrete GRDB reference outside storage adapter"]
+}

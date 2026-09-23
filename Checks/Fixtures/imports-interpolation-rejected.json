@@ -1,0 +1,8 @@
+{
+  "check": "imports",
+  "files": {
+    "Sources/FrisketCore/Capture.swift": "let description = \"\\(GRDB.Database.self)\"\n",
+    "Sources/FrisketCore/History.swift": "let description = ##\"\\##(describe(GRDB.Database.self))\"##\n"
+  },
+  "expected": ["Sources/FrisketCore/Capture.swift: concrete GRDB reference outside storage adapter", "Sources/FrisketCore/History.swift: concrete GRDB reference outside storage adapter"]
+}
