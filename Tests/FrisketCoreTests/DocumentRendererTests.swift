@@ -16,12 +16,6 @@ private func picture(_ rows: [String]) throws -> Bitmap {
     return try #require(Bitmap(width: rows[0].count, height: rows.count, pixels: pixels))
 }
 
-private func render(_ base: Bitmap, scale: Double = 1, _ rectangles: [(Double, Double, Double, Double)]) throws -> Bitmap {
-    let redactions = try rectangles.map { try #require(SolidRedaction(x: $0.0, y: $0.1, width: $0.2, height: $0.3)) }
-    let edits = try #require(DocumentEdits(scale: scale, redactions: redactions))
-    return DocumentRenderer.render(EditorDocument(base: base, edits: edits))
-}
-
 @Suite struct DocumentRendererTests {
     @Test func wholePixelRedactionReplacesExactlyTheCoveredPixelsWithOpaqueBlack() throws {
         let base = try picture([
@@ -90,8 +84,84 @@ private func render(_ base: Bitmap, scale: Double = 1, _ rectangles: [(Double, D
         let invalid: [(Double, Double, Double, Double)] = [(.nan, 0, 1, 1), (0, .infinity, 1, 1), (0, 0, 0, 1), (0, 0, 1, -1)]
         for (x, y, width, height) in invalid {
             #expect(SolidRedaction(x: x, y: y, width: width, height: height) == nil)
+            #expect(DocumentCrop(x: x, y: y, width: width, height: height) == nil)
         }
         for scale: Double in [0, -2, .nan, .infinity] { #expect(DocumentEdits(scale: scale) == nil) }
         #expect(Bitmap(width: 2, height: 1, bytes: [0, 0, 0, 255]) == nil)
     }
+
+    @Test func cropExtractsTheSnappedOutputPixelsAndKeepsUnredactedColours() throws {
+        let base = try picture([
+            "aaa.",
+            ".a..",
+            "...."
+        ])
+        #expect(try render(base, crop: (1, 0, 2, 2), []) == picture([
+            "aa",
+            "a."
+        ]))
+    }
+
+    @Test func fractionalCropAndRedactionSnapOutwardAfterCropAndScale() throws {
+        let base = try picture([
+            "......",
+            "......",
+            "......",
+            "......"
+        ])
+        // Crop 1.25,0.25 3×2.25 → output 1..<5 × 0..<3. Redaction 2.1,0.6 1×1 is
+        // 0.85,0.35 in cropped points → columns 0..<2, rows 0..<2 of the crop.
+        #expect(try render(base, crop: (1.25, 0.25, 3, 2.25), [(2.1, 0.6, 1, 1)]) == picture([
+            "##..",
+            "##..",
+            "...."
+        ]))
+    }
+
+    @Test func twoTimesCropSnapsOutwardThenRedactsInTheCroppedOutput() throws {
+        let base = try picture([
+            "........",
+            "........",
+            "........",
+            "........"
+        ])
+        // Crop 0.75,0.25 2×1 at 2× → output 1.5..<5.5 × 0.5..<2.5 → 1..<6 × 0..<3.
+        // Redaction 1.25,0.5 0.75×0.5 → cropped 0.5,0.25 → output 1.0..<2.5 × 0.5..<1.5.
+        #expect(try render(base, scale: 2, crop: (0.75, 0.25, 2, 1), [(1.25, 0.5, 0.75, 0.5)]) == picture([
+            ".##..",
+            ".##..",
+            "....."
+        ]))
+    }
+
+    @Test func renderEqualsAnIndependentCropThenRedactSnapshot() throws {
+        let base = try picture([
+            ".a.t",
+            "aa..",
+            "...."
+        ])
+        let crop = (1.0, 0.0, 2.0, 2.0)
+        let redactions = [(1.5, 0.25, 1.0, 1.0)]
+        let rendered = try render(base, crop: crop, redactions)
+        let croppedBase = try picture([
+            "a.",
+            "a."
+        ])
+        let translated = redactions.map { ($0.0 - crop.0, $0.1 - crop.1, $0.2, $0.3) }
+        let equivalent = try render(croppedBase, translated)
+        let frozen = try picture([
+            "##",
+            "##"
+        ])
+        #expect(rendered == equivalent)
+        #expect(rendered == frozen)
+    }
+}
+
+private func render(_ base: Bitmap, scale: Double = 1, crop: (Double, Double, Double, Double)? = nil,
+                    _ rectangles: [(Double, Double, Double, Double)]) throws -> Bitmap {
+    let redactions = try rectangles.map { try #require(SolidRedaction(x: $0.0, y: $0.1, width: $0.2, height: $0.3)) }
+    let cropRect = try crop.map { try #require(DocumentCrop(x: $0.0, y: $0.1, width: $0.2, height: $0.3)) }
+    let edits = try #require(DocumentEdits(scale: scale, crop: cropRect, redactions: redactions))
+    return DocumentRenderer.render(EditorDocument(base: base, edits: edits))
 }

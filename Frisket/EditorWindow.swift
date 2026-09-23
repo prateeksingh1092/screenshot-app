@@ -5,8 +5,8 @@ import FrisketCore
 /// labelled element; its contents are exempt from VoiceOver and keyboard operation.
 @MainActor final class EditorCanvasView: NSView {
     var rendered: NSImage? { didSet { needsDisplay = true } }
+    var documentSize: CGSize { didSet { needsDisplay = true } }
     var onDrag: ((CGPoint, CGPoint) -> Void)?
-    private let documentSize: CGSize
     private var dragStart: CGPoint?
     private var dragCurrent: CGPoint?
 
@@ -15,7 +15,7 @@ import FrisketCore
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        setAccessibilityLabel("Capture canvas. Drag with the pointer to add a Solid redaction.")
+        setAccessibilityLabel("Capture canvas. Drag with the pointer to crop or add a Solid redaction.")
     }
 
     required init?(coder: NSCoder) { nil }
@@ -82,10 +82,10 @@ import FrisketCore
     private let window: NSWindow
     private let canvas: EditorCanvasView
     private let base: Bitmap
-    private let documentSize: CGSize
+    private var documentSize: CGSize
     private var edits: DocumentEdits
     private var undoStack: [DocumentEdits] = []
-    private let tools: [any EditorTool] = [SolidRedactionTool()]
+    private let tools: [any EditorTool] = [SolidRedactionTool(), CropTool()]
     private var activeTool: Int = 0
     private var toolButtons: [NSButton] = []
     private let undoButton = NSButton(title: "Undo", target: nil, action: nil)
@@ -137,7 +137,7 @@ import FrisketCore
             bar.addView(button, in: .leading)
         }
         configure(undoButton, action: #selector(undo), key: "z", modifiers: .command,
-                  label: "Undo last redaction", tip: "Undo last redaction (⌘Z)")
+                  label: "Undo last edit", tip: "Undo last edit (⌘Z)")
         configure(closeButton, action: #selector(closeWithoutChanges), key: "\u{1b}", modifiers: [],
                   label: "Close editor without changes", tip: "Close without changes (Esc)")
         configure(doneButton, action: #selector(done), key: "\r", modifiers: [],
@@ -170,7 +170,19 @@ import FrisketCore
                                         .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
+    private var unchanged: Bool { edits.redactions.isEmpty && edits.crop == nil }
+
+    private var currentDocumentSize: CGSize {
+        if let crop = edits.crop {
+            return CGSize(width: crop.width, height: crop.height)
+        }
+        return CGSize(width: Double(base.width) / edits.scale, height: Double(base.height) / edits.scale)
+    }
+
     private func refresh() {
+        documentSize = currentDocumentSize
+        canvas.documentSize = documentSize
+        canvas.rendered = nil
         let rendered = DocumentRenderer.render(EditorDocument(base: base, edits: edits))
         canvas.rendered = PNGBitmapCodec.image(rendered).map { NSImage(cgImage: $0, size: documentSize) }
         for button in toolButtons {
@@ -178,7 +190,7 @@ import FrisketCore
             button.isEnabled = !finishing
         }
         undoButton.isEnabled = !finishing && !undoStack.isEmpty
-        closeButton.isEnabled = !finishing && edits.redactions.isEmpty
+        closeButton.isEnabled = !finishing && unchanged
         doneButton.isEnabled = !finishing
     }
 
@@ -232,11 +244,11 @@ import FrisketCore
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard !finishing else { return false }
-        guard edits.redactions.isEmpty else {
+        guard unchanged else {
             // Returning to the unedited capture would keep pixels the user chose to redact.
             let alert = NSAlert()
-            alert.messageText = "Press Done to keep the redacted capture"
-            alert.informativeText = "Closing now would discard your redactions. Undo every redaction to close without changes."
+            alert.messageText = "Press Done to keep the edited capture"
+            alert.informativeText = "Closing now would discard your edits. Undo every crop and redaction to close without changes."
             alert.beginSheetModal(for: window)
             return false
         }
