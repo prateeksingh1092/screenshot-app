@@ -4,7 +4,7 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/09-dismiss-finalizes-into-history`)
 
 - [ ] Commit order: PNG to staging, full-fsync, atomic rename into place, fsync the directory, then insert one row in one transaction; a finalization record is written alongside the image.
 - [ ] Nothing is written under the root before an authorized finalization request; original pixels are never written (static and seam 1 checks).

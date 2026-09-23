@@ -4,7 +4,7 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/19-selection-precision`)
 
 - [ ] A magnifier shows device pixels at the pointer.
 - [ ] Shift locks an axis, Option grows from the centre, Space moves the selection, arrow keys nudge it.

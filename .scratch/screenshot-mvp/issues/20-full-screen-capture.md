@@ -4,7 +4,7 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/20-full-screen-capture`)
 
 - [ ] Captures the display at its native pixel scale, excluding Frisket's own windows.
 - [ ] Issued through the command layer; seam 1 test with a fixture display.
