@@ -13,6 +13,7 @@ import FrisketCore
 
 @MainActor final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKey = CarbonHotKey()
+    private lazy var shortcutSettings = ShortcutSettings(system: hotKey)
     private let permission = ScreenCapturePermissionAdapter(access: SystemScreenRecordingAccess())
     private let exclusions = CaptureExclusionList(defaults: .standard)
     private lazy var platform = ScreenCapturePlatform(permission: permission, exclusions: { [exclusions] in exclusions.bundleIdentifiers })
@@ -45,7 +46,7 @@ import FrisketCore
         historySettings.onQuotaEviction = { [weak self] in
             self?.notice("History size limit reached", "Older captures were removed from History to meet its size limit. Saved exports are unchanged. You can adjust the limit in Settings.")
         }
-        settingsWindow = ExportSettingsWindow(settings: exportSettings, history: historySettings, exclusions: exclusions)
+        settingsWindow = ExportSettingsWindow(settings: exportSettings, history: historySettings, exclusions: exclusions, shortcuts: shortcutSettings)
         let windowPlatform = WindowScreenCapturePlatform(permission: permission, bundleIdentifier: identity.bundleIdentifier,
             exclusions: { [exclusions] in exclusions.bundleIdentifiers })
         self.windowPlatform = windowPlatform
@@ -66,7 +67,7 @@ import FrisketCore
         item.button?.setAccessibilityLabel("Frisket capture menu")
         let menu = NSMenu()
         menu.delegate = self
-        add("Capture Area (⌃⌥⌘4)", action: #selector(captureArea), to: menu)
+        add("Capture Area", action: #selector(captureArea), to: menu)
         add("Capture Window", action: #selector(captureWindow), to: menu)
         add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
@@ -89,9 +90,16 @@ import FrisketCore
         timer.tolerance = 0.25
         RunLoop.main.add(timer, forMode: .common)
         permissionTimer = timer
-        if !hotKey.register(action: { [weak self] in self?.captureArea() }) {
-            notice("Shortcut unavailable", "Another app may be using Control–Option–Command–4. Capture Area is still available in the Frisket menu.")
+        shortcutSettings.changed = { [weak self] in self?.refreshShortcutTitles() }
+        hotKey.action = { [weak self] action in
+            guard let self, self.shortcutSettings.permits(action) else { return }
+            switch action {
+            case .captureArea: self.captureArea()
+            case .captureFullScreen: self.captureFullScreen()
+            case .focusThumbnails: self.focusThumbnail()
+            }
         }
+        shortcutSettings.start()
         resumeLaunchSurfaces()
     }
 
@@ -148,6 +156,16 @@ import FrisketCore
         item.keyEquivalentModifierMask = .command
         item.target = self
         menu.addItem(item)
+    }
+
+    private func refreshShortcutTitles() {
+        let actions: [(ShortcutAction, Selector)] = [(.captureArea, #selector(captureArea)),
+            (.captureFullScreen, #selector(captureFullScreen)), (.focusThumbnails, #selector(focusThumbnail))]
+        for (action, selector) in actions {
+            guard let item = statusItem?.menu?.items.first(where: { $0.action == selector }) else { continue }
+            let suffix = shortcutSettings.bindings[action].map { " (\($0.displayName))" } ?? " (shortcut inactive)"
+            item.title = action.title + suffix
+        }
     }
 
     @objc private func showSettings() {
@@ -567,6 +585,7 @@ import FrisketCore
     }
     func applicationWillTerminate(_ notification: Notification) {
         permissionTimer?.invalidate()
+        shortcutSettings.commands.stop()
         hotKey.stop()
         do {
             try preparedRelaunch?.openDuringTermination()
