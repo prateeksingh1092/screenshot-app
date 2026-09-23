@@ -4,7 +4,7 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/23-permission-states-and-recovery`)
 
 - [ ] Five explicit states: not asked, denied, granted, revoked while running, needs relaunch.
 - [ ] Permission is checked before any overlay appears.
