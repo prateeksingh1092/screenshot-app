@@ -27,6 +27,7 @@ import FrisketCore
     private var terminating = false
     private var requestingPermission = false
     private var recoveryPanel: PermissionRecoveryPanel?
+    private let surfaces = LaunchSurfaces()
     private var permissionTimer: Timer?
     private var reopenAfterQuit = false
     private var preparedRelaunch: InstalledAppRelaunch?
@@ -66,6 +67,7 @@ import FrisketCore
         addSettings(to: menu)
         menu.addItem(.separator())
         installMainMenu()
+        add("About Frisket", action: #selector(showAbout), to: menu)
         add("Quit Frisket", action: #selector(quit), to: menu)
         item.menu = menu
         statusItem = item
@@ -79,6 +81,7 @@ import FrisketCore
         if !hotKey.register(action: { [weak self] in self?.captureArea() }) {
             notice("Shortcut unavailable", "Another app may be using Control–Option–Command–4. Capture Area is still available in the Frisket menu.")
         }
+        resumeLaunchSurfaces()
     }
 
     private func installMainMenu() {
@@ -159,6 +162,7 @@ import FrisketCore
     private func capture(_ command: CaptureCommand) {
         guard !capturing, !terminating, !requestingPermission, let commands else { return }
         if recoveryPanel?.window?.isVisible == true { recoveryPanel?.present(); return }
+        if surfaces.focusOnboardingIfVisible() { return }
         capturing = true
         Task {
             defer { capturing = false; refreshPermissionIndicator() }
@@ -368,7 +372,15 @@ import FrisketCore
     @objc private func focusThumbnail() {
         if let id = arrivalOrder.last { panels[id]?.focus() }
     }
+    @objc private func showAbout() { surfaces.presentAbout() }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    private func resumeLaunchSurfaces() {
+        surfaces.systemAlertEnded(
+            systemAlertPending: { [weak self] in self?.requestingPermission ?? false },
+            permission: { [weak self] in self?.permission.capturePermission() ?? .notAsked },
+            recover: { [weak self] state in self?.showPermissionRecovery(state) })
+    }
 
     func menuWillOpen(_ menu: NSMenu) { refreshPermissionIndicator() }
     func applicationDidBecomeActive(_ notification: Notification) { refreshPermissionIndicator() }
@@ -391,7 +403,8 @@ import FrisketCore
                 _ = self.permission.requestPermission()
                 self.requestingPermission = false
                 self.refreshPermissionIndicator()
-                // Never automatically resume capture or reopen UI after a system request.
+                self.resumeLaunchSurfaces()
+                // Never automatically resume capture after a system request.
             }, privacy: { [weak self] in
                 let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
                 if !NSWorkspace.shared.open(url) {
