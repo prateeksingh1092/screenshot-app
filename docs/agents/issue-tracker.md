@@ -11,6 +11,11 @@ Issues and specs live in `.scratch/`.
   Use the strings in `triage-labels.md`.
 - Append discussion under `## Comments`.
 
+## Implementation lifecycle
+- Triage statuses (`needs-triage` … `ready-for-human`, `wontfix`) apply before work starts.
+- During implementation the coordinator sets `in-progress` (with the branch name), then `resolved` once the tested `main` commit is recorded.
+- See `implementation-workflow.md`.
+
 ## Skill operations
 - Publish to the issue tracker: create the appropriate local file.
 - Fetch a ticket: read its referenced file.
