@@ -27,6 +27,25 @@ codex exec -m gpt-6-astra -c model_reasoning_effort='"high"' -c sandbox_mode='"w
 
 With redirections (`<`, `>` or `2>`), a command no longer matches Cursor's allowlist and falls back to Cursor's sandbox. Codex then fails with "Operation not permitted". The same applies to commands that start with a variable assignment or `sh`. Set environment variables with `export` in an earlier shell call instead. If Codex is unreachable or out of included usage, use Cursor Task subagents with the model `claude-opus-5-5-high`, and record which model produced each result.
 
+### Implementer pools (from 2026-09-23 02:22)
+
+There are three pools, each with at most two concurrent tickets, one ticket per worktree. The coordinator alone freezes, integrates and closes.
+
+- **Codex** uses the form above.
+- **Grok 4.7 High** and **Claude Opus 5.5 High** run detached through the Cursor CLI, always invoked by its explicit path:
+
+```sh
+/Users/16intelmac/.local/bin/cursor-agent -p --model <grok-4.7-high | claude-opus-5-5-high> --force --trust \
+  --workspace <worktree> --output-format text "Read the file <absolute brief path> and carry out its instructions exactly. It is your complete brief." > <log> 2>&1
+```
+
+Because `--force` is set, the brief also forbids:
+- any git command;
+- writes outside the worktree;
+- signing, installs, launches, screen capture and clipboard use.
+
+A reviewer never shares the implementer's model: Opus reviews Codex, Codex reviews Grok, and Grok reviews Opus. The fix pass is a fresh session of the implementer's model. Text output appears only at exit, so judge progress by worktree changes and elapsed time.
+
 ## Gates
 
 - Prateek approves the actions that decision 46 still gates.
