@@ -367,14 +367,16 @@ preserve History and remove the staging leftovers.
 
 - **Document:** `EditorDocument(base: Bitmap, edits: DocumentEdits)`. `Bitmap` is
   premultiplied sRGB RGBA8, rows top to bottom. `DocumentEdits` holds `scale`
-  (output pixels per document point) and the ordered `redactions`.
+  (output pixels per document point), an optional `crop` in original document
+  points, and the ordered `redactions`.
   `SolidRedaction(x:y:width:height:)` is in document points from the top-left
   and fails for non-finite or non-positive geometry. It has no colour, opacity,
   radius or stroke to set; `SolidRedaction.fill` is opaque black.
 - **Renderer (seam 2):** `DocumentRenderer.render(_:) -> Bitmap` is pure Swift
-  (Foundation only). Each rectangle is multiplied by `scale`, snapped outward
-  (minimum edges rounded down, maximum edges up), clipped to the image in
-  floating point, and copied as fill bytes with no blending or antialiasing.
+  (Foundation only). Crop is applied first (outward snap to output pixels).
+  Each redaction is then shifted into the cropped document, multiplied by
+  `scale`, snapped outward, clipped, and copied as fill bytes with no blending
+  or antialiasing.
 - **Codec seam:** `BitmapCodec` converts PNG bytes to and from `Bitmap` in
   memory. The app injects `PNGBitmapCodec` (ImageIO, fixed sRGB) through
   `CaptureCommandLayer(…, codec:)`; without one, Done returns
@@ -607,3 +609,14 @@ refused. Settings and the History window show a notice, **Try Again**
 (`recoverHistory()`), and **Show History Folder**. Recovery never erases the
 database; the user can copy it out or repair it, then retry. See
 [manual checks](manual-checks/17-history-database-failure.md).
+
+## Ticket 27 crop
+
+`DocumentCrop` is an optional edit in original document points. The renderer
+crops first, then snaps redactions outward in the cropped output. Seam 2 tests
+cover 1×/2×, fractional rectangles, a frozen snapshot, and render-equivalence
+against an independently cropped base. Seam 1 canaries run Done+crop at 1× and
+2× and check History, the pending image, both thumbnails, Copy, Save, and drag.
+The editor Crop tool (`C`) composes onto an existing crop; the canvas drops the
+pre-crop `NSImage` before drawing the new size. See
+[manual checks](manual-checks/27-crop.md).

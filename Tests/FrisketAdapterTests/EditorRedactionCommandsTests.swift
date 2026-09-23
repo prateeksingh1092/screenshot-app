@@ -36,6 +36,12 @@ private struct CanaryCase: Sendable, CustomTestStringConvertible {
         return try #require(DocumentEdits(scale: scale, redactions: redactions))
     }
 
+    func cropped(_ crop: (x: Double, y: Double, width: Double, height: Double)) throws -> DocumentEdits {
+        let redactions = try redactions.map { try #require(SolidRedaction(x: $0.x, y: $0.y, width: $0.width, height: $0.height)) }
+        return try #require(DocumentEdits(scale: scale,
+            crop: DocumentCrop(x: crop.x, y: crop.y, width: crop.width, height: crop.height), redactions: redactions))
+    }
+
     func png() throws -> Data {
         var bytes = [UInt8]()
         for y in 0..<height {
@@ -120,6 +126,44 @@ private actor RecordingClipboard: ImageClipboard {
 
 private func historyRoot() -> URL {
     FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+}
+
+/// Crop in document points; covered ranges are in the cropped output.
+private struct CropCanary: Sendable, CustomTestStringConvertible {
+    let scale: Double
+    let source: CanaryCase
+    let crop: (x: Double, y: Double, width: Double, height: Double)
+    let outputWidth: Int
+    let outputHeight: Int
+    let covered: [(columns: ClosedRange<Int>, rows: ClosedRange<Int>)]
+    var testDescription: String { "crop \(Int(scale))x" }
+
+    static let all = [
+        CropCanary(scale: 1, source: CanaryCase.all[0], crop: (10, 8, 18, 14),
+                   outputWidth: 18, outputHeight: 14, covered: [(0...4, 0...1), (10...17, 7...12)]),
+        CropCanary(scale: 2, source: CanaryCase.all[1], crop: (10, 8, 18, 14),
+                   outputWidth: 36, outputHeight: 28, covered: [(0...8, 0...3), (20...35, 14...24)])
+    ]
+
+    func edits() throws -> DocumentEdits { try source.cropped(crop) }
+
+    func expectRedacted(_ output: (width: Int, height: Int, pixels: [RGBA]),
+                        sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(output.width == outputWidth && output.height == outputHeight, sourceLocation: sourceLocation)
+        guard output.width == outputWidth, output.height == outputHeight else { return }
+        var coveredMismatches = 0, canaries = 0
+        for y in 0..<outputHeight {
+            for x in 0..<outputWidth {
+                let pixel = output.pixels[y * outputWidth + x]
+                if source.canaries.contains(pixel) { canaries += 1 }
+                if covered.contains(where: { $0.columns.contains(x) && $0.rows.contains(y) }) {
+                    coveredMismatches += pixel == opaqueBlack ? 0 : 1
+                }
+            }
+        }
+        #expect(coveredMismatches == 0, sourceLocation: sourceLocation)
+        #expect(canaries == 0, sourceLocation: sourceLocation)
+    }
 }
 
 @Suite struct EditorRedactionCommandsTests {
@@ -513,5 +557,56 @@ extension EditorRedactionCommandsTests {
         #expect(await commands.execute(.copy(rendered)) == .copy(CopyOutcome(revision: rendered, commit: .committed,
             delivery: .copied(ClipboardReceipt(changeCount: 7)))))
         expectRedacted(try decodeSRGB(try #require(await clipboard.images.last).pngData), fixture)
+    }
+}
+
+private actor CropDragHandoff: DragHandoff {
+    private var recorded: [Data] = []
+    func bytes() -> [Data] { recorded }
+    func deliver(_ operation: DragFileOperation, image: DragImage, events: any DragCopyEvents) async throws -> DragDelivery {
+        recorded.append(image.pngData)
+        try await events.promiseWriteReturned()
+        await events.dragSessionEnded()
+        return .copied
+    }
+}
+
+extension EditorRedactionCommandsTests {
+    @Test(arguments: CropCanary.all)
+    private func cropKeepsRedactionsCompleteOnEveryOutput(fixture: CropCanary) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("History.noindex")
+        let exports = directory.appendingPathComponent("Exports")
+        let clipboard = RecordingClipboard()
+        let drag = CropDragHandoff()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+            exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
+            drag: drag, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")),
+            codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let rendered = CaptureRevision(captureID: id, number: 2)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(.done(original, try fixture.edits())) == .edited(rendered, .committed))
+
+        let entry = try #require(try await commands.historyEntries().get().first)
+        fixture.expectRedacted(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))))
+        let pending = try #require(await commands.image(for: rendered))
+        fixture.expectRedacted(try decodeSRGB(pending.pngData))
+        fixture.expectRedacted(try decodeSRGB(try #require(ThumbnailImage.make(from: pending.pngData, maximumPixelSize: 480))))
+        let cached = try Data(contentsOf: root.appendingPathComponent(try #require(entry.thumbnailLocation)))
+        fixture.expectRedacted(try decodeSRGB(cached))
+
+        #expect(await commands.execute(.copy(rendered)) == .copy(CopyOutcome(revision: rendered, commit: .committed,
+            delivery: .copied(ClipboardReceipt(changeCount: 101)))))
+        fixture.expectRedacted(try decodeSRGB(try #require(await clipboard.images.last).pngData))
+        guard case let .save(saved) = await commands.execute(.save(rendered)), case let .saved(receipt) = saved.delivery else {
+            Issue.record("Cropped Save should succeed"); return
+        }
+        fixture.expectRedacted(try decodeSRGB(try Data(contentsOf: exports.appendingPathComponent(receipt.filename))))
+        #expect(await commands.execute(.drag(rendered, .copy)) == .drag(DragOutcome(revision: rendered, commit: .committed, delivery: .copied)))
+        fixture.expectRedacted(try decodeSRGB(try #require(await drag.bytes().last)))
     }
 }

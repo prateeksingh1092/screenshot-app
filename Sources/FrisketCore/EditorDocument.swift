@@ -56,14 +56,32 @@ public struct SolidRedaction: Equatable, Sendable {
     }
 }
 
+/// A crop rectangle in document points from the top-left of the original capture.
+public struct DocumentCrop: Equatable, Sendable {
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+
+    public init?(x: Double, y: Double, width: Double, height: Double) {
+        guard [x, y, width, height].allSatisfy(\.isFinite), width > 0, height > 0 else { return nil }
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
 /// Everything the editor changes, without the base image. `scale` is output pixels per document point.
 public struct DocumentEdits: Equatable, Sendable {
     public let scale: Double
+    public var crop: DocumentCrop?
     public var redactions: [SolidRedaction]
 
-    public init?(scale: Double, redactions: [SolidRedaction] = []) {
+    public init?(scale: Double, crop: DocumentCrop? = nil, redactions: [SolidRedaction] = []) {
         guard scale.isFinite, scale > 0 else { return nil }
         self.scale = scale
+        self.crop = crop
         self.redactions = redactions
     }
 }
