@@ -31,6 +31,8 @@ public enum CaptureCommand: Sendable {
     case done(CaptureRevision, DocumentEdits)
     /// Removes a finalized History item. Pending Delete capture stays `.discard`.
     case deleteHistory(CaptureID)
+    /// Copies text recognized from this revision's current image. The text is not stored.
+    case copyRecognizedText(CaptureRevision)
 }
 
 public enum CommitOutcome: Equatable, Sendable {
@@ -71,7 +73,7 @@ public enum CommandRejection: Equatable, Sendable {
     case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded
     case commandInProgress, invalidByteAllowance, thumbnailExitNotDue, dragOperationRefused
-    case editingUnavailable
+    case editingUnavailable, recognitionUnavailable
 }
 
 public enum CaptureCommandOutcome: Equatable, Sendable {
@@ -89,6 +91,7 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case scrollingRefused(ScrollingCaptureNotice)
     case rejected(CommandRejection)
     case historyDeleted(CaptureID)
+    case recognizedText(RecognizedTextOutcome)
 }
 
 /// The sole action interface. The coordinator owns lifecycle policy and memory.
@@ -106,13 +109,16 @@ public struct CaptureCommandLayer: Sendable {
                 codec: (any BitmapCodec)? = nil,
                 scrollingFrames: (any ScrollingFrameFeed)? = nil,
                 scrollingPreview: (any ScrollingPreviewSurface)? = nil,
-                scrollingBudget: ScrollingCaptureBudget = .v1) {
+                scrollingBudget: ScrollingCaptureBudget = .v1,
+                textRecognizer: (any TextRecognizer)? = nil,
+                textClipboard: (any TextClipboard)? = nil) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, windowSource: windowSource, clipboard: clipboard,
                                                   pendingByteLimit: pendingByteLimit, history: history, exporter: exporter, drag: drag, dragStaging: dragStaging,
                                                   thumbnailPolicy: thumbnailPolicy, clock: clock, codec: codec,
                                                   scrollingFrames: scrollingFrames, scrollingPreview: scrollingPreview,
-                                                  scrollingBudget: scrollingBudget)
+                                                  scrollingBudget: scrollingBudget,
+                                                  textRecognizer: textRecognizer, textClipboard: textClipboard)
     }
 
     /// The thumbnail stack, newest first, with any exit the policy requires now.

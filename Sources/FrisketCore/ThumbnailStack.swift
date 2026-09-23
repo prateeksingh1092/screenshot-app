@@ -13,7 +13,7 @@ public enum ThumbnailExitOutcome: Sendable { case finalizeToHistory, discard }
 public enum ThumbnailFocusMove: Sendable { case newer, older }
 
 public enum ThumbnailKeyCommand: Equatable, Sendable {
-    case copy, save, edit, deleteCapture, dismiss, newer, older
+    case copy, save, edit, copyText, deleteCapture, dismiss, newer, older
 }
 
 /// Single keys and arrows for a focused thumbnail. Modifier chords are ignored.
@@ -33,6 +33,7 @@ public enum ThumbnailKeys {
         case "c": return .copy
         case "s": return .save
         case "e": return .edit
+        case "t": return .copyText
         case "\u{1b}": return .dismiss
         case "\u{7f}": return .deleteCapture
         default: return nil

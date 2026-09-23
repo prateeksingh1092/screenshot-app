@@ -17,7 +17,7 @@ import FrisketCore
     }
 }
 
-@MainActor final class PasteboardAdapter: ImageClipboard {
+@MainActor final class PasteboardAdapter: ImageClipboard, TextClipboard {
     private let destination: any PasteboardDestination
     init(destination: any PasteboardDestination) { self.destination = destination }
 
@@ -29,6 +29,16 @@ import FrisketCore
         }
         let item = NSPasteboardItem()
         guard item.setData(image.pngData, forType: .png),
+              item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")),
+              let count = destination.replace(with: [item], options: [.currentHostOnly]) else {
+            return .failure(.unavailable)
+        }
+        return .success(ClipboardReceipt(changeCount: count))
+    }
+
+    func writeText(_ text: String) async -> Result<ClipboardReceipt, ClipboardFailure> {
+        let item = NSPasteboardItem()
+        guard item.setString(text, forType: .string),
               item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")),
               let count = destination.replace(with: [item], options: [.currentHostOnly]) else {
             return .failure(.unavailable)

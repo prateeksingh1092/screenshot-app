@@ -65,16 +65,18 @@ import FrisketCore
         self.dragAdapter = dragAdapter
         let scrolling = ManualScrollingCapture(platform: platform, bundleIdentifier: identity.bundleIdentifier)
         self.scrolling = scrolling
+        let pasteboard = PasteboardAdapter(destination: GeneralPasteboardDestination())
         commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency),
             windowSource: WindowCaptureSource(platform: windowPlatform, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                 bundleIdentifier: identity.bundleIdentifier),
-            clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
+            clipboard: pasteboard, pendingByteLimit: 256 * 1024 * 1024,
             history: HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits),
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
             drag: dragAdapter, dragStaging: dragStaging, thumbnailPolicy: thumbnailSettings.policy,
             codec: PNGBitmapCodec(),
-            scrollingFrames: scrolling, scrollingPreview: scrolling)
+            scrollingFrames: scrolling, scrollingPreview: scrolling,
+            textRecognizer: VisionTextRecognizer(), textClipboard: pasteboard)
         if let commands {
             historySettings.connect(commands)
             thumbnailSettings.connect(commands)
@@ -328,7 +330,8 @@ import FrisketCore
                                           close: { [weak self] in self?.leave(id, by: .close) },
                                           escape: { [weak self] in self?.leave(id, by: .escape) },
                                           swipe: { [weak self] in self?.leave(id, by: .swipe) },
-                                          edit: { [weak self] in self?.edit(id) }),
+                                          edit: { [weak self] in self?.edit(id) },
+                                          copyText: { [weak self] in self?.copyRecognizedText(id) }),
             startDrag: { [weak self] view, event in self?.startDrag(id, from: view, event: event) })
         panel.moveFocus = { [weak self] move in self?.moveStackFocus(move) }
         panel.onBecomeKey = { [weak self] in
@@ -429,6 +432,20 @@ import FrisketCore
             notice("Could not replace the earlier copy", "The clipboard may still contain the original capture. Use Copy on the redacted thumbnail to replace it.")
         }
         return true
+        }
+    }
+
+    private func copyRecognizedText(_ id: CaptureID) {
+        guard !terminating, let panel = panels[id], !panel.model.busy, let commands else { return }
+        panel.model.busy = true
+        Task {
+            let result = await commands.execute(.copyRecognizedText(panel.revision))
+            panel.model.busy = false
+            if case let .recognizedText(outcome) = result, case .copied = outcome.delivery {
+                notice("Copied \(outcome.characterCount) characters", "")
+            } else {
+                notice("Could not copy text", "No text was recognized, or the capture is no longer current.")
+            }
         }
     }
 

@@ -5,14 +5,14 @@ public enum DiagnosticEventName: String, Codable, Sendable {
     case capturePending, captureFailed, captureDiscarded, captureFinalized, finalizationFailed, deliverySucceeded, deliveryFailed, commandRejected
 }
 
-public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done, deleteHistory }
+public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done, deleteHistory, copyRecognizedText }
 public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history, fileExport, drag }
 public enum DiagnosticErrorCode: String, Codable, Sendable {
     case rootLocked, missingHistoryImage
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired, insideHistory, unwritable
-    case permissionRequired, thumbnailExitNotDue, dragOperationRefused, editingUnavailable
+    case permissionRequired, thumbnailExitNotDue, dragOperationRefused, editingUnavailable, recognitionUnavailable
     case captureExceedsHistoryLimit, pixelCap, memoryBudget, rejectedAlignment
 }
 
@@ -89,6 +89,7 @@ extension DiagnosticEvent {
         case .drag: operation = .drag
         case .done: operation = .done
         case .deleteHistory: operation = .deleteHistory
+        case .copyRecognizedText: operation = .copyRecognizedText
         }
         let name: DiagnosticEventName
         let error: DiagnosticError?
@@ -190,6 +191,15 @@ extension DiagnosticEvent {
                 case .unwritable: error = DiagnosticError(domain: .fileExport, code: .unwritable)
                 }
             }
+        case let .recognizedText(result):
+            switch result.delivery {
+            case .copied:
+                name = .deliverySucceeded
+                error = nil
+            case .failed:
+                name = .deliveryFailed
+                error = DiagnosticError(domain: .clipboard, code: .unavailable)
+            }
         case let .rejected(reason):
             name = .commandRejected
             let code: DiagnosticErrorCode
@@ -208,6 +218,7 @@ extension DiagnosticEvent {
             case .thumbnailExitNotDue: code = .thumbnailExitNotDue
             case .dragOperationRefused: code = .dragOperationRefused
             case .editingUnavailable: code = .editingUnavailable
+            case .recognitionUnavailable: code = .recognitionUnavailable
             }
             error = DiagnosticError(domain: .lifecycle, code: code)
         }
