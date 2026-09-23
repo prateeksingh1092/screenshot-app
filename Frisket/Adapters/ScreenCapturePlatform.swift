@@ -20,7 +20,23 @@ import UniformTypeIdentifiers
         // A single pointer-position read, not a monitor. Selection remains on this display.
         let pointer = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main else { return nil }
-        let selection = await overlay.select(on: screen)
+        let originFrame = screen.frame
+        let originScale = screen.backingScaleFactor
+        let originNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        // Sample only at invocation, while the overlay (including magnifier) is hidden.
+        // The preview's pixels never become a pending capture or reach storage.
+        hideSelection()
+        var magnifier: SelectionMagnifier?
+        if let content, let identifier = Bundle.main.bundleIdentifier,
+           let available = try? await content.value.content {
+            magnifier = try? await SelectionMagnifier.prepare(on: screen, content: available, excluding: identifier)
+        }
+        // A display change while preparing must not open a stale selection panel.
+        guard let currentScreen = NSScreen.screens.first(where: {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber) == originNumber
+                && $0.frame == originFrame && $0.backingScaleFactor == originScale
+        }) else { return nil }
+        let selection = await overlay.select(on: currentScreen, magnifier: magnifier)
         captureDisplayID = selection?.displayID
         return selection
     }

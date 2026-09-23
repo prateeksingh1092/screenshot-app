@@ -1,4 +1,5 @@
 import AppKit
+import FrisketCore
 
 @MainActor final class SelectionPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -16,7 +17,7 @@ import AppKit
                                               name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
-    func select(on screen: NSScreen) async -> AreaSelection? {
+    func select(on screen: NSScreen, magnifier: SelectionMagnifier? = nil) async -> AreaSelection? {
         self.screen = screen
         return await withCheckedContinuation { continuation in
             completion = continuation
@@ -27,10 +28,12 @@ import AppKit
             panel.level = .screenSaver
             panel.hasShadow = false
             panel.hidesOnDeactivate = false
+            panel.becomesKeyOnlyIfNeeded = false
+            panel.acceptsMouseMovedEvents = true
             panel.isReleasedWhenClosed = false
             panel.isRestorable = false
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            let view = SelectionView(frame: CGRect(origin: .zero, size: screen.frame.size)) { [weak self] rect in
+            let view = SelectionView(screen: screen, magnifier: magnifier) { [weak self] rect in
                 self?.finish(rect)
             }
             panel.contentView = view
@@ -40,13 +43,17 @@ import AppKit
         }
     }
 
-    func hide() { panel?.orderOut(nil); panel = nil }
+    func hide() {
+        panel?.orderOut(nil)
+        panel?.contentView = nil // Release the magnifier snapshot before final capture.
+        panel = nil
+    }
 
     private func finish(_ rect: CGRect?) {
         var selection: AreaSelection?
         if let rect, let screen, let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
             selection = AreaSelection(displayID: number.uint32Value, displayFrame: screen.frame,
-                                      rect: rect.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY),
+                                      rect: rect,
                                       scale: screen.backingScaleFactor)
         }
         hide()
@@ -60,75 +67,125 @@ import AppKit
 }
 
 @MainActor private final class SelectionView: NSView {
-    private var anchor: CGPoint?
-    private var selection: CGRect
+    private var geometry: SelectionGeometry
+    private let displayFrame: CGRect
+    private let scale: CGFloat
+    private let magnifier: SelectionMagnifier?
+    private var pointer: CGPoint
+    private var dragging = false
+    private var spaceHeld = false
+    private var modifiers: SelectionGeometry.Modifiers = []
     private let completion: (CGRect?) -> Void
     override var acceptsFirstResponder: Bool { true }
+    override var needsPanelToBecomeKey: Bool { true }
 
-    init(frame: CGRect, completion: @escaping (CGRect?) -> Void) {
-        selection = CGRect(x: max(0, (frame.width - 320) / 2), y: max(0, (frame.height - 180) / 2),
-                           width: min(320, frame.width), height: min(180, frame.height))
+    init(screen: NSScreen, magnifier: SelectionMagnifier?, completion: @escaping (CGRect?) -> Void) {
+        displayFrame = screen.frame
+        scale = screen.backingScaleFactor
+        geometry = SelectionGeometry(displayFrame: screen.frame, scale: screen.backingScaleFactor)
+        pointer = NSEvent.mouseLocation
+        self.magnifier = magnifier
         self.completion = completion
-        super.init(frame: frame)
+        super.init(frame: CGRect(origin: .zero, size: screen.frame.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Select capture area. Drag, or use arrows to move and Shift arrows to resize. Return captures. Escape cancels.")
+        setAccessibilityLabel("Select capture area. Drag; Shift locks an axis, Option grows from centre, Space moves, arrows nudge one pixel. Return captures. Escape cancels.")
     }
     required init?(coder: NSCoder) { nil }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
 
     override func draw(_ dirtyRect: NSRect) {
+        let selection = geometry.rect.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
         NSColor.black.withAlphaComponent(0.24).setFill()
         bounds.fill()
         NSColor.clear.setFill()
         selection.fill(using: .copy)
         NSColor.white.setStroke()
-        let outline = NSBezierPath(rect: selection.insetBy(dx: 0.5, dy: 0.5))
-        outline.lineWidth = 1
+        let outline = NSBezierPath(rect: selection.insetBy(dx: 0.5 / scale, dy: 0.5 / scale))
+        outline.lineWidth = 1 / scale
         outline.stroke()
-        let message = "Drag an area · Arrows move · Shift arrows resize · Return captures · Esc cancels"
-        message.draw(at: CGPoint(x: 24, y: 24), withAttributes: [.font: NSFont.systemFont(ofSize: 15), .foregroundColor: NSColor.white])
+        let message = "Shift locks axis · Option centres · Space moves · Arrows nudge · Return captures · Esc cancels"
+        message.draw(at: CGPoint(x: 24, y: 24), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
+        if let magnifier {
+            magnifier.draw(at: CGPoint(x: pointer.x - displayFrame.minX, y: pointer.y - displayFrame.minY), in: bounds)
+        } else {
+            "Magnifier unavailable".draw(at: CGPoint(x: 24, y: 46),
+                withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
+        }
     }
+
     private func point(_ event: NSEvent) -> CGPoint {
-        let p = convert(event.locationInWindow, from: nil)
-        return CGPoint(x: min(max(p.x, 0), bounds.width), y: min(max(p.y, 0), bounds.height))
+        let local = convert(event.locationInWindow, from: nil)
+        return CGPoint(x: local.x + displayFrame.minX, y: local.y + displayFrame.minY)
+    }
+    private func updateModifiers(_ event: NSEvent) {
+        modifiers = []
+        if event.modifierFlags.contains(.shift) { modifiers.insert(.shift) }
+        if event.modifierFlags.contains(.option) { modifiers.insert(.option) }
+        if spaceHeld { modifiers.insert(.space) }
+    }
+    private func updateGeometry() {
+        if dragging { geometry.update(to: pointer, modifiers: modifiers) }
+        needsDisplay = true
+    }
+    override func mouseMoved(with event: NSEvent) {
+        pointer = point(event)
+        needsDisplay = true
     }
     override func mouseDown(with event: NSEvent) {
-        anchor = point(event)
-        selection = CGRect(origin: point(event), size: .zero)
-        needsDisplay = true
+        pointer = point(event)
+        dragging = true
+        updateModifiers(event)
+        geometry.begin(at: pointer)
+        updateGeometry()
     }
     override func mouseDragged(with event: NSEvent) {
-        guard let anchor else { return }
-        let p = point(event)
-        selection = CGRect(x: min(p.x, anchor.x), y: min(p.y, anchor.y),
-                           width: abs(p.x - anchor.x), height: abs(p.y - anchor.y))
-        needsDisplay = true
+        pointer = point(event)
+        updateModifiers(event)
+        updateGeometry()
     }
     override func mouseUp(with event: NSEvent) {
+        guard dragging else { return }
         mouseDragged(with: event)
-        if selection.width >= 1, selection.height >= 1 { completion(selection) }
+        dragging = false
+        acceptSelection()
+    }
+    private func acceptSelection() {
+        if geometry.rect.width >= 1 / scale, geometry.rect.height >= 1 / scale { completion(geometry.rect) }
+    }
+    override func flagsChanged(with event: NSEvent) {
+        updateModifiers(event)
+        updateGeometry()
     }
     override func cancelOperation(_ sender: Any?) { completion(nil) }
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { completion(nil); return }
-        if event.keyCode == 36 { completion(selection); return }
-        let delta: CGPoint
         switch event.keyCode {
-        case 123: delta = CGPoint(x: -1, y: 0)
-        case 124: delta = CGPoint(x: 1, y: 0)
-        case 125: delta = CGPoint(x: 0, y: -1)
-        case 126: delta = CGPoint(x: 0, y: 1)
+        case 53: completion(nil); return
+        case 36, 76: acceptSelection(); return
+        case 49:
+            spaceHeld = true
+            updateModifiers(event)
+            updateGeometry()
+            return
+        case 123: geometry.nudge(dx: -1, dy: 0)
+        case 124: geometry.nudge(dx: 1, dy: 0)
+        case 125: geometry.nudge(dx: 0, dy: -1)
+        case 126: geometry.nudge(dx: 0, dy: 1)
         default: super.keyDown(with: event); return
         }
-        if event.modifierFlags.contains(.shift) {
-            selection.size.width = min(bounds.maxX - selection.minX, max(1, selection.width + delta.x))
-            selection.size.height = min(bounds.maxY - selection.minY, max(1, selection.height + delta.y))
-        } else {
-            selection.origin.x = min(max(0, selection.minX + delta.x), bounds.maxX - selection.width)
-            selection.origin.y = min(max(0, selection.minY + delta.y), bounds.maxY - selection.height)
-        }
         needsDisplay = true
+    }
+    override func keyUp(with event: NSEvent) {
+        guard event.keyCode == 49 else { super.keyUp(with: event); return }
+        spaceHeld = false
+        updateModifiers(event)
+        updateGeometry()
     }
 }
