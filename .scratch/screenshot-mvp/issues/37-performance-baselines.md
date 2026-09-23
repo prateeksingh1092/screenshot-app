@@ -4,7 +4,7 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/37-performance-baselines`)
 
 - [ ] A script measures idle CPU from process CPU time over 10 minutes, idle wakeups, memory footprint, and capture-to-thumbnail latency, without Xcode instruments.
 - [ ] Conditions: AC power, thermally unthrottled, after cool-down, 20 runs, median and p95; the GPU in use is recorded.
