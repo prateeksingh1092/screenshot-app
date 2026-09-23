@@ -272,3 +272,47 @@ and [the manual state checklist](manual-checks/23-permission-states.md).
 The app filesystem guard permits the specific recovery forms
 `NSWorkspace.shared.open` and `FileHandle.nullDevice`; fixtures still reject
 actual file writes in those same files, writable file handles, and POSIX `open`.
+
+## Ticket 18 multi-display selection
+
+`DisplaySelectionSession(displays:pointer:)` is pure layout/selection policy.
+`SelectionDisplay` carries the stable display ID, global bottom-left frame,
+and backing scale (with the same valid-frame contract as `SelectionGeometry`).
+`display(at:)` uses half-open edges; overlapping/mirrored frames choose the
+lowest display ID. The invocation display supplies the default keyboard
+rectangle. `begin(at:)` chooses and locks the first drag's display;
+`update`, `nudge`, and `resize` delegate to the existing `SelectionGeometry`.
+`acceptedRect` rejects subpixel/zero-area selections. `updateDisplays` ignores
+enumeration order and permanently cancels on added/removed displays or any
+frame/scale change, clearing both the rectangle and origin display. A new
+session is required after cancellation.
+
+Fixture unit tests cover negative coordinates, shared edges, the origin lock,
+reordered layouts, unplugging either display, all displays removed, movement,
+scale changes, additions, and rejection of stale selection reuse. A seam-1
+pixel/display stand-in drives the same session through an unplug, checking
+that no pixels or Pending capture survive, no clipboard write occurs, and a
+subsequent selection can use the released budget. The existing hide-before-pixels
+and 1×/2× geometry checks continue to apply.
+
+The AppKit adapter presents a nonactivating key-capable panel on every display,
+using screen-saver level and `canJoinAllSpaces`, `fullScreenAuxiliary`,
+`canJoinAllApplications`, `stationary`, and `ignoresCycle`. Display notifications are observed during selection; Space notifications are
+observed from prefetch through capture completion. Space changes re-order all
+panels and restore the origin panel's key focus without activating Frisket;
+they invalidate frozen previews and end an interrupted drag, retaining the
+rectangle. Shareable-content prefetch completes before preview preparation or
+selection, preserving permission and pending-alert ordering. Preview sampling
+happens before any panel is shown. `AreaCaptureSource` compares
+the Space generation across asynchronous prefetch and preparation and discards invalidated
+previews before selection. The overlay stamps the accepted rectangle with the
+current generation; the source checks it before and after final capture at the
+core seam, returning cancellation if it changed. Controlled asynchronous
+stand-ins verify preview invalidation, no Pending image after a switch during
+final capture, and budget recovery. All panels and
+view snapshots are removed before the selection continuation resumes;
+`ScreenCapturePlatform` flushes window updates before the final pixel request
+and retains own-app exclusion. Layout validation also surrounds asynchronous
+preview preparation and final pixel capture. No global event monitors or event
+taps are used. OS window ordering, activation, cursor behavior, and actual
+pixel output remain [manual checks](manual-checks/18-selection-overlay-displays.md).

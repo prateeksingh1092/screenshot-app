@@ -108,6 +108,10 @@ extension ScreenCapturePermissionTests {
 }
 
 @MainActor private final class RefusedCapturePreparation: AreaCapturePlatform, FullScreenCapturePlatform {
+    let spaceGeneration: UInt64 = 0
+    var previewsPrepared = false
+    func prepareSelection() async { previewsPrepared = true }
+    func discardSelectionPreviews() {}
     var selectionShown = false
     var pixelsTaken = false
     var finished = false
@@ -133,6 +137,7 @@ extension ScreenCapturePermissionTests {
         let command: CaptureCommand = fullScreen ? .captureFullScreen(CaptureID(), maximumBytes: 4) : .capture(CaptureID(), maximumBytes: 4)
         #expect(await commands.execute(command) == .permissionRequired(.needsRelaunch))
         #expect(!platform.selectionShown)
+        #expect(!platform.previewsPrepared)
         #expect(!platform.pixelsTaken)
         #expect(platform.finished)
     }
@@ -171,6 +176,10 @@ extension ScreenCapturePermissionTests {
 }
 
 @MainActor private final class PendingCapturePreparation: AreaCapturePlatform {
+    let spaceGeneration: UInt64 = 0
+    var previewsPrepared = false
+    func prepareSelection() async { previewsPrepared = true }
+    func discardSelectionPreviews() {}
     private var started: CheckedContinuation<Void, Never>?
     private var pending: CheckedContinuation<Void, Never>?
     var selectionShown = false
@@ -203,9 +212,11 @@ extension ScreenCapturePermissionTests {
         let capture = Task { await commands.execute(.capture(id, maximumBytes: 4)) }
         await platform.waitUntilPreparing()
         #expect(!platform.selectionShown)
+        #expect(!platform.previewsPrepared)
         #expect(await commands.execute(.capture(id, maximumBytes: 4)) == .rejected(.commandInProgress))
         platform.deny()
         #expect(await capture.value == .permissionRequired(.denied))
         #expect(!platform.selectionShown)
+        #expect(!platform.previewsPrepared)
     }
 }
