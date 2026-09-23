@@ -1,0 +1,9 @@
+{
+  "check": "imports",
+  "files": {
+    "Sources/FrisketCore/Capture.swift": "@preconcurrency import AppKit\n#if os(macOS)\nimport SwiftUI\n#endif\nimport struct GRDB.Database\n",
+    "Sources/FrisketCore/StorageAdapter/History.swift": "import AppKit\nimport GRDB\n",
+    "Sources/FrisketCore/StorageAdapterFake/Escape.swift": "@_implementationOnly import GRDB\n"
+  },
+  "expected": ["Sources/FrisketCore/Capture.swift: forbidden import AppKit", "Sources/FrisketCore/Capture.swift: forbidden import SwiftUI", "Sources/FrisketCore/Capture.swift: forbidden import GRDB", "Sources/FrisketCore/StorageAdapter/History.swift: forbidden import AppKit", "Sources/FrisketCore/StorageAdapterFake/Escape.swift: forbidden import GRDB"]
+}

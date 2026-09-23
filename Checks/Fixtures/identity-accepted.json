@@ -1,0 +1,10 @@
+{
+  "check": "identity",
+  "files": {
+    "Sources/FrisketCore/Stitcher.swift": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\n// Derived from Snapzy.\nstruct Stitcher {}\n",
+    "Resources/THIRD-PARTY-NOTICES.md": "Snapzy: Trong Duong Duc",
+    "Resources/LICENSE.txt": "Snapzy: BSD-3-Clause",
+    "Frisket/About.txt": "Frisket"
+  },
+  "expected": []
+}
