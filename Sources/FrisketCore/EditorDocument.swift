@@ -140,6 +140,18 @@ public struct DocumentEdits: Equatable, Sendable {
 public protocol BitmapCodec: Sendable {
     func decode(_ pngData: Data) -> Bitmap?
     func encode(_ bitmap: Bitmap) -> Data?
+    /// Renders `edits` over `pngData` strip by strip. The default path decodes the
+    /// full image first; production codecs should stream.
+    func encode(_ pngData: Data, edits: DocumentEdits) -> Data?
+}
+
+extension BitmapCodec {
+    public func encode(_ pngData: Data, edits: DocumentEdits) -> Data? {
+        guard let base = decode(pngData) else { return nil }
+        var strips: [Bitmap] = []
+        DocumentRenderer.forEachStrip(EditorDocument(base: base, edits: edits)) { strips.append($0) }
+        return DocumentRenderer.concatenate(strips).flatMap(encode)
+    }
 }
 
 /// The editor's document: a base image plus its edits. Rendering is `DocumentRenderer.render`.

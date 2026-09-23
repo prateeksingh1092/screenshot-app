@@ -361,9 +361,14 @@ import FrisketCore
         panel.model.busy = true
         Task {
             let screen = screens[id]
+            let codec = PNGBitmapCodec()
             guard let image = await commands.image(for: panel.revision),
-                  let base = PNGBitmapCodec().decode(image.pngData),
-                  let editor = EditorWindow(base: base, scale: Double(screen?.backingScaleFactor ?? 1), screen: screen,
+                  let pixels = codec.pixelSize(image.pngData),
+                  let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: EditorProxy.maxEdge),
+                  let base = codec.bitmap(from: preview),
+                  let editor = EditorWindow(base: base,
+                                            pixelSize: CGSize(width: pixels.width, height: pixels.height),
+                                            scale: Double(screen?.backingScaleFactor ?? 1), screen: screen,
                                             finish: { [weak self] leave in await self?.finishEditing(id, leave) ?? false }) else {
                 panel.model.busy = false
                 notice("Editor unavailable", "This capture can't be edited. Copy, dismiss, or delete it instead.")

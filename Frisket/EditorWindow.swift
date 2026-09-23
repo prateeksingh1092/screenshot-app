@@ -82,6 +82,8 @@ import FrisketCore
     private let window: NSWindow
     private let canvas: EditorCanvasView
     private let base: Bitmap
+    private let pixelSize: CGSize
+    private let displayScale: Double
     private var documentSize: CGSize
     private var edits: DocumentEdits
     private var undoStack: [DocumentEdits] = []
@@ -104,13 +106,16 @@ import FrisketCore
     private var finish: ((EditorLeave) async -> Bool)?
     private var promptOpen = false
 
-    init?(base: Bitmap, scale: Double, screen: NSScreen?, finish: @escaping (EditorLeave) async -> Bool) {
+    init?(base: Bitmap, pixelSize: CGSize? = nil, scale: Double, screen: NSScreen?,
+          finish: @escaping (EditorLeave) async -> Bool) {
         guard let edits = DocumentEdits(scale: scale) else { return nil }
         self.base = base
         self.edits = edits
         self.finish = finish
+        self.pixelSize = pixelSize ?? CGSize(width: base.width, height: base.height)
+        displayScale = EditorProxy.displayScale(fullWidth: Int(self.pixelSize.width), proxyWidth: base.width, scale: scale)
         tools = [SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
-        documentSize = CGSize(width: Double(base.width) / scale, height: Double(base.height) / scale)
+        documentSize = CGSize(width: self.pixelSize.width / scale, height: self.pixelSize.height / scale)
         canvas = EditorCanvasView(documentSize: documentSize)
         let visible = (screen ?? NSScreen.main)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
         let barHeight: CGFloat = 56
@@ -206,14 +211,16 @@ import FrisketCore
         if let crop = edits.crop {
             return CGSize(width: crop.width, height: crop.height)
         }
-        return CGSize(width: Double(base.width) / edits.scale, height: Double(base.height) / edits.scale)
+        return CGSize(width: pixelSize.width / edits.scale, height: pixelSize.height / edits.scale)
     }
 
     private func refresh() {
         documentSize = currentDocumentSize
         canvas.documentSize = documentSize
         canvas.rendered = nil
-        let rendered = DocumentRenderer.render(EditorDocument(base: base, edits: edits))
+        guard let displayEdits = DocumentEdits(scale: displayScale, crop: edits.crop, redactions: edits.redactions,
+                                               annotations: edits.annotations, effects: edits.effects) else { return }
+        let rendered = DocumentRenderer.render(EditorDocument(base: base, edits: displayEdits))
         canvas.rendered = PNGBitmapCodec.image(rendered).map { NSImage(cgImage: $0, size: documentSize) }
         for button in toolButtons {
             button.state = button.tag == activeTool ? .on : .off
