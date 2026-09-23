@@ -15,6 +15,7 @@ import FrisketCore
     private let hotKey = CarbonHotKey()
     private let permission = ScreenCapturePermissionAdapter(access: SystemScreenRecordingAccess())
     private lazy var platform = ScreenCapturePlatform(permission: permission)
+    private var windowPlatform: WindowScreenCapturePlatform?
     private var commands: CaptureCommandLayer?
     private var statusItem: NSStatusItem?
     private var settingsWindow: ExportSettingsWindow?
@@ -33,8 +34,12 @@ import FrisketCore
         let identity = AppIdentity(bundleIdentifier: identifier)
         let exportSettings = ExportSettings(historyRoot: identity.historyRoot)
         settingsWindow = ExportSettingsWindow(settings: exportSettings)
+        let windowPlatform = WindowScreenCapturePlatform(permission: permission, bundleIdentifier: identity.bundleIdentifier)
+        self.windowPlatform = windowPlatform
         commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
+            windowSource: WindowCaptureSource(platform: windowPlatform, ownProcessID: ProcessInfo.processInfo.processIdentifier,
+                bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
             history: HistoryStore.launch(root: identity.historyRoot),
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot))
@@ -44,6 +49,7 @@ import FrisketCore
         let menu = NSMenu()
         menu.delegate = self
         add("Capture Area (⌃⌥⌘4)", action: #selector(captureArea), to: menu)
+        add("Capture Window", action: #selector(captureWindow), to: menu)
         add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
         menu.addItem(.separator())
@@ -140,6 +146,10 @@ import FrisketCore
         capture(.captureFullScreen(CaptureID(), maximumBytes: 128 * 1024 * 1024))
     }
 
+    @objc private func captureWindow() {
+        capture(.captureWindow(CaptureID(), maximumBytes: 128 * 1024 * 1024))
+    }
+
     private func capture(_ command: CaptureCommand) {
         guard !capturing, !terminating, !requestingPermission, let commands else { return }
         if recoveryPanel?.window?.isVisible == true { recoveryPanel?.present(); return }
@@ -149,10 +159,13 @@ import FrisketCore
             let result = await commands.execute(command)
             switch result {
             case let .pending(revision):
+                let captureDisplayID: UInt32?
+                if case .captureWindow = command { captureDisplayID = windowPlatform?.captureDisplayID }
+                else { captureDisplayID = platform.captureDisplayID }
                 guard let image = await commands.image(for: revision),
                       let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480),
                       let screen = NSScreen.screens.first(where: {
-                          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == platform.captureDisplayID
+                          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == captureDisplayID
                       }) ?? NSScreen.main else {
                     _ = await commands.execute(.discard(revision.captureID))
                     notice("Preview unavailable", "The capture could not be displayed and was deleted.")

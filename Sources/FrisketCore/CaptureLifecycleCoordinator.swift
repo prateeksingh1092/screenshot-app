@@ -6,6 +6,7 @@ actor CaptureLifecycleCoordinator {
     private var pendingBytes = 0
     private let source: any CapturePixelSource
     private let fullScreenSource: (any CapturePixelSource)?
+    private let windowSource: (any CapturePixelSource)?
     private let clipboard: any ImageClipboard
     private let history: (any CaptureHistory)?
     private let exporter: (any CaptureExport)?
@@ -19,11 +20,13 @@ actor CaptureLifecycleCoordinator {
     private var images: [CaptureID: CaptureImage] = [:]
 
     init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
+         windowSource: (any CapturePixelSource)?,
          clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?, exporter: (any CaptureExport)?) {
         self.pendingByteLimit = max(0, pendingByteLimit)
         self.permission = permission
         self.source = source
         self.fullScreenSource = fullScreenSource
+        self.windowSource = windowSource
         self.clipboard = clipboard
         self.history = history
         self.exporter = exporter
@@ -81,7 +84,7 @@ actor CaptureLifecycleCoordinator {
             failedDeliveries.removeValue(forKey: id)
             discarded.insert(id)
             return .discarded(id)
-        case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes):
+        case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes), let .captureWindow(id, maximumBytes):
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
             guard images[id] == nil, !delivered.contains(id), !finalized.contains(id) else { return .rejected(.duplicateCapture) }
@@ -93,6 +96,9 @@ actor CaptureLifecycleCoordinator {
             if case .captureFullScreen = command {
                 guard let fullScreenSource else { return .captureFailed(.unavailable) }
                 captureSource = fullScreenSource
+            } else if case .captureWindow = command {
+                guard let windowSource else { return .captureFailed(.unavailable) }
+                captureSource = windowSource
             } else {
                 captureSource = source
             }
