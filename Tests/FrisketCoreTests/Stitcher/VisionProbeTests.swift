@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import Testing
 import Vision
-@testable import StitcherTrial
+import FrisketCore
 
 struct VisionProbeTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["FRISKET_VISION_PROBE"] == "1"))
@@ -21,13 +21,13 @@ struct VisionProbeTests {
     print("VISION_PROBE translation tx=\(observation.alignmentTransform.tx) ty=\(observation.alignmentTransform.ty)")
     #expect(abs(observation.alignmentTransform.tx) < 2)
     #expect(abs(abs(observation.alignmentTransform.ty) - 80) < 2)
-    let stitcher = ScrollingCaptureStitcher()
-    _ = try #require(stitcher.start(with: first))
-    let update = try #require(stitcher.append(next, maxOutputHeight: 2000, expectedSignedDeltaPixels: 80))
-    #expect(update.alignmentDebug?.usedVisionEstimate == true)
-    #expect(update.alignmentDebug?.appendDeltaY == 80)
-    #expect(update.outputHeight == 480)
-    print("VISION_PROBE stitcher usedVisionEstimate=\(update.alignmentDebug?.usedVisionEstimate == true) height=\(update.outputHeight)")
+    let capture = try Stitcher.stitch([ScrollingCaptureFrame(image: first),
+      ScrollingCaptureFrame(image: next, expectedVerticalStep: 80)])
+    let alignment = try #require(capture.alignments.last)
+    #expect(alignment.usedVisionEstimate)
+    #expect(alignment.appendedRows == 80)
+    #expect(capture.image.height == 480)
+    print("VISION_PROBE stitcher usedVisionEstimate=\(alignment.usedVisionEstimate) height=\(capture.image.height)")
   }
 
   private func probeFrame(offset: Int) -> CGImage? {

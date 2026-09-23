@@ -39,7 +39,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import CoreGraphics
 import Foundation
 import Testing
-@testable import StitcherTrial
+@testable import FrisketCore
 
 struct ScrollingCaptureStitcherTests {
 

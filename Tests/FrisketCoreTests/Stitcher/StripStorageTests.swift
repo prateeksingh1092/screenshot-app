@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 import Testing
-@testable import StitcherTrial
+@testable import FrisketCore
 
 struct StripStorageTests {
   @Test func initialFrameStreamsFixedSizeStripsWithoutChangingPixels() throws {
@@ -51,7 +51,7 @@ struct StripStorageTests {
     let initial = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: 0))
     _ = try #require(stitcher.start(with: initial))
     var frozenStrip: CGImage?
-    stitcher.forEachStrip { if frozenStrip == nil { frozenStrip = $0 } }
+    try stitcher.forEachStrip { if frozenStrip == nil { frozenStrip = $0 } }
     let frozenBytes = frozenStrip?.dataProvider?.data as Data?
     // Final frame has no overlap with the initial frame: alignment must advance.
     for offset in stride(from: 140, through: 700, by: 140) {
