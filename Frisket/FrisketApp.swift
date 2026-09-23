@@ -14,7 +14,8 @@ import FrisketCore
 @MainActor final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKey = CarbonHotKey()
     private let permission = ScreenCapturePermissionAdapter(access: SystemScreenRecordingAccess())
-    private lazy var platform = ScreenCapturePlatform(permission: permission)
+    private let exclusions = CaptureExclusionList(defaults: .standard)
+    private lazy var platform = ScreenCapturePlatform(permission: permission, exclusions: { [exclusions] in exclusions.bundleIdentifiers })
     private var commands: CaptureCommandLayer?
     private var statusItem: NSStatusItem?
     private var settingsWindow: ExportSettingsWindow?
@@ -32,9 +33,9 @@ import FrisketCore
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
         let exportSettings = ExportSettings(historyRoot: identity.historyRoot)
-        settingsWindow = ExportSettingsWindow(settings: exportSettings)
-        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
-            fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
+        settingsWindow = ExportSettingsWindow(settings: exportSettings, exclusions: exclusions)
+        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }),
+            fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
             history: HistoryStore(root: identity.historyRoot),
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot))

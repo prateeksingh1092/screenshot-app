@@ -18,9 +18,12 @@ struct FullScreenDisplay {
     private let platform: any FullScreenCapturePlatform
     private let bundleIdentifier: String
 
-    init(platform: any FullScreenCapturePlatform, bundleIdentifier: String) {
+    private let exclusions: @MainActor () -> Set<String>
+    init(platform: any FullScreenCapturePlatform, bundleIdentifier: String,
+         exclusions: @escaping @MainActor () -> Set<String> = { [] }) {
         self.platform = platform
         self.bundleIdentifier = bundleIdentifier
+        self.exclusions = exclusions
     }
 
     func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
@@ -39,7 +42,8 @@ struct FullScreenDisplay {
               width * height * 4 <= Double(maximumBytes) else { return .failure(.unavailable) }
         let request = AreaCaptureRequest(displayID: display.displayID,
             sourceRect: CGRect(origin: .zero, size: display.frame.size),
-            pixelWidth: Int(width), pixelHeight: Int(height), excludingBundleIdentifier: bundleIdentifier)
+            pixelWidth: Int(width), pixelHeight: Int(height), excludingBundleIdentifier: bundleIdentifier,
+            additionalExcludedBundleIdentifiers: exclusions())
         do {
             let data = try await platform.capture(request, maximumBytes: maximumBytes)
             guard data.count <= maximumBytes else { return .failure(.unavailable) }

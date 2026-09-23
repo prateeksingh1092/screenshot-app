@@ -16,7 +16,12 @@ import UniformTypeIdentifiers
     private var magnifiers: [UInt32: SelectionMagnifier] = [:]
     private(set) var captureDisplayID: UInt32?
 
-    init(permission: ScreenCapturePermissionAdapter) { self.permission = permission }
+    private let exclusions: @MainActor () -> Set<String>
+    init(permission: ScreenCapturePermissionAdapter,
+         exclusions: @escaping @MainActor () -> Set<String> = { [] }) {
+        self.permission = permission
+        self.exclusions = exclusions
+    }
 
     func prefetchShareableContent() async throws {
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(spaceChanged),
@@ -53,7 +58,7 @@ import UniformTypeIdentifiers
             for screen in screens {
                 guard let display = screen.selectionDisplay else { continue }
                 magnifiers[display.id] = try? await SelectionMagnifier.prepare(on: screen, content: available,
-                                                                            excluding: identifier)
+                                                                            excluding: identifier, additionalExclusions: exclusions())
             }
         }
     }
@@ -113,7 +118,8 @@ import UniformTypeIdentifiers
             throw CapturePlatformError.unavailable
         }
         let filter = try ScreenCapturePolicy.filter(display: display, content: available,
-                                                   excluding: request.excludingBundleIdentifier)
+                                                   excluding: request.excludingBundleIdentifier,
+                                                   additionalExclusions: request.excludedBundleIdentifiers.union(exclusions()))
         let config = ScreenCapturePolicy.configuration(sourceRect: request.sourceRect,
                                                        pixelWidth: request.pixelWidth, pixelHeight: request.pixelHeight)
         // Own-app filtering remains the safety mechanism even if a window-server update lags.

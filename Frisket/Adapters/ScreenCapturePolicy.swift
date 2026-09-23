@@ -5,13 +5,16 @@ import Foundation
 /// their own size budgets, pixel-format needs, and image handling.
 @MainActor enum ScreenCapturePolicy {
     static func filter(display: SCDisplay, content: SCShareableContent,
-                       excluding bundleIdentifier: String) throws -> SCContentFilter {
+                       excluding bundleIdentifier: String,
+                       additionalExclusions: Set<String> = []) throws -> SCContentFilter {
         let ownApplications = content.applications.filter { $0.bundleIdentifier == bundleIdentifier }
         // Fail closed: never capture unless this process is positively excluded.
         guard ownApplications.contains(where: { $0.processID == ProcessInfo.processInfo.processIdentifier }) else {
             throw PolicyError.unavailable
         }
-        return SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
+        let identifiers = additionalExclusions.union([bundleIdentifier])
+        let excludedApplications = content.applications.filter { identifiers.contains($0.bundleIdentifier) }
+        return SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
     }
 
     static func configuration(sourceRect: CGRect, pixelWidth: Int, pixelHeight: Int) -> SCStreamConfiguration {
