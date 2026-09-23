@@ -21,6 +21,7 @@ public enum CaptureCommand: Sendable {
     case retryCopy(CaptureRevision)
     case dismiss(CaptureRevision)
     case discard(CaptureID)
+    case drag(CaptureRevision, DragFileOperation)
 }
 
 public enum CommitOutcome: Equatable, Sendable {
@@ -46,13 +47,25 @@ public struct CopyOutcome: Equatable, Sendable {
     }
 }
 
-public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance }
+public struct DragOutcome: Equatable, Sendable {
+    public let revision: CaptureRevision
+    public let commit: CommitOutcome
+    public let delivery: DragDelivery
+    public init(revision: CaptureRevision, commit: CommitOutcome, delivery: DragDelivery) {
+        self.revision = revision
+        self.commit = commit
+        self.delivery = delivery
+    }
+}
+
+public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance, dragOperationRefused }
 
 public enum CaptureCommandOutcome: Equatable, Sendable {
     case pending(CaptureRevision)
     case discarded(CaptureID)
     case copy(CopyOutcome)
     case finalized(CaptureRevision, CommitOutcome)
+    case drag(DragOutcome)
     case captureFailed(CaptureSourceFailure)
     case permissionRequired(CapturePermissionState)
     case rejected(CommandRejection)
@@ -65,10 +78,11 @@ public struct CaptureCommandLayer: Sendable {
 
     public init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
-                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil) {
+                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil,
+                drag: (any DragHandoff)? = nil, dragStaging: (any DragCopyStaging)? = nil) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
-                                                  pendingByteLimit: pendingByteLimit, history: history)
+                                                  pendingByteLimit: pendingByteLimit, history: history, drag: drag, dragStaging: dragStaging)
     }
 
     public func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {

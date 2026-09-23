@@ -16,6 +16,7 @@ import FrisketCore
     private let permission = ScreenCapturePermissionAdapter(access: SystemScreenRecordingAccess())
     private lazy var platform = ScreenCapturePlatform(permission: permission)
     private var commands: CaptureCommandLayer?
+    private var dragAdapter: FilePromiseDragAdapter?
     private var statusItem: NSStatusItem?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var arrivalOrder: [CaptureID] = []
@@ -30,10 +31,13 @@ import FrisketCore
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
+        let dragStaging = DragStagingLifetime(directory: identity.historyRoot.appendingPathComponent("staging/drag"))
+        let dragAdapter = FilePromiseDragAdapter(staging: dragStaging)
+        self.dragAdapter = dragAdapter
         commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
-            history: HistoryStore(root: identity.historyRoot))
+            history: HistoryStore(root: identity.historyRoot), drag: dragAdapter, dragStaging: dragStaging)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
@@ -97,7 +101,8 @@ import FrisketCore
                 let id = revision.captureID
                 let panel = ThumbnailPanel(revision: revision, preview: preview, screen: screen, offset: panels.count,
                     copy: { [weak self] in self?.copy(id) }, discard: { [weak self] in self?.discard(id) },
-                    dismiss: { [weak self] in self?.dismiss(id) })
+                    dismiss: { [weak self] in self?.dismiss(id) },
+                    startDrag: { [weak self] view, event in self?.startDrag(id, from: view, event: event) })
                 panels[id] = panel
                 arrivalOrder.append(id)
             case .captureFailed(.cancelled): break
@@ -131,6 +136,32 @@ import FrisketCore
             } else {
                 panel.model.copyFailed = true
                 panel.model.dismissFailed = !panel.model.historyCommitted
+            }
+        }
+    }
+
+    private func startDrag(_ id: CaptureID, from view: NSView, event: NSEvent) {
+        guard !terminating, let panel = panels[id], !panel.model.busy, let commands, let dragAdapter else { return }
+        let ghost = (view as? ThumbnailDragWellView)?.image
+        guard dragAdapter.beginSession(from: view, event: event, image: ghost) else { return }
+        panel.model.busy = true
+        Task {
+            let result = await commands.execute(.drag(panel.revision, .copy))
+            dragAdapter.endHandoff()
+            guard let panel = panels[id] else { return }
+            panel.model.busy = false
+            guard case .drag(let outcome) = result else {
+                panel.model.dragFailed = true
+                return
+            }
+            panel.model.historyCommitted = outcome.commit == .committed
+            if case .copied = outcome.delivery {
+                if case .notCommitted = outcome.commit {
+                    notice("Could not keep in History", "The capture was dragged out, but could not be kept in History.")
+                }
+                remove(id)
+            } else {
+                panel.model.dragFailed = true
             }
         }
     }

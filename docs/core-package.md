@@ -261,6 +261,16 @@ Xcode toolchain as the full `sh scripts/test-core.sh` run. Original ticket 06
 History-unavailable descriptions above remain applicable when no `CaptureHistory`
 is injected. The app now injects the lazy disk store.
 
+## Ticket 12 drag handoff
+
+`execute(.drag(revision, operation))` is another exit through the same finalization
+policy as Copy and Dismiss. Only `.copy` is accepted; `.move` and `.delete` are
+rejected and do not touch History. A copy drag finalizes once, stages the rendered
+PNG under `staging/drag/`, and reports commit and delivery separately. The staging
+file is deleted only after the promise write completion has returned and the drag
+session has ended. `dragStaged` and `dragPromiseWritten` extend `HistoryCommitPoint`.
+The app adapter is an `NSFilePromiseProvider` whose dragging mask is `.copy`.
+
 ## Ticket 23 permission gate
 
 The command initializer now requires a `CapturePermissionSource` in addition to
