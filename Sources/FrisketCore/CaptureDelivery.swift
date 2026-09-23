@@ -8,6 +8,7 @@ public struct CaptureImage: Sendable {
 
 public enum CaptureSourceFailure: Error, Equatable, Sendable {
     case unavailable, emptyImage, cancelled
+    case rejectedAlignment(ScrollingCaptureAlignment)
     case permissionRequired(CapturePermissionState)
 }
 

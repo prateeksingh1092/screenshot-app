@@ -18,6 +18,7 @@ public enum CaptureCommand: Sendable {
     case capture(CaptureID, maximumBytes: Int)
     case captureFullScreen(CaptureID, maximumBytes: Int)
     case captureWindow(CaptureID, maximumBytes: Int)
+    case captureScrolling(CaptureID, maximumBytes: Int)
     case copy(CaptureRevision)
     case retryCopy(CaptureRevision)
     case save(CaptureRevision)
@@ -82,6 +83,8 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case edited(CaptureRevision, CommitOutcome, clipboardFailure: ClipboardFailure? = nil)
     case captureFailed(CaptureSourceFailure)
     case permissionRequired(CapturePermissionState)
+    case scrollingLimited(CaptureRevision, ScrollingCaptureNotice)
+    case scrollingRefused(ScrollingCaptureNotice)
     case rejected(CommandRejection)
 }
 
@@ -97,11 +100,16 @@ public struct CaptureCommandLayer: Sendable {
                 drag: (any DragHandoff)? = nil, dragStaging: (any DragCopyStaging)? = nil,
                 thumbnailPolicy: ThumbnailStackPolicy = ThumbnailStackPolicy(),
                 clock: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
-                codec: (any BitmapCodec)? = nil) {
+                codec: (any BitmapCodec)? = nil,
+                scrollingFrames: (any ScrollingFrameFeed)? = nil,
+                scrollingPreview: (any ScrollingPreviewSurface)? = nil,
+                scrollingBudget: ScrollingCaptureBudget = .v1) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, windowSource: windowSource, clipboard: clipboard,
                                                   pendingByteLimit: pendingByteLimit, history: history, exporter: exporter, drag: drag, dragStaging: dragStaging,
-                                                  thumbnailPolicy: thumbnailPolicy, clock: clock, codec: codec)
+                                                  thumbnailPolicy: thumbnailPolicy, clock: clock, codec: codec,
+                                                  scrollingFrames: scrollingFrames, scrollingPreview: scrollingPreview,
+                                                  scrollingBudget: scrollingBudget)
     }
 
     /// The thumbnail stack, newest first, with any exit the policy requires now.

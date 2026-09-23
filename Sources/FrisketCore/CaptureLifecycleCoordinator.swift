@@ -13,6 +13,9 @@ actor CaptureLifecycleCoordinator {
     private let drag: (any DragHandoff)?
     private let dragStaging: (any DragCopyStaging)?
     private let codec: (any BitmapCodec)?
+    private let scrollingFrames: (any ScrollingFrameFeed)?
+    private let scrollingPreview: (any ScrollingPreviewSurface)?
+    private let scrollingBudget: ScrollingCaptureBudget
     private var finalized: Set<CaptureID> = []
     private var deliveryCommits: [CaptureID: CommitOutcome] = [:]
     private var inProgress: Set<CaptureID> = []
@@ -35,7 +38,9 @@ actor CaptureLifecycleCoordinator {
          clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?, exporter: (any CaptureExport)?,
          drag: (any DragHandoff)?, dragStaging: (any DragCopyStaging)?,
          thumbnailPolicy: ThumbnailStackPolicy, clock: @escaping @Sendable () -> ContinuousClock.Instant,
-         codec: (any BitmapCodec)?) {
+         codec: (any BitmapCodec)?,
+         scrollingFrames: (any ScrollingFrameFeed)?, scrollingPreview: (any ScrollingPreviewSurface)?,
+         scrollingBudget: ScrollingCaptureBudget) {
         stack = ThumbnailStack(policy: thumbnailPolicy)
         self.clock = clock
         self.pendingByteLimit = max(0, pendingByteLimit)
@@ -49,6 +54,9 @@ actor CaptureLifecycleCoordinator {
         self.drag = drag
         self.dragStaging = dragStaging
         self.codec = codec
+        self.scrollingFrames = scrollingFrames
+        self.scrollingPreview = scrollingPreview
+        self.scrollingBudget = scrollingBudget
     }
 
     func recoverHistory() async -> Result<HistoryRecoveryReport, HistoryFailure> {
@@ -187,6 +195,8 @@ actor CaptureLifecycleCoordinator {
             discarded.insert(id)
             unfinishedRedactions.remove(id)
             return .discarded(id)
+        case let .captureScrolling(id, maximumBytes):
+            return await runScrollingCapture(id: id, maximumBytes: maximumBytes)
         case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes), let .captureWindow(id, maximumBytes):
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
@@ -376,6 +386,93 @@ actor CaptureLifecycleCoordinator {
             automaticExitSuppressed.insert(id)
         }
         return outcome(commit, result)
+    }
+
+    private func runScrollingCapture(id: CaptureID, maximumBytes: Int) async -> CaptureCommandOutcome {
+        guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+        guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
+        guard images[id] == nil, !delivered.contains(id), !finalized.contains(id) else { return .rejected(.duplicateCapture) }
+        guard maximumBytes > 0 else { return .rejected(.invalidByteAllowance) }
+        guard let scrollingFrames else { return .captureFailed(.unavailable) }
+        guard maximumBytes <= pendingByteLimit - pendingBytes else { return .rejected(.pendingByteBudgetExceeded) }
+        // Reserve before the first suspension, just like area/full-screen capture.
+        pendingBytes += maximumBytes
+        inProgress.insert(id)
+        let access = await permission.capturePermission()
+        guard access == .granted else {
+            pendingBytes -= maximumBytes
+            inProgress.remove(id)
+            return .permissionRequired(access)
+        }
+        let sessionBudget = ScrollingCaptureBudget(pixelCap: scrollingBudget.pixelCap,
+                                                   memoryBudgetBytes: min(scrollingBudget.memoryBudgetBytes, maximumBytes))
+        let session = ScrollingCaptureSession(budget: sessionBudget)
+        while true {
+            switch await scrollingFrames.nextFrame() {
+            case .cancel:
+                session.cancel()
+                pendingBytes -= maximumBytes
+                inProgress.remove(id)
+                return .captureFailed(.cancelled)
+            case let .failed(failure):
+                session.cancel()
+                pendingBytes -= maximumBytes
+                inProgress.remove(id)
+                if case let .permissionRequired(state) = failure { return .permissionRequired(state) }
+                return .captureFailed(failure)
+            case .done:
+                return await acceptScrollingResult(id: id, maximumBytes: maximumBytes, session: session, limit: nil)
+            case let .viewport(viewport):
+                switch session.ingest(viewport) {
+                case let .preview(preview):
+                    await scrollingPreview?.update(preview)
+                case let .rejectedAlignment(evidence):
+                    session.cancel()
+                    pendingBytes -= maximumBytes
+                    inProgress.remove(id)
+                    return .captureFailed(.rejectedAlignment(evidence))
+                case .unchanged:
+                    break
+                case let .stopped(reason, preview):
+                    await scrollingPreview?.update(preview)
+                    return await acceptScrollingResult(id: id, maximumBytes: maximumBytes, session: session, limit: reason)
+                case let .refused(reason):
+                    session.cancel()
+                    pendingBytes -= maximumBytes
+                    inProgress.remove(id)
+                    return .scrollingRefused(reason)
+                case .failed:
+                    session.cancel()
+                    pendingBytes -= maximumBytes
+                    inProgress.remove(id)
+                    return .captureFailed(.unavailable)
+                }
+            }
+        }
+    }
+
+    private func acceptScrollingResult(id: CaptureID, maximumBytes: Int, session: ScrollingCaptureSession,
+                                       limit: ScrollingCaptureNotice?) async -> CaptureCommandOutcome {
+        guard let image = session.finish(), !image.pngData.isEmpty, image.pngData.count <= maximumBytes else {
+            session.cancel()
+            pendingBytes -= maximumBytes
+            inProgress.remove(id)
+            if let limit { return .scrollingRefused(limit) }
+            return imageCountFailure(sessionHadImage: false)
+        }
+        pendingBytes -= maximumBytes
+        pendingBytes += image.pngData.count
+        images[id] = image
+        revisions[id] = 1
+        let revision = CaptureRevision(captureID: id, number: 1)
+        stack.insert(revision, at: clock())
+        inProgress.remove(id)
+        if let limit { return .scrollingLimited(revision, limit) }
+        return .pending(revision)
+    }
+
+    private func imageCountFailure(sessionHadImage: Bool) -> CaptureCommandOutcome {
+        .captureFailed(sessionHadImage ? .unavailable : .emptyImage)
     }
 }
 

@@ -5,7 +5,7 @@ import QuartzCore
 import ImageIO
 import UniformTypeIdentifiers
 
-@MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
+@MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform, ScrollingRegionCapturing {
     private(set) var spaceGeneration: UInt64 = 0
     private var applicationGeneration: UInt64 = 0
     private lazy var overlay = SelectionOverlay()
@@ -135,7 +135,7 @@ import UniformTypeIdentifiers
         discardSelectionPreviews()
     }
 
-    func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
+    func captureRegion(_ request: AreaCaptureRequest) async throws -> CGImage {
         let state = permission.refresh()
         guard state == .granted else { throw CaptureSourceFailure.permissionRequired(state) }
         guard content != nil else { throw CapturePlatformError.unavailable }
@@ -154,6 +154,7 @@ import UniformTypeIdentifiers
         guard connectedDisplays().contains(where: { $0.id == request.displayID }) else {
             throw CapturePlatformError.unavailable
         }
+        // Scrolling capture samples this same region; it does not open another capture route.
         let image: CGImage
         do {
             image = try await available.captureImage(request, additionalExclusions: exclusions())
@@ -168,6 +169,11 @@ import UniformTypeIdentifiers
         // Discard in-flight pixels if the layout changed while ScreenCaptureKit awaited.
         areaLayout?.updateDisplays(connectedDisplays())
         guard areaLayout?.isCancelled != true else { throw CapturePlatformError.unavailable }
+        return image
+    }
+
+    func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
+        let image = try await captureRegion(request)
         let bytes = NSMutableData()
         guard let encoder = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil) else {
             throw CapturePlatformError.unavailable

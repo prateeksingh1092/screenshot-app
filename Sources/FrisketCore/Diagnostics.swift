@@ -13,7 +13,7 @@ public enum DiagnosticErrorCode: String, Codable, Sendable {
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired, insideHistory, unwritable
     case permissionRequired, thumbnailExitNotDue, dragOperationRefused, editingUnavailable
-    case captureExceedsHistoryLimit
+    case captureExceedsHistoryLimit, pixelCap, memoryBudget, rejectedAlignment
 }
 
 public struct DiagnosticError: Equatable, Codable, Sendable {
@@ -74,7 +74,7 @@ extension DiagnosticEvent {
     init(command: CaptureCommand, outcome: CaptureCommandOutcome) {
         let operation: DiagnosticOperation
         switch command {
-        case .capture, .captureFullScreen, .captureWindow: operation = .capture
+        case .capture, .captureFullScreen, .captureWindow, .captureScrolling: operation = .capture
         case .copy: operation = .copy
         case .retryCopy: operation = .retryCopy
         case .save: operation = .save
@@ -113,6 +113,12 @@ extension DiagnosticEvent {
         case .pending:
             name = .capturePending
             error = nil
+        case let .scrollingLimited(_, notice):
+            name = .capturePending
+            error = DiagnosticError(domain: .captureSource, code: notice == .pixelCap ? .pixelCap : .memoryBudget)
+        case let .scrollingRefused(notice):
+            name = .captureFailed
+            error = DiagnosticError(domain: .captureSource, code: notice == .pixelCap ? .pixelCap : .memoryBudget)
         case .discarded:
             name = .captureDiscarded
             error = nil
@@ -122,6 +128,7 @@ extension DiagnosticEvent {
         case let .captureFailed(failure):
             name = .captureFailed
             switch failure {
+            case .rejectedAlignment: error = DiagnosticError(domain: .captureSource, code: .rejectedAlignment)
             case .unavailable: error = DiagnosticError(domain: .captureSource, code: .unavailable)
             case .cancelled: error = DiagnosticError(domain: .captureSource, code: .cancelled)
             case .emptyImage: error = DiagnosticError(domain: .captureSource, code: .emptyImage)

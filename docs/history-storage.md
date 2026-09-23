@@ -94,6 +94,9 @@ byte count and decoded dimensions. It forces the pixel provider to decode as
 well: ImageIO can otherwise return a header-valid image with corrupt compressed
 pixels. Retries never overwrite an existing image.
 
+A scrolling capture's Done image is the same pending PNG. Copy and Dismiss
+finalize it through this protocol; Cancel writes nothing.
+
 A fault before the row reports not committed and retains pending bytes. A fault
 at or after `rowCommitted` reports committed even if the thumbnail is missing.
 Thumbnail failure cannot undo History. Both crash tiers cover every point and assert recovery twice, with public
