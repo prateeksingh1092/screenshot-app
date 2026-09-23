@@ -121,8 +121,18 @@ and Copy retry without losing the pending image.
 Ticket 09 adds Dismiss (including Escape while the thumbnail is focused),
 finalization on Copy, and finalization of unedited thumbnails on Quit. Dismiss
 shows and announces “Kept in History” only after commit. A failed dismissal stays
-pending. Timeout, swipe, overflow, and the richer thumbnail stack remain later
-work; no timer silently finalizes a pending capture in this slice.
+pending.
+
+Ticket 13 stacks the cards. Each has its own nonactivating panel on the capture
+display, newest nearest the bottom-right corner, overlapping when the display is
+short. The panels use `canJoinAllSpaces`, `fullScreenAuxiliary`, `stationary` and
+`ignoresCycle`. The card's single controls row holds Copy (C), Delete Capture (⌫,
+hidden after a committed Copy whose delivery failed) and Close (⌘W). Esc and a
+horizontal two-finger swipe are recognized inside the card's own window, with no
+global monitor. Every thumbnail exit, including timeout and overflow, goes
+through `exitThumbnail`; the app schedules timeouts from the core's `expiresAt`.
+See [the ticket 13 checklist](manual-checks/13-thumbnail-stack.md); the
+helper's new `--full-screen` mode hosts the synthetic pattern in a full-screen Space.
 
 See [first launch checks](manual-checks/08-first-launch.md). Those checks cover
 launch, Screen Recording, synthetic pixels, Copy, and two signed rebuilds.

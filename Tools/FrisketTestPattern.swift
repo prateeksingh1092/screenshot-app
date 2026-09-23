@@ -58,13 +58,13 @@ import ImageIO
             }
             return
         }
-        guard args.count == 2, ["--show", "--show-all", "--show-full-screen", "--show-window"].contains(args[1]) else {
-            fputs("Usage: FrisketTestPattern --show | --show-all | --show-full-screen | --show-window | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
+        guard args.count == 2, ["--show", "--show-all", "--show-full-screen", "--full-screen", "--show-window"].contains(args[1]) else {
+            fputs("Usage: FrisketTestPattern --show | --show-all | --show-full-screen | --full-screen | --show-window | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
             exit(2)
         }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        let fullScreen = args[1] == "--show-full-screen"
+        let fullScreen = ["--show-full-screen", "--full-screen"].contains(args[1])
         let screens = args[1] == "--show-all" ? NSScreen.screens : NSScreen.main.map { [$0] } ?? []
         guard !screens.isEmpty else { exit(1) }
         let windowed = args[1] == "--show-window"
@@ -96,7 +96,7 @@ import ImageIO
             return window
         }
         app.activate(ignoringOtherApps: true)
-        if fullScreen { windows.first?.toggleFullScreen(nil) }
+        if fullScreen { DispatchQueue.main.async { windows.first?.toggleFullScreen(nil) } }
         withExtendedLifetime(windows) { app.run() }
     }
 
