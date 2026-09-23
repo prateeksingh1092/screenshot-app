@@ -858,3 +858,43 @@ extension EditorRedactionCommandsTests {
         expectRedacted(try decodeSRGB(try #require(await drag.bytes().last)), fixture.source)
     }
 }
+
+private struct CanaryColorRecognizer: TextRecognizer {
+    let canaries: Set<RGBA>
+    func recognize(_ image: CaptureImage) async -> String {
+        guard let decoded = try? decodeSRGB(image.pngData) else { return "" }
+        return decoded.pixels.contains(where: canaries.contains) ? "CANARY" : ""
+    }
+}
+
+private actor RecordingTextClipboard: TextClipboard {
+    private(set) var texts: [String] = []
+    func writeText(_ text: String) async -> Result<ClipboardReceipt, ClipboardFailure> {
+        texts.append(text)
+        return .success(ClipboardReceipt(changeCount: texts.count))
+    }
+}
+
+extension EditorRedactionCommandsTests {
+    @Test(arguments: CanaryCase.all)
+    private func copyRecognizedTextStandInSeesCanaryUntilRedactionCoversIt(fixture: CanaryCase) async throws {
+        let clipboard = RecordingTextClipboard()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, codec: PNGBitmapCodec(),
+            textRecognizer: CanaryColorRecognizer(canaries: fixture.canaries), textClipboard: clipboard)
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let rendered = CaptureRevision(captureID: id, number: 2)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(.copyRecognizedText(original)) ==
+            .recognizedText(RecognizedTextOutcome(revision: original, characterCount: 6,
+                                                  delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+        #expect(await clipboard.texts == ["CANARY"])
+        #expect(await commands.execute(.done(original, try fixture.edits())) ==
+            .edited(rendered, .notCommitted(.historyUnavailable)))
+        #expect(await commands.execute(.copyRecognizedText(rendered)) ==
+            .recognizedText(RecognizedTextOutcome(revision: rendered, characterCount: 0,
+                                                  delivery: .copied(ClipboardReceipt(changeCount: 2)))))
+        #expect(await clipboard.texts == ["CANARY", ""])
+    }
+}

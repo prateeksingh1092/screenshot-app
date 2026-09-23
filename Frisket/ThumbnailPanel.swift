@@ -24,6 +24,7 @@ struct ThumbnailCardActions {
     let escape: () -> Void
     let swipe: () -> Void
     let edit: () -> Void
+    let copyText: () -> Void
 }
 
 private struct ThumbnailCard: View {
@@ -98,6 +99,9 @@ private struct ThumbnailCardControls: View {
                         .keyboardShortcut("e", modifiers: [])
                         .accessibilityLabel("Edit capture")
                 }
+                Button("Copy Text", action: actions.copyText)
+                    .keyboardShortcut("t", modifiers: [])
+                    .accessibilityLabel("Copy recognized text")
             }
             HStack {
                 if !model.historyCommitted {
@@ -214,6 +218,7 @@ private final class ThumbnailCardPanel: NSPanel {
             case .copy: actions.copy()
             case .save: actions.save()
             case .edit: actions.edit()
+            case .copyText: actions.copyText()
             case .deleteCapture: actions.delete()
             case .dismiss: actions.escape()
             case .newer: self?.moveFocus?(.newer)
@@ -224,6 +229,7 @@ private final class ThumbnailCardPanel: NSPanel {
             NSAccessibilityCustomAction(name: "Copy capture") { [weak self] in self?.onBecomeKey?(); actions.copy(); return true },
             NSAccessibilityCustomAction(name: "Save capture") { [weak self] in self?.onBecomeKey?(); actions.save(); return true },
             NSAccessibilityCustomAction(name: "Edit capture") { [weak self] in self?.onBecomeKey?(); actions.edit(); return true },
+            NSAccessibilityCustomAction(name: "Copy recognized text") { [weak self] in self?.onBecomeKey?(); actions.copyText(); return true },
             NSAccessibilityCustomAction(name: "Delete pending capture") { [weak self] in self?.onBecomeKey?(); actions.delete(); return true },
             NSAccessibilityCustomAction(name: "Close thumbnail and keep capture in History") { [weak self] in
                 self?.onBecomeKey?()
@@ -253,7 +259,7 @@ private final class ThumbnailCardPanel: NSPanel {
             panel.setFrameOrigin(origin)
             panel.orderFrontRegardless()
             NSAccessibility.post(element: panel, notification: .announcementRequested,
-                                 userInfo: [.announcement: "Capture ready. Focus Latest Thumbnail, then arrows move, C copies, S saves, E edits, Delete deletes, Escape dismisses.",
+                                 userInfo: [.announcement: "Capture ready. Focus Latest Thumbnail, then arrows move, C copies, S saves, E edits, T copies text, Delete deletes, Escape dismisses.",
                                             .priority: NSAccessibilityPriorityLevel.medium.rawValue])
             return
         }

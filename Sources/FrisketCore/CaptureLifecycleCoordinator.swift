@@ -16,6 +16,8 @@ actor CaptureLifecycleCoordinator {
     private let scrollingFrames: (any ScrollingFrameFeed)?
     private let scrollingPreview: (any ScrollingPreviewSurface)?
     private let scrollingBudget: ScrollingCaptureBudget
+    private let textRecognizer: (any TextRecognizer)?
+    private let textClipboard: (any TextClipboard)?
     private var finalized: Set<CaptureID> = []
     private var deliveryCommits: [CaptureID: CommitOutcome] = [:]
     private var inProgress: Set<CaptureID> = []
@@ -43,7 +45,8 @@ actor CaptureLifecycleCoordinator {
          thumbnailPolicy: ThumbnailStackPolicy, clock: @escaping @Sendable () -> ContinuousClock.Instant,
          codec: (any BitmapCodec)?,
          scrollingFrames: (any ScrollingFrameFeed)?, scrollingPreview: (any ScrollingPreviewSurface)?,
-         scrollingBudget: ScrollingCaptureBudget) {
+         scrollingBudget: ScrollingCaptureBudget,
+         textRecognizer: (any TextRecognizer)?, textClipboard: (any TextClipboard)?) {
         stack = ThumbnailStack(policy: thumbnailPolicy)
         self.clock = clock
         self.pendingByteLimit = max(0, pendingByteLimit)
@@ -60,6 +63,8 @@ actor CaptureLifecycleCoordinator {
         self.scrollingFrames = scrollingFrames
         self.scrollingPreview = scrollingPreview
         self.scrollingBudget = scrollingBudget
+        self.textRecognizer = textRecognizer
+        self.textClipboard = textClipboard
     }
 
     func recoverHistory() async -> Result<HistoryRecoveryReport, HistoryFailure> {
@@ -335,6 +340,8 @@ actor CaptureLifecycleCoordinator {
             case let .failure(error):
                 return .captureFailed(error)
             }
+        case let .copyRecognizedText(revision):
+            return await copyRecognizedText(revision)
         case let .copy(revision), let .retryCopy(revision):
             let retrying: Bool = if case .retryCopy = command { true } else { false }
             return await deliver(revision, kind: .copy, retrying: retrying,
@@ -607,6 +614,33 @@ actor CaptureLifecycleCoordinator {
         inProgress.remove(id)
         if let limit { return .scrollingLimited(revision, limit) }
         return .pending(revision)
+    }
+
+    private func copyRecognizedText(_ revision: CaptureRevision) async -> CaptureCommandOutcome {
+        let id = revision.captureID
+        guard let textRecognizer, let textClipboard else { return .rejected(.recognitionUnavailable) }
+        guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
+        guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
+        let image: CaptureImage
+        if let pending = images[id] {
+            image = pending
+        } else if finalized.contains(id), let stored = await historyImage(id) {
+            image = stored
+        } else {
+            return .rejected(delivered.contains(id) ? .alreadyDelivered : .unknownCapture)
+        }
+        let text = await textRecognizer.recognize(image)
+        guard revision.number == currentRevision(id), images[id] != nil || finalized.contains(id) else {
+            return .rejected(.staleRevision)
+        }
+        switch await textClipboard.writeText(text) {
+        case let .success(receipt):
+            return .recognizedText(RecognizedTextOutcome(revision: revision, characterCount: text.count,
+                                                         delivery: .copied(receipt)))
+        case let .failure(error):
+            return .recognizedText(RecognizedTextOutcome(revision: revision, characterCount: text.count,
+                                                         delivery: .failed(error)))
+        }
     }
 
     private func imageCountFailure(sessionHadImage: Bool) -> CaptureCommandOutcome {

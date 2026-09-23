@@ -266,6 +266,7 @@ extension ThumbnailStackCommandsTests {
         #expect(ThumbnailKeys.command(characters: "c", keyCode: 8) == .copy)
         #expect(ThumbnailKeys.command(characters: "s", keyCode: 1) == .save)
         #expect(ThumbnailKeys.command(characters: "e", keyCode: 14) == .edit)
+        #expect(ThumbnailKeys.command(characters: "t", keyCode: 17) == .copyText)
         #expect(ThumbnailKeys.command(characters: "\u{7f}", keyCode: 51) == .deleteCapture)
         #expect(ThumbnailKeys.command(characters: "\u{1b}", keyCode: 53) == .dismiss)
         #expect(ThumbnailKeys.command(characters: "", keyCode: 126) == .older)

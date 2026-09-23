@@ -620,3 +620,24 @@ against an independently cropped base. Seam 1 canaries run Done+crop at 1× and
 The editor Crop tool (`C`) composes onto an existing crop; the canvas drops the
 pre-crop `NSImage` before drawing the new size. See
 [manual checks](manual-checks/27-crop.md).
+
+## Ticket 33 copy recognized text
+
+`execute(.copyRecognizedText(revision))` runs `TextRecognizer` on the current
+revision's image (pending bytes, or History after finalize). The recognizer
+await does not hold `inProgress`, so Done can replace the revision while OCR
+is in flight; a stale result is dropped and the clipboard is not written.
+The command outcome carries only `characterCount` and delivery. Diagnostics
+record success or failure for `.copyRecognizedText` and never the string.
+
+The app injects `VisionTextRecognizer` (`VNRecognizeTextRequest`, accurate,
+no language correction) and `PasteboardAdapter.writeText` (string + concealed
++ current-host-only). The thumbnail **Copy Text** control, `t`, and the
+VoiceOver action call the same command. The notice title is only
+`Copied N characters`.
+
+Seam 1 stand-ins recognize a canary while it is visible and return empty
+after Solid redaction. The tagged local Vision pair is
+`FRISKET_VISION_OCR=1` (`RecognizedTextVisionTests`); it records the OS
+build and requires CANARY before redaction and its absence after. See
+[manual checks](manual-checks/33-copy-recognized-text.md).
