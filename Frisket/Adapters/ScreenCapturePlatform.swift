@@ -7,25 +7,40 @@ import UniformTypeIdentifiers
 
 @MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
     private(set) var spaceGeneration: UInt64 = 0
+    private var applicationGeneration: UInt64 = 0
     private lazy var overlay = SelectionOverlay()
     private let permission: ScreenCapturePermissionAdapter
-    private var content: SCShareableContent?
+    private var content: (any ScreenCaptureContent)?
     private var areaLayout: DisplaySelectionSession?
     private var selectionPointer: CGPoint = .zero
     private var selectionDisplays: [SelectionDisplay] = []
     private var magnifiers: [UInt32: SelectionMagnifier] = [:]
     private(set) var captureDisplayID: UInt32?
 
+    private let loadContent: @MainActor () async throws -> any ScreenCaptureContent
+    private let connectedDisplays: @MainActor () -> [SelectionDisplay]
+    private let applicationNotifications: NotificationCenter
     private let exclusions: @MainActor () -> Set<String>
     init(permission: ScreenCapturePermissionAdapter,
-         exclusions: @escaping @MainActor () -> Set<String> = { [] }) {
+         exclusions: @escaping @MainActor () -> Set<String> = { [] },
+         loadContent: @escaping @MainActor () async throws -> any ScreenCaptureContent = {
+             ShareableScreenCaptureContent(content: try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true))
+         },
+         connectedDisplays: @escaping @MainActor () -> [SelectionDisplay] = { NSScreen.screens.compactMap(\.selectionDisplay) },
+         applicationNotifications: NotificationCenter = NSWorkspace.shared.notificationCenter) {
         self.permission = permission
         self.exclusions = exclusions
+        self.loadContent = loadContent
+        self.connectedDisplays = connectedDisplays
+        self.applicationNotifications = applicationNotifications
     }
 
     func prefetchShareableContent() async throws {
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(spaceChanged),
             name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            applicationNotifications.addObserver(self, selector: #selector(applicationsChanged), name: name, object: nil)
+        }
         areaLayout = nil
         captureDisplayID = nil
         content = nil
@@ -33,7 +48,7 @@ import UniformTypeIdentifiers
         guard state == .granted else { throw CaptureSourceFailure.permissionRequired(state) }
         do {
             // This may present an OS alert. Await it with no overlay created.
-            content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            content = try await loadContent()
         } catch {
             throw permission.failure(for: error)
         }
@@ -54,11 +69,16 @@ import UniformTypeIdentifiers
         // are sampled on hover, on a Space switch, or while selection is active.
         hideSelection()
         discardSelectionPreviews()
-        if let available = content, let identifier = Bundle.main.bundleIdentifier {
+        if content != nil, let identifier = Bundle.main.bundleIdentifier {
             for screen in screens {
                 guard let display = screen.selectionDisplay else { continue }
-                magnifiers[display.id] = try? await SelectionMagnifier.prepare(on: screen, content: available,
+                let generation = applicationGeneration
+                // Each frozen preview is also a capture; refresh after earlier
+                // asynchronous previews rather than reusing prefetch identities.
+                guard let available = try? await loadContent(), generation == applicationGeneration else { continue }
+                magnifiers[display.id] = try? await available.prepareMagnifier(on: screen,
                                                                             excluding: identifier, additionalExclusions: exclusions())
+                if generation != applicationGeneration { discardSelectionPreviews() }
             }
         }
     }
@@ -67,7 +87,7 @@ import UniformTypeIdentifiers
 
     func selectArea() async -> AreaSelection? {
         // A change on ANY display during preparation invalidates the whole layout.
-        areaLayout?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
+        areaLayout?.updateDisplays(connectedDisplays())
         guard areaLayout?.isCancelled == false else { return nil }
         let selection = await overlay.select(displays: selectionDisplays, pointer: selectionPointer,
                                              magnifiers: magnifiers, spaceGeneration: { self.spaceGeneration })
@@ -98,9 +118,17 @@ import UniformTypeIdentifiers
         overlay.spaceChanged()
     }
 
+    @objc private func applicationsChanged() {
+        applicationGeneration &+= 1
+        discardSelectionPreviews()
+    }
+
     func finishCapture() {
         NSWorkspace.shared.notificationCenter.removeObserver(self,
             name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            applicationNotifications.removeObserver(self, name: name, object: nil)
+        }
         content = nil
         areaLayout = nil
         selectionDisplays = []
@@ -110,29 +138,35 @@ import UniformTypeIdentifiers
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
         let state = permission.refresh()
         guard state == .granted else { throw CaptureSourceFailure.permissionRequired(state) }
-        guard let available = content else { throw CapturePlatformError.unavailable }
-        areaLayout?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
+        guard content != nil else { throw CapturePlatformError.unavailable }
+        let generation = applicationGeneration
+        // Selection can last arbitrarily long. Resolve process identities again
+        // immediately before filtering; a prefetched application list is stale.
+        let available: any ScreenCaptureContent
+        do {
+            available = try await loadContent()
+        } catch {
+            throw permission.failure(for: error)
+        }
+        guard generation == applicationGeneration else { throw CapturePlatformError.unavailable }
+        areaLayout?.updateDisplays(connectedDisplays())
         guard areaLayout?.isCancelled != true else { throw CapturePlatformError.unavailable }
-        guard let display = available.displays.first(where: { $0.displayID == request.displayID }),
-              NSScreen.screens.contains(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == request.displayID }) else {
+        guard connectedDisplays().contains(where: { $0.id == request.displayID }) else {
             throw CapturePlatformError.unavailable
         }
-        let filter = try ScreenCapturePolicy.filter(display: display, content: available,
-                                                   excluding: request.excludingBundleIdentifier,
-                                                   additionalExclusions: request.excludedBundleIdentifiers.union(exclusions()))
-        let config = ScreenCapturePolicy.configuration(sourceRect: request.sourceRect,
-                                                       pixelWidth: request.pixelWidth, pixelHeight: request.pixelHeight)
-        // Own-app filtering remains the safety mechanism even if a window-server update lags.
         let image: CGImage
         do {
-            image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            image = try await available.captureImage(request, additionalExclusions: exclusions())
         } catch {
             throw permission.failure(for: error)
         }
         let refreshed = permission.refresh()
         guard refreshed == .granted else { throw CaptureSourceFailure.permissionRequired(refreshed) }
+        // SCScreenshotManager cannot update an in-flight filter. Never deliver
+        // pixels if a process may have appeared/relaunched after the snapshot.
+        guard generation == applicationGeneration else { throw CapturePlatformError.unavailable }
         // Discard in-flight pixels if the layout changed while ScreenCaptureKit awaited.
-        areaLayout?.updateDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
+        areaLayout?.updateDisplays(connectedDisplays())
         guard areaLayout?.isCancelled != true else { throw CapturePlatformError.unavailable }
         let bytes = NSMutableData()
         guard let encoder = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil) else {
