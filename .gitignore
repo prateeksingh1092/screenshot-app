@@ -76,3 +76,6 @@ Codex.local.md
 /.scratch/evaluation/
 /.scratch/**/prompts/
 *.jsonl
+
+# Per-ticket git worktrees (see docs/agents/implementation-workflow.md).
+/.worktrees/
