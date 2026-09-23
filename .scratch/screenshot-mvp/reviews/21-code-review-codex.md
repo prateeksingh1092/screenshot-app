@@ -1,0 +1,7 @@
+**Standards — 1 finding, Low (optional):** [WindowScreenCapturePlatform.swift:118](/Users/16intelmac/Documents/Claude/Projects/screenshot-app/.worktrees/ticket-21/Frisket/Adapters/WindowScreenCapturePlatform.swift:118) duplicates bounded PNG encoding from `ScreenCapturePlatform`; a shared helper would reduce maintenance drift. Judgement call, not a documented-standard breach.
+
+**Spec — 1 finding, P2:** [WindowSelection.swift:32](/Users/16intelmac/Documents/Claude/Projects/screenshot-app/.worktrees/ticket-21/Sources/FrisketCore/WindowSelection.swift:32) requires `window.layer == 0`, excluding visible foreign floating windows and potentially selecting a window behind them. The spec requires “window capture to cover the windows visible on my current Space”; floating windows are legitimate windows above the normal level. [Apple documentation](https://developer.apple.com/documentation/appkit/nswindow/level-swift.property). Replace the blanket restriction with targeted exclusions and add a fixture covering a foreign floating window.
+
+Verification: all 11 window-capture tests passed on x86_64 macOS 26.7 (25G229); `git diff --check` passed. Arm64 was not executed. Focus, Spaces, actual capture output, and unsigned Xcode build verification remain pending. No source edits, staging, or commits.
+
+Verdict: fix-then-merge
