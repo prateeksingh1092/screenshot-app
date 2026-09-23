@@ -7,8 +7,14 @@ Implemented by Codex; stopped before review.
 - Reused ticket 37 tooling already present. Parsing now requires 20 newline-committed rows; reports distinguish submission from physical visibility. Added a narrowly scoped stdout exception to the storage guard and acceptance/rejection fixtures.
 - Added `docs/manual-checks/38-frisket-performance.md`: exact operator commands, endpoint/overhead limits, baseline blockers and a pending comparison table for ticket 40/Prateek. Linked it from `docs/core-package.md`.
 
-Verification: individual red→green cycles covered recorder lifecycle, opt-in logging, capture-source integration, parsing/reporting and storage-guard fixtures. Offline full Swift suite passed: 104 tests in 16 suites; three opt-in probes skipped. All 15 Python tests passed. After registering new fixtures, all 32 fixture cases passed. App-source x86_64 typecheck passed. Logs: `.build/ticket-38-tests.log`, `.build/ticket-38-fixtures.log`.
+Verification: individual red→green cycles covered recorder lifecycle, opt-in logging, capture-source integration, parsing/reporting and storage-guard fixtures. Offline full Swift suite passed: 104 tests in 16 suites; three opt-in probes skipped. All 15 Python tests passed. After registering new fixtures, all 32 fixture cases passed. App-source x86_64 typecheck passed. **x86_64 macOS 26.7 (25G229); arm64 not executed.** Logs: `.build/ticket-38-tests.log`, `.build/ticket-38-fixtures.log`.
 
 Unsigned Xcode build was attempted with automatic resolution/updates disabled; it stopped at a sandbox-denied manifest diagnostic write under `~/Library/Caches/org.swift.swiftpm/manifests`. Linking/packaging remains unverified here. arm64 not executed.
 
 No git, review, status/checkbox edits, network fetch, install, signing, launch, real capture or clipboard use. Live latency/idle baselines, GPU confirmation, calibration and target ratification remain pending. The 500 ms placeholder is unchanged. Decision 53 was absent from this checkout.
+
+## Fix pass (coordinator, 2026-09-23)
+
+Codex review verdict: fix-then-merge. Applied both findings:
+- Recorded OS/arch on the verification line (spec line 167).
+- Manual comparison table: Snapzy column removed; v1 is macOS-only (decision 54).

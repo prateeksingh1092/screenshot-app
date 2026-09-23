@@ -103,16 +103,18 @@ Every numeric cell should contain median / nearest-rank p95 and an evidence link
 for exactly 20 valid runs. Pending is not zero. Separate capture modes, builds and
 architectures; record nonresident macOS idle as not measurable when appropriate.
 
-| Metric / endpoint | macOS baseline | Snapzy baseline | Frisket | Proposed target + rationale | Prateek ratification / date |
-| --- | --- | --- | --- | --- | --- |
-| External mouse-release → window proxy (ms) | Pending | Blocked by storage policy | Not the app-clock endpoint | Pending calibration | Pending |
-| App selection-accepted → submission (ms) | Unavailable | Unavailable | Pending | 500 ms visibility placeholder retained; endpoint mapping pending | Pending |
-| Idle CPU (% of one core) | Pending / nonresident | Pending | Pending | Pending; existing <1% placeholder retained | Pending |
-| Package idle wakeups / second | Pending | Pending | Pending | Pending | Pending |
-| Interrupt wakeups / second | Pending | Pending | Pending | Pending | Pending |
-| Footprint end / sampled peak (bytes; separate summaries) | Pending | Pending | Pending | Pending | Pending |
-| Active low-power GPU evidence | Pending | Pending | Pending | Confirmation required | Pending |
-| Clock resolution / overhead / display calibration | Pending | Pending | Pending | No numeric error claim yet | Pending |
+v1 comparator is **macOS Screenshot only** (decision 54). Snapzy Release does not build on this toolchain and is omitted, not pending.
+
+| Metric / endpoint | macOS baseline | Frisket | Proposed target + rationale | Ratification / date |
+| --- | --- | --- | --- | --- |
+| External mouse-release → window proxy (ms) | Pending | Not the app-clock endpoint | Pending calibration | Pending |
+| App selection-accepted → submission (ms) | Unavailable | Pending | 500 ms visibility placeholder retained; endpoint mapping pending | Pending |
+| Idle CPU (% of one core) | Pending / nonresident | Pending | Pending; existing <1% placeholder retained | Pending |
+| Package idle wakeups / second | Pending | Pending | Pending | Pending |
+| Interrupt wakeups / second | Pending | Pending | Pending | Pending |
+| Footprint end / sampled peak (bytes; separate summaries) | Pending | Pending | Pending | Pending |
+| Active low-power GPU evidence | Pending | Pending | Confirmation required | Pending |
+| Clock resolution / overhead / display calibration | Pending | Pending | No numeric error claim yet | Pending |
 
 Scrolling peak memory is outside this capture-to-thumbnail measurement; its
 existing <2 GB placeholder is unchanged. Ticket 40 and Prateek must fill the
