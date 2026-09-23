@@ -1,3 +1,5 @@
+> Historical ticket 04/05 evidence. Decision 48 accepted the port. Ticket 34 removed the trial package; current commands and interface are in [stitcher.md](stitcher.md). The coordinator's successful outside-sandbox Vision result is in [the ticket 05 report](../.scratch/screenshot-mvp/reports/05-port-or-fresh.md). Statements of pending adoption/Vision below describe the earlier trial.
+
 # Stitcher trial (tickets 04 and 05)
 
 An isolated evaluation package; Frisket's root package does not depend on it.
@@ -121,9 +123,9 @@ refactor or review step:
    Existing behavior checks that already passed needed no production changes.
 
 The final suite counts and review handoff are in
-[05-implementer.md](../../.scratch/screenshot-mvp/reports/05-implementer.md).
+[05-implementer.md](../.scratch/screenshot-mvp/reports/05-implementer.md).
 The alternative cost comparison is a
-[recommendation](../../.scratch/screenshot-mvp/reports/05-port-or-fresh.md).
+[recommendation](../.scratch/screenshot-mvp/reports/05-port-or-fresh.md).
 Local raw red/green/probe logs are in `.build/evidence/05-*.log` (ignored).
 
 ## Ticket 04 baseline (historical)
@@ -138,7 +140,7 @@ Upstream: https://github.com/duongductrong/Snapzy
 Commit: `837fc73d9b55dfde203e9d14aeb8c8fae4f0add7`.
 
 The source, factory, and 22 existing tests come from the paths recorded in
-[`docs/ported-files.json`](../../docs/ported-files.json). The original files
+[`docs/ported-files.json`](ported-files.json). The original files
 have descriptive banners rather than per-file BSD text. Those banners remain
 verbatim, preceded by the full upstream BSD-3-Clause licence. `LICENSE` is a
 byte-for-byte copy of upstream's licence; the ledger also records original
@@ -225,7 +227,7 @@ copied, rather than speculative new tests written in bulk.
 
 Local raw logs are in `.build/evidence/` (ignored generated output). The final
 run counts and timings are recorded in the
-[implementer draft](../../.scratch/screenshot-mvp/reports/04-implementer.md).
+[implementer draft](../.scratch/screenshot-mvp/reports/04-implementer.md).
 Implementation and verification: Codex (GPT-6 Astra, high); no complementary
 agent, review, or commit performed.
 

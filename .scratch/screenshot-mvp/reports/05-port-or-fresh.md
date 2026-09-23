@@ -85,7 +85,7 @@ properties and Apple-silicon execution when authorized/available.
 
 ## Licence obligations
 
-The locally supplied [BSD-3-Clause licence](../../../Trials/StitcherTrial/LICENSE)
+The locally supplied [BSD-3-Clause licence](../../../docs/licenses/Snapzy-LICENSE)
 permits modification and redistribution. Keep the copyright notice,
 conditions and disclaimer in source redistributions; reproduce them in binary
 redistribution materials; do not imply endorsement by the holder/contributors.

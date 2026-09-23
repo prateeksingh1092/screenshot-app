@@ -72,19 +72,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Snapzy stitcher trial — BSD-3-Clause
+## Snapzy stitcher — BSD-3-Clause (product component)
 
 Copyright (c) 2026, Trong Duong Duc.
 Upstream: https://github.com/duongductrong/Snapzy
 Source revision: `837fc73d9b55dfde203e9d14aeb8c8fae4f0add7`.
 
-Ticket 04 copies the stitcher, image factory, and converted tests into the isolated
-`Trials/StitcherTrial/` evaluation package. Frisket does not depend on it; this is
-not a decision to adopt the stitcher. File provenance is in
-[docs/ported-files.json](docs/ported-files.json). The original file banners are
-retained. Upstream has no BSD text in these individual files, so the complete
-upstream licence is prepended to each copy and retained verbatim in the trial's
-[LICENSE](Trials/StitcherTrial/LICENSE).
+Decision 48 adopts the adapted stitcher in `Sources/FrisketCore/Stitcher/`.
+Ticket 34 includes it in the FrisketCore product and moves the ported image
+factory and regression tests into `Tests/FrisketCoreTests/Stitcher/`. The
+isolated trial package has been retired. File provenance, original and adapted
+SHA-256 hashes, and local changes are in
+[docs/ported-files.json](docs/ported-files.json). The complete upstream licence
+is also retained at [docs/licenses/Snapzy-LICENSE](docs/licenses/Snapzy-LICENSE).
 
 ```text
 BSD 3-Clause License

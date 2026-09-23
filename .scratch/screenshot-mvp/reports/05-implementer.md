@@ -107,7 +107,7 @@ Raw local logs: `Trials/StitcherTrial/.build/evidence/05-01-{red,green}.log`,
 `05-04-focused.log`, `05-04-green.log`, `05-final-trial.log`,
 `05-vision-probe.log`; root `.build/evidence/05-final-core.log`.
 These generated logs are ignored; durable results are recorded here and in
-[the trial README](../../../Trials/StitcherTrial/README.md).
+[the trial README](../../../docs/stitcher-trial-history.md).
 
 ## Physical-footprint run
 

@@ -498,7 +498,7 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
       leadingStaticWidth: inferredLeadingStaticWidth,
       trailingStaticWidth: inferredTrailingStaticWidth
     )
-    // Vision can fail to allocate its pixel buffer on this Intel trial host.
+    // Vision can fail to allocate its pixel buffer on this Intel host.
     // Only a unique, byte-exact overlap may replace that missing evidence.
     let exactPartialDelta = allowsSettledPartialStep && visionAlignmentEstimate == nil
       ? exactSettledPartialDelta(previous: lastRaster, current: raster,
@@ -889,14 +889,14 @@ nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
 
   /// Delivers top-to-bottom lossless strips; only the final strip may be short.
   /// Callers can encode/render incrementally without materializing a full bitmap.
-  func forEachStrip(_ body: (CGImage) throws -> Void) rethrows {
+  func forEachStrip(_ body: (CGImage) throws -> Void) throws {
     for strip in contentSlices {
       try autoreleasepool {
         // Compression is produced in memory by this instance; no external payloads.
         guard let rows = strip.decoded(),
           let image = RasterImage.makeCGImage(width: imageWidth, height: strip.rowCount,
             bytesPerRow: imageWidth * 4, pixels: Array(rows)) else {
-          preconditionFailure("In-memory strip could not be decoded")
+          throw StitchingFailure.imageUnavailable
         }
         try body(image)
       }

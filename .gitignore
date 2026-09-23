@@ -82,3 +82,8 @@ Codex.local.md
 
 # Xcode's sandbox fallback plug-in/specification cache (not project source).
 /com.apple.DeveloperTools/
+# Ticket 34: individually reviewed, generated nonpersonal scroll fixture only.
+!Tests/Fixtures/ScrollingCapture/synthetic-sticky/frame-0.png
+!Tests/Fixtures/ScrollingCapture/synthetic-sticky/frame-1.png
+!Tests/Fixtures/ScrollingCapture/synthetic-sticky/frame-2.png
+!Tests/Fixtures/ScrollingCapture/synthetic-sticky/reference.png

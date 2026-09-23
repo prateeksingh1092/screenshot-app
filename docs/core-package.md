@@ -47,12 +47,14 @@ Ticket 06 also executes these Swift Testing tests with Xcode 26.5 (17F42),
 Swift 6.3.2, on the same x86_64 macOS build. There is no XCTest substitution.
 **arm64 not executed.**
 
-## Isolated stitcher trial
+## Scrolling capture stitcher
 
-`Trials/StitcherTrial/` is a separate scratch package. The root manifest and
-Frisket's dependency graph do not reference it. Its reproduction commands,
-source revision, dependencies, changes, limitations, and ticket 05 cost notes
-are in its [README](../Trials/StitcherTrial/README.md).
+Decision 48 adopted the adapted stitcher in `Sources/FrisketCore/Stitcher/`.
+Ticket 34 retired `Trials/StitcherTrial/` and moved all regression tests and
+opt-in probes to the core test target. See [stitcher.md](stitcher.md) for the
+pure sequence interface, ownership, current commands, limitations and attribution;
+[the fixture guide](../Tests/Fixtures/ScrollingCapture/README.md) defines the
+recording format. Real-sequence acceptance remains pending authorized recordings.
 
 ## Static-check interface
 
@@ -99,25 +101,21 @@ done
   duplicate, or stale entries fail. Entirely unmarked copied code cannot be
   identified mechanically; the port review must register it before acceptance.
 
-The inventory explicitly includes `Trials/StitcherTrial/Package.swift`,
-`LICENSE`, `Sources/`, `Tests/`, and `Resources/`. Trial source imports obey the
-same AppKit/SwiftUI restrictions; trial tests receive provenance checks and,
-like root tests, are not app identity. The same leading-licence exception
-applies to trial sources; no trial-wide identity or provenance exclusion exists.
-Trial README material and nested `.build/` output are not build inputs. Three
-on-disk fixtures first failed before this inventory was added (identity,
-imports, and unregistered source/test provenance); unlike scanner-only fixtures,
-they exercise file discovery. The generated-cache fixture also verifies that
-build output is not attributed as source.
+The inventory includes root `Package.swift`, `Sources/`, `Frisket/`,
+`Resources/` and `Tests/`. The retired trial has no special inventory or
+exceptions. On-disk stitcher fixtures verify source identity/import discovery
+and source/test provenance discovery. The generated-cache fixture verifies that
+root `.build/` output is not attributed as source.
 
 Manifest evaluation uses `xcrun swift`, honoring the caller's `DEVELOPER_DIR`
-(and defaulting to pinned Xcode), instead of silently forcing CLT inside tests.
-The dependency check remains scoped to the root Frisket manifest; the isolated
-trial manifest has no external dependencies and is documented separately.
+(and defaulting to pinned Xcode). Only the root Frisket manifest remains.
 
-`docs/ported-files.json` contains three trial-only ports; no Frisket application
-code is ported.
-When an approved trial ports a file, retain its original header verbatim and
+`docs/ported-files.json` contains the core stitcher and two ported test files.
+Their `originalSHA256` values retain upstream evidence; `adaptedSHA256` records
+current bytes and is checked for registered entries that declare it. Change
+notes describe both the trial adaptations and product adoption. A tampered-hash
+fixture fails even when the licence header is unchanged.
+When an approved ticket ports a file, retain its original header verbatim and
 record the retained licence preamble as `licenseHeader`, alongside `path`, `upstreamURL`, `revision`, and
 `originalPath`. Retain a full copyright/licence comment (including an SPDX
 identifier or licence grant). Add any necessary complete third-party notice
@@ -128,7 +126,7 @@ diagnostics in JSON. Each of the original four checks was first exercised with a
 fixture before its implementation. The Swift Testing target runs both the
 repository checks and these fixtures with the Xcode toolchain.
 
-For this trial the upstream files had descriptive banners, not per-file licence
+For the stitcher the upstream files had descriptive banners, not per-file licence
 text. The complete upstream BSD licence is prepended, each original banner is
 preserved, and `licenseHeader` records both. `originalSHA256` records each
 unmodified upstream source as additional evidence.
@@ -194,7 +192,8 @@ Two additional lexical checks run with the existing checks and fixtures:
   core, all diagnostics use the closed event interface; no assertion message or
   system-log string route is used.
 - `capture-memory` forbids platform imports and known filesystem capabilities
-  in the memory-only core, and checks the image-only, write-only clipboard
+  in the memory-only core, allowing CoreGraphics/Vision only under `Stitcher/`,
+  and checks the image-only, write-only clipboard
   declaration. A future `StorageAdapter/` is the sole disk-capable exception;
   direct references from the lifecycle remain forbidden. Capture and Copy have
   no app-owned root, file store, or filesystem capability in this ticket.
