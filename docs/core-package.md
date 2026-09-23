@@ -2,9 +2,11 @@
 
 `Frisket` is a Swift 6.3 package with one static library, `FrisketCore`, and
 the core test target `FrisketCoreTests`, plus a test-only `FrisketAdapters`
-module and `FrisketAdapterTests` compiling the app adapter sources. It targets macOS 26. There are no external
-dependencies or executable targets. The core implements the fixture capture-to-Copy
-command flow; the app now supplies platform capture and pasteboard adapters, while History remains unavailable. SwiftPM's default
+module and `FrisketAdapterTests` compiling the app adapter sources. It targets macOS 26.
+GRDB 7.11.1 is its only external dependency, pinned to the official HTTPS source
+and linked statically; there are no executable targets. The core implements
+capture, Copy, and dismiss-to-History, with app capture and pasteboard adapters.
+See the [History contract](history-storage.md) for ticket 09 storage and recovery seams. SwiftPM's default
 build uses the host architecture; no cross-compilation flags are set.
 
 ## Build and test commands
@@ -12,7 +14,8 @@ build uses the host architecture; no cross-compilation flags are set.
 Run from the repository root. Decision 46 and the ticket implementation request
 authorize these builds. Use the pinned Xcode 26.5 toolchain for Swift Testing
 (decision 47); the library also builds with the CLT. No signing, keychain
-access, network, app launch, real screen capture, or real clipboard is involved.
+access, app launch, real screen capture, or real clipboard is involved. The first
+resolution fetches only the approved GRDB dependency.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -79,7 +82,7 @@ done
   `groue/GRDB.swift` source is allowed, with or without `.git`. Local, registry,
   lookalike, binary, system, plugin, and macro dependency routes are rejected.
   If `Package.resolved` exists, every pin must also be the approved source;
-  unsupported lockfile formats fail. GRDB is not added by this ticket.
+  unsupported lockfile formats fail. Ticket 09 pins GRDB 7.11.1 exactly.
 - **App sources:** parse `Frisket.xcodeproj/project.pbxproj` with macOS `plutil`
   and reject explicit Swift file references under `Frisket/`, resolving nested
   project groups and source-root paths. This guards the synchronized-folder
@@ -233,8 +236,10 @@ screen-capture call, permission prompt, or application host is used in tests.
 `captureFullScreen(CaptureID, maximumBytes:)` uses the optional `fullScreenSource`
 injected into the same command layer. Without that source it reports unavailable;
 it never falls back to area capture. Both capture commands share one coordinator,
-Pending capture budget and revision-bound Copy/Delete flow. Diagnostics classify
-both as the existing closed `capture` operation.
+Pending capture budget and revision-bound Copy, Retry Copy, Dismiss and Delete flow.
+With History injected, both finalize through the same commit protocol; the app
+shares Dismiss/Escape, Quit, and “Kept in History” feedback for either source.
+Diagnostics classify both as the existing closed `capture` operation.
 
 The app's **Capture Full Screen** menu item requests the display under the
 pointer, with display-local bounds and native backing-scale pixel dimensions.
@@ -245,3 +250,13 @@ shortcut defaults/remapping belong to ticket 24. Seam 1 fixtures cover 1×, 2×,
 negative global coordinates, exclusion requests, Pending image dimensions,
 thumbnail downsampling and unchanged Copy bytes. Actual display selection and
 OS exclusion require [the manual checklist](manual-checks/20-full-screen-capture.md).
+
+## Ticket 09 verification additions
+
+`sh scripts/test-core.sh --filter HistoryCommandsTests` runs seam 1 with real
+files and GRDB/SQLite, synthetic PNGs, a fixed clock, migration fixtures, and
+all nine commit-point faults for both area and full-screen captures. The command
+uses the same in-worktree caches and
+Xcode toolchain as the full `sh scripts/test-core.sh` run. Original ticket 06
+History-unavailable descriptions above remain applicable when no `CaptureHistory`
+is injected. The app now injects the lazy disk store.

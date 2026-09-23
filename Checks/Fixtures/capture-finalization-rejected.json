@@ -1,0 +1,21 @@
+{
+  "check": "capture-memory",
+  "files": {
+    "Sources/FrisketCore/StorageAdapter/Eager.swift": "actor Eager { init(root: URL) { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) } }",
+    "Sources/FrisketCore/StorageAdapter/Original.swift": "func persist(_ original: CaptureImage) { try original.pngData.write(to: root) }",
+    "Sources/FrisketCore/BadAuthorization.swift": "let request = AuthorizedFinalization(revision: revision, pngData: pixels)",
+    "Frisket/BadRoot.swift": "try data.write(to: historyRoot)",
+    "Sources/FrisketCore/StorageAdapter/EarlyQuery.swift": "func entries() -> [HistoryEntry] { let db = try writableDatabase(); return [] }",
+    "Sources/FrisketCore/CaptureLifecycleCoordinator.swift": "switch command { case let .capture(id, maximumBytes): let request = AuthorizedFinalization(revision: revision, pngData: pixels); case let .dismiss(revision): break }",
+    "Sources/FrisketCore/StorageAdapter/EagerProperty.swift": "actor Store { let db = try DatabaseQueue(path: root) }"
+  },
+  "expected": [
+    "Frisket/BadRoot.swift: app filesystem write bypasses authorized finalization",
+    "Sources/FrisketCore/BadAuthorization.swift: finalization capability constructed outside coordinator",
+    "Sources/FrisketCore/CaptureLifecycleCoordinator.swift: capture cannot authorize persistence",
+    "Sources/FrisketCore/StorageAdapter/Eager.swift: storage initialization or query may write before finalization",
+    "Sources/FrisketCore/StorageAdapter/EagerProperty.swift: eager storage property may write before finalization",
+    "Sources/FrisketCore/StorageAdapter/EarlyQuery.swift: storage initialization or query may write before finalization",
+    "Sources/FrisketCore/StorageAdapter/Original.swift: storage accepts source or original pixels"
+  ]
+}

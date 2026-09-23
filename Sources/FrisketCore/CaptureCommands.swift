@@ -19,14 +19,16 @@ public enum CaptureCommand: Sendable {
     case captureFullScreen(CaptureID, maximumBytes: Int)
     case copy(CaptureRevision)
     case retryCopy(CaptureRevision)
+    case dismiss(CaptureRevision)
     case discard(CaptureID)
 }
 
 public enum CommitOutcome: Equatable, Sendable {
+    case committed
     case notCommitted(CommitUnavailableReason)
 }
 
-public enum CommitUnavailableReason: Sendable { case historyUnavailable }
+public enum CommitUnavailableReason: Sendable { case historyUnavailable, unknownMigrations, invalidImage, recoveryRequired }
 
 public enum DeliveryOutcome: Equatable, Sendable {
     case copied(ClipboardReceipt)
@@ -44,12 +46,13 @@ public struct CopyOutcome: Equatable, Sendable {
     }
 }
 
-public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance }
+public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance }
 
 public enum CaptureCommandOutcome: Equatable, Sendable {
     case pending(CaptureRevision)
     case discarded(CaptureID)
     case copy(CopyOutcome)
+    case finalized(CaptureRevision, CommitOutcome)
     case captureFailed(CaptureSourceFailure)
     case rejected(CommandRejection)
 }
@@ -61,10 +64,14 @@ public struct CaptureCommandLayer: Sendable {
 
     public init(source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
-                diagnostics: any DiagnosticSink = LocalDiagnosticLog()) {
+                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
-                                                  pendingByteLimit: pendingByteLimit)
+                                                  pendingByteLimit: pendingByteLimit, history: history)
+    }
+
+    public func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {
+        await coordinator.historyEntries()
     }
 
     /// Read-only presentation query; the coordinator remains the owner of pending bytes.

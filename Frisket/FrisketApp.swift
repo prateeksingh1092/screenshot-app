@@ -19,13 +19,15 @@ import FrisketCore
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var arrivalOrder: [CaptureID] = []
     private var capturing = false
+    private var terminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
         commands = CaptureCommandLayer(source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
-            clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024)
+            clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
+            history: HistoryStore(root: identity.historyRoot))
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
@@ -34,7 +36,7 @@ import FrisketCore
         add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
         menu.addItem(.separator())
-        let history = NSMenuItem(title: "History unavailable in this build", action: nil, keyEquivalent: "")
+        let history = NSMenuItem(title: "Dismiss captures to keep in History", action: nil, keyEquivalent: "")
         history.isEnabled = false
         menu.addItem(history)
         menu.addItem(.separator())
@@ -61,7 +63,7 @@ import FrisketCore
     }
 
     private func capture(_ command: CaptureCommand) {
-        guard !capturing, let commands else { return }
+        guard !capturing, !terminating, let commands else { return }
         capturing = true
         Task {
             defer { capturing = false }
@@ -79,7 +81,8 @@ import FrisketCore
                 }
                 let id = revision.captureID
                 let panel = ThumbnailPanel(revision: revision, preview: preview, screen: screen, offset: panels.count,
-                    copy: { [weak self] in self?.copy(id) }, discard: { [weak self] in self?.discard(id) })
+                    copy: { [weak self] in self?.copy(id) }, discard: { [weak self] in self?.discard(id) },
+                    dismiss: { [weak self] in self?.dismiss(id) })
                 panels[id] = panel
                 arrivalOrder.append(id)
             case .captureFailed(.cancelled): break
@@ -92,18 +95,46 @@ import FrisketCore
     }
 
     private func copy(_ id: CaptureID) {
-        guard let panel = panels[id], !panel.model.busy, let commands else { return }
+        guard !terminating, let panel = panels[id], !panel.model.busy, let commands else { return }
         panel.model.busy = true
         Task {
             let result = await commands.execute(panel.model.copyFailed ? .retryCopy(panel.revision) : .copy(panel.revision))
-            panel.model.busy = false
-            if case .copy(let outcome) = result, case .copied = outcome.delivery { remove(id) }
-            else { panel.model.copyFailed = true }
+            defer { panel.model.busy = false }
+            guard case .copy(let outcome) = result else {
+                panel.model.copyFailed = true
+                return
+            }
+            panel.model.historyCommitted = outcome.commit == .committed
+            if case .copied = outcome.delivery {
+                if case .notCommitted = outcome.commit {
+                    // Keep the failure visible until acknowledged, even though delivery succeeded.
+                    notice("Could not keep in History", "The capture was copied to the clipboard, but could not be kept in History.")
+                }
+                remove(id)
+            } else {
+                panel.model.copyFailed = true
+                panel.model.dismissFailed = !panel.model.historyCommitted
+            }
+        }
+    }
+
+    private func dismiss(_ id: CaptureID) {
+        guard !terminating, let panel = panels[id], !panel.model.busy, let commands else { return }
+        panel.model.busy = true
+        Task {
+            if case .finalized(_, .committed) = await commands.execute(.dismiss(panel.revision)) {
+                panel.showKeptInHistory()
+                try? await Task.sleep(for: .seconds(1.2))
+                remove(id)
+            } else {
+                panel.model.dismissFailed = true
+                panel.model.busy = false
+            }
         }
     }
 
     private func discard(_ id: CaptureID) {
-        guard let panel = panels[id], !panel.model.busy, let commands else { return }
+        guard !terminating, let panel = panels[id], !panel.model.busy, let commands else { return }
         panel.model.busy = true
         Task {
             if case .discarded = await commands.execute(.discard(id)) { remove(id) }
@@ -125,18 +156,19 @@ import FrisketCore
             return .terminateCancel
         }
         guard !panels.isEmpty, let commands else { return .terminateNow }
-        let alert = NSAlert()
-        alert.messageText = "Delete pending captures and quit?"
-        alert.informativeText = "History is unavailable in this build. Cancel to copy your captures first."
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Delete Captures and Quit")
-        guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        terminating = true
         Task {
             for id in arrivalOrder {
-                guard case .discarded = await commands.execute(.discard(id)) else {
+                guard let panel = panels[id] else { continue }
+                panel.model.busy = true
+                guard case .finalized(_, .committed) = await commands.execute(.dismiss(panel.revision)) else {
+                    panel.model.dismissFailed = true
+                    panel.model.busy = false
+                    terminating = false
                     sender.reply(toApplicationShouldTerminate: false)
                     return
                 }
+                remove(id)
             }
             sender.reply(toApplicationShouldTerminate: true)
         }

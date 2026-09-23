@@ -1,0 +1,9 @@
+{
+  "check": "capture-memory",
+  "files": {
+    "Sources/FrisketCore/StorageAdapter/Lazy.swift": "actor Lazy { init(root: URL, clock: () -> Date = { Date() }) { self.root = root; self.clock = clock } func entries() { database.read { db in query(db) } } func finalize(_ request: AuthorizedFinalization) { try request.pngData.write(to: root) } }",
+    "Sources/FrisketCore/CaptureLifecycleCoordinator.swift": "switch command { case let .capture(id, maximumBytes): return .pending(revision); case let .dismiss(revision): let request = AuthorizedFinalization(revision: revision, pngData: image.pngData) }",
+    "Frisket/AppIdentity.swift": "let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]"
+  },
+  "expected": []
+}
