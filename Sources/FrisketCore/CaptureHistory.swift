@@ -35,6 +35,8 @@ public struct AuthorizedFinalization: Sendable {
 
 public protocol CaptureHistory: Sendable {
     func finalize(_ request: AuthorizedFinalization) async -> CommitOutcome
+    func maintain(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure>
+    func status(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure>
     func entries() async -> Result<[HistoryEntry], HistoryFailure>
 }
 
@@ -43,4 +45,39 @@ public protocol CaptureHistory: Sendable {
 public enum HistoryCommitPoint: String, CaseIterable, Codable, Sendable {
     case pngStaged, pngSynced, recordStaged, recordSynced
     case imageRenamed, recordRenamed, directorySynced, rowCommitted, thumbnailCached
+}
+
+public struct HistoryLimits: Equatable, Sendable {
+    public let retentionDays: Int
+    public let maximumBytes: Int64
+    public init(retentionDays: Int = 30, maximumBytes: Int64 = 1_000_000_000) {
+        self.retentionDays = min(36_500, max(1, retentionDays))
+        self.maximumBytes = max(1, maximumBytes)
+    }
+}
+
+public struct HistoryUsage: Equatable, Sendable {
+    public let limits: HistoryLimits
+    public let usageBytes: Int64
+    public let lastQuotaEviction: Date?
+    public let quotaNoticePending: Bool
+    public let ageEvictionDeferred: Bool
+    public init(limits: HistoryLimits, usageBytes: Int64, lastQuotaEviction: Date? = nil,
+                quotaNoticePending: Bool = false, ageEvictionDeferred: Bool = false) {
+        self.limits = limits
+        self.usageBytes = usageBytes
+        self.lastQuotaEviction = lastQuotaEviction
+        self.quotaNoticePending = quotaNoticePending
+        self.ageEvictionDeferred = ageEvictionDeferred
+    }
+}
+
+public extension CaptureHistory {
+    func maintain(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure> { .failure(.unavailable) }
+    func status(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure> { .failure(.unavailable) }
+}
+
+/// Each callback occurs after the named durable step. Resume deleting rows at launch.
+public enum HistoryEvictionPoint: String, CaseIterable, Sendable {
+    case markedDeleting, imageUnlinked, recordUnlinked, thumbnailUnlinked, directoriesSynced, rowRemoved
 }

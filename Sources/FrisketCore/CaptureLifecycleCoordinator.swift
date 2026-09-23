@@ -29,6 +29,16 @@ actor CaptureLifecycleCoordinator {
         self.exporter = exporter
     }
 
+    func maintainHistory(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure> {
+        guard let history else { return .failure(.unavailable) }
+        return await history.maintain(limits: limits)
+    }
+
+    func historyStatus(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure> {
+        guard let history else { return .failure(.unavailable) }
+        return await history.status(consumeNotice: consumeNotice)
+    }
+
     func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {
         guard let history else { return .failure(.unavailable) }
         return await history.entries()

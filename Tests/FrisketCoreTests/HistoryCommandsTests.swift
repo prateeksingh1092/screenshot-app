@@ -254,7 +254,7 @@ extension HistoryCommandsTests {
         try seedSQL(String(contentsOf: fixture, encoding: .utf8), at: root)
         let before = try diskSnapshot(root)
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
-            history: HistoryStore(root: root))
+            history: HistoryStore(root: root, clock: { Date(timeIntervalSince1970: 1002) }))
         let oldEntries = try await commands.historyEntries().get()
         #expect(oldEntries.count == 1) // deleting is a valid state but hidden
         #expect(oldEntries.first?.key == 41)

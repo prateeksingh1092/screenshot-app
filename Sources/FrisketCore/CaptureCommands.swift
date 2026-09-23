@@ -30,7 +30,7 @@ public enum CommitOutcome: Equatable, Sendable {
     case notCommitted(CommitUnavailableReason)
 }
 
-public enum CommitUnavailableReason: Sendable { case historyUnavailable, unknownMigrations, invalidImage, recoveryRequired }
+public enum CommitUnavailableReason: Sendable { case historyUnavailable, unknownMigrations, invalidImage, recoveryRequired, captureExceedsHistoryLimit }
 
 public enum DeliveryOutcome: Equatable, Sendable {
     case copied(ClipboardReceipt)
@@ -72,6 +72,14 @@ public struct CaptureCommandLayer: Sendable {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
                                                   pendingByteLimit: pendingByteLimit, history: history, exporter: exporter)
+    }
+
+    public func maintainHistory(limits: HistoryLimits? = nil) async -> Result<HistoryUsage, HistoryFailure> {
+        await coordinator.maintainHistory(limits: limits)
+    }
+
+    public func historyStatus(consumeNotice: Bool = false) async -> Result<HistoryUsage, HistoryFailure> {
+        await coordinator.historyStatus(consumeNotice: consumeNotice)
     }
 
     public func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {

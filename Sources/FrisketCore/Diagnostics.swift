@@ -10,7 +10,7 @@ public enum DiagnosticErrorCode: String, Codable, Sendable {
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired, insideHistory, unwritable
-    case permissionRequired
+    case permissionRequired, captureExceedsHistoryLimit
 }
 
 public struct DiagnosticError: Equatable, Codable, Sendable {
@@ -94,6 +94,7 @@ extension DiagnosticEvent {
                 case .unknownMigrations: error = DiagnosticError(domain: .history, code: .unknownMigrations)
                 case .invalidImage: error = DiagnosticError(domain: .history, code: .invalidImage)
                 case .recoveryRequired: error = DiagnosticError(domain: .history, code: .recoveryRequired)
+                case .captureExceedsHistoryLimit: error = DiagnosticError(domain: .history, code: .captureExceedsHistoryLimit)
                 }
             }
         case .pending:
@@ -123,6 +124,7 @@ extension DiagnosticEvent {
                 case .notCommitted(.unknownMigrations): error = DiagnosticError(domain: .history, code: .unknownMigrations)
                 case .notCommitted(.invalidImage): error = DiagnosticError(domain: .history, code: .invalidImage)
                 case .notCommitted(.recoveryRequired): error = DiagnosticError(domain: .history, code: .recoveryRequired)
+                case .notCommitted(.captureExceedsHistoryLimit): error = DiagnosticError(domain: .history, code: .captureExceedsHistoryLimit)
                 }
             case .failed:
                 name = .deliveryFailed
@@ -138,6 +140,7 @@ extension DiagnosticEvent {
                 case .notCommitted(.unknownMigrations): error = DiagnosticError(domain: .history, code: .unknownMigrations)
                 case .notCommitted(.invalidImage): error = DiagnosticError(domain: .history, code: .invalidImage)
                 case .notCommitted(.recoveryRequired): error = DiagnosticError(domain: .history, code: .recoveryRequired)
+                case .notCommitted(.captureExceedsHistoryLimit): error = DiagnosticError(domain: .history, code: .captureExceedsHistoryLimit)
                 }
             case let .failed(failure):
                 name = .deliveryFailed
