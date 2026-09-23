@@ -4,7 +4,7 @@
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/10-launch-recovery-sweep`)
 
 - [ ] The sweep takes an exclusive lock first, empties staging, adopts a row-less image only if its finalization record validates (matching identifier and marker, decodes at recorded dimensions), otherwise discards it.
 - [ ] Rows whose image is missing are deleted with a logged error code; interrupted deletions are finished; row-less thumbnails are removed; recorded sizes are reconciled with disk.

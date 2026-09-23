@@ -4,7 +4,7 @@
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/11-save-and-settings-shell`)
 
 - [ ] Save goes through the shared finalization policy (the capture is finalized to History as well) and reports commit and delivery outcomes separately.
 - [ ] Export copies the rendered revision and never moves an app-owned file; exported files are untouched by retention and deletion.
