@@ -9,7 +9,7 @@
 		000000000000000000000001 = { isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2650; }; buildConfigurationList = 00000000000000000000000A; preferredProjectObjectVersion = 77; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = 000000000000000000000002; productRefGroup = 000000000000000000000003; projectDirPath = ""; projectRoot = ""; packageReferences = (000000000000000000000027); targets = (000000000000000000000004, 00000000000000000000001F); };
 		000000000000000000000002 = { isa = PBXGroup; children = (000000000000000000000025, 00000000000000000000001E, 000000000000000000000003); sourceTree = "<group>"; };
 		000000000000000000000003 = { isa = PBXGroup; children = (000000000000000000000005, 000000000000000000000020); name = Products; sourceTree = "<group>"; };
-		000000000000000000000004 = { isa = PBXNativeTarget; buildConfigurationList = 00000000000000000000000B; buildPhases = (000000000000000000000006, 000000000000000000000007, 000000000000000000000008); buildRules = (); dependencies = (000000000000000000000021); fileSystemSynchronizedGroups = (000000000000000000000025); name = Frisket; productName = Frisket; productReference = 000000000000000000000005; productType = "com.apple.product-type.application"; };
+		000000000000000000000004 = { isa = PBXNativeTarget; buildConfigurationList = 00000000000000000000000B; buildPhases = (000000000000000000000006, 000000000000000000000007, 000000000000000000000008, 00000000000000000000002B); buildRules = (); dependencies = (000000000000000000000021); fileSystemSynchronizedGroups = (000000000000000000000025); name = Frisket; productName = Frisket; productReference = 000000000000000000000005; productType = "com.apple.product-type.application"; };
 		000000000000000000000005 = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Frisket.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000006 = { isa = PBXShellScriptBuildPhase; alwaysOutOfDate = 1; buildActionMask = 2147483647; files = (); inputPaths = (); outputPaths = (); name = "Reject Event Taps and Global Monitors"; runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "set -eu
 /usr/bin/python3 \"$SRCROOT/Checks/check_repository.py\" --root \"$SRCROOT\" --check input-monitoring
@@ -32,6 +32,10 @@
         000000000000000000000028 = { isa = XCSwiftPackageProductDependency; package = 000000000000000000000027; productName = GRDB; };
         000000000000000000000029 = { isa = PBXBuildFile; productRef = 000000000000000000000028; };
         00000000000000000000002A = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000029); runOnlyForDeploymentPostprocessing = 0; };
+        00000000000000000000002B = { isa = PBXShellScriptBuildPhase; alwaysOutOfDate = 1; buildActionMask = 2147483647; files = (); inputPaths = ("$(SRCROOT)/THIRD-PARTY-NOTICES.md"); outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/THIRD-PARTY-NOTICES.md"); name = "Copy Third-Party Notices"; runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "set -eu
+mkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"
+cp \"$SRCROOT/THIRD-PARTY-NOTICES.md\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/THIRD-PARTY-NOTICES.md\"
+"; };
     };
     rootObject = 000000000000000000000001;
 }
