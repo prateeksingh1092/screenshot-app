@@ -16,4 +16,8 @@ TDD: red compile for `setThumbnailStackFocus`, then `focusedThumbnail`/`moveThum
 
 Validation: **237 tests / 36 suites passed**. Unsigned x86_64 `xcodebuild` succeeded (`CODE_SIGNING_ALLOWED=NO`). Manual: `docs/manual-checks/32-keyboard-and-voiceover.md` (Full Keyboard Access and VoiceOver, not run).
 
-Stopped before review. Ticket Status/checkboxes unchanged.
+## Fix pass
+
+Coordinator, one pass. VoiceOver focus and custom actions now call the same stack-focus pause as becoming key (`setAccessibilityFocused` plus action/key entry). Thumbnail suite still 11/11. Full suite and unsigned xcodebuild re-run after the freeze.
+
+Stopped after the one fix pass. Ticket Status/checkboxes unchanged.

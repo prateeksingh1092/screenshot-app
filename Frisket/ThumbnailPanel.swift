@@ -138,6 +138,12 @@ private final class ThumbnailCardPanel: NSPanel {
         onResignKey?()
     }
 
+    override func setAccessibilityFocused(_ focused: Bool) {
+        super.setAccessibilityFocused(focused)
+        if focused { onBecomeKey?() }
+        else { onResignKey?() }
+    }
+
     // The standard File > Close Window command uses the same lifecycle exit.
     override func performClose(_ sender: Any?) { closeAction?() }
 
@@ -203,6 +209,7 @@ private final class ThumbnailCardPanel: NSPanel {
         panel.closeAction = actions.close
         panel.swipe = actions.swipe
         panel.keyCommand = { [weak self] command in
+            self?.onBecomeKey?()
             switch command {
             case .copy: actions.copy()
             case .save: actions.save()
@@ -214,11 +221,15 @@ private final class ThumbnailCardPanel: NSPanel {
             }
         }
         panel.setAccessibilityCustomActions([
-            NSAccessibilityCustomAction(name: "Copy capture") { actions.copy(); return true },
-            NSAccessibilityCustomAction(name: "Save capture") { actions.save(); return true },
-            NSAccessibilityCustomAction(name: "Edit capture") { actions.edit(); return true },
-            NSAccessibilityCustomAction(name: "Delete pending capture") { actions.delete(); return true },
-            NSAccessibilityCustomAction(name: "Close thumbnail and keep capture in History") { actions.close(); return true }
+            NSAccessibilityCustomAction(name: "Copy capture") { [weak self] in self?.onBecomeKey?(); actions.copy(); return true },
+            NSAccessibilityCustomAction(name: "Save capture") { [weak self] in self?.onBecomeKey?(); actions.save(); return true },
+            NSAccessibilityCustomAction(name: "Edit capture") { [weak self] in self?.onBecomeKey?(); actions.edit(); return true },
+            NSAccessibilityCustomAction(name: "Delete pending capture") { [weak self] in self?.onBecomeKey?(); actions.delete(); return true },
+            NSAccessibilityCustomAction(name: "Close thumbnail and keep capture in History") { [weak self] in
+                self?.onBecomeKey?()
+                actions.close()
+                return true
+            }
         ])
         panel.isReleasedWhenClosed = false
         panel.isRestorable = false
