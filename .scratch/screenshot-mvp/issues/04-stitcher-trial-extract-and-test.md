@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 03 (ticket 02 found the Command Line Tools lack the Swift Testing module; running tests needs Xcode's toolchain)
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/04-stitcher-trial-extract`)
 
 - [ ] The stitcher and its image factory are copied into a scratch package, not into Frisket's core; the Snapzy clone is not modified.
 - [ ] Its BSD-3 header is kept and the source commit is recorded.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 03 (ticket 02 found the Command Line Tools lack the Swift Testing module; running tests needs Xcode's toolchain)
 
-**Status:** ready-for-agent
+**Status:** in-progress (branch `ticket/06-capture-to-copy`)
 
 - [ ] Commands take typed capture identifiers and explicit inputs and return UI-independent results.
 - [ ] The coordinator reports commit outcomes and delivery outcomes separately; a delivery retry refers to the same revision.
