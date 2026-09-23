@@ -42,3 +42,19 @@ func staticCheckFixturesHaveExpectedOutcomes(fixture: String) throws {
     let result = try runCheck(["--fixture", path.path])
     #expect(result.status == 0, Comment(rawValue: result.output))
 }
+
+@Test
+func performanceToolingSatisfiesOfflineChecks() throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+    process.arguments = ["-B", "-m", "unittest", "discover", "-s",
+                         repository.appendingPathComponent("Tools/Performance").path,
+                         "-p", "test_*.py"]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    try process.run()
+    let output = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0, Comment(rawValue: String(decoding: output, as: UTF8.self)))
+}

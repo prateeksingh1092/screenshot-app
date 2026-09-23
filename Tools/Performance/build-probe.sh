@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
+export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache"
+mkdir -p .build/performance
+xcrun swiftc -O -module-cache-path "$CLANG_MODULE_CACHE_PATH" \
+  Tools/Performance/probe.swift -o .build/performance/probe
