@@ -5,6 +5,7 @@ import FrisketCore
 @MainActor final class ThumbnailModel: ObservableObject {
     @Published var busy = false
     @Published var copyFailed = false
+    @Published var saveFailed = false
     @Published var dismissFailed = false
     @Published var keptInHistory = false
     @Published var historyCommitted = false
@@ -15,6 +16,7 @@ private struct ThumbnailCard: View {
     let image: NSImage
     @ObservedObject var model: ThumbnailModel
     let copy: () -> Void
+    let save: () -> Void
     let discard: () -> Void
     let dismiss: () -> Void
     @FocusState private var copyFocused: Bool
@@ -38,6 +40,11 @@ private struct ThumbnailCard: View {
                             }
                         }
                         .accessibilityLabel("Copy capture")
+                    Button(model.saveFailed ? "Retry Save" : "Save", action: save)
+                        .keyboardShortcut("s", modifiers: [])
+                        .accessibilityLabel(model.saveFailed ? "Retry saving capture" : "Save capture")
+                }.disabled(model.busy)
+                HStack {
                     if !model.historyCommitted {
                         Button("Delete Capture", action: discard)
                             .keyboardShortcut(.delete, modifiers: [])
@@ -49,8 +56,15 @@ private struct ThumbnailCard: View {
                     .accessibilityLabel("Dismiss capture to History")
                     .disabled(model.busy)
             }
-            Text(model.keptInHistory ? "Kept in History" : model.dismissFailed ? "Could not keep in History. Retry Dismiss or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Dismiss." : "Copy failed. Retry Copy or dismiss to History.") : "Dismiss to keep in History.")
-                .font(.caption).fixedSize(horizontal: false, vertical: true)
+            if model.keptInHistory {
+                Text("Kept in History").font(.caption)
+            } else if model.saveFailed {
+                Text(model.historyCommitted ? "Kept in History. Save failed. Retry Save or Dismiss." : "Save failed. Check the export folder in Settings, then Retry Save.")
+                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(model.dismissFailed ? "Could not keep in History. Retry Dismiss or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Dismiss." : "Copy failed. Retry Copy or dismiss to History.") : "Dismiss to keep in History.")
+                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+            }
         }.padding(14).frame(width: 260)
             .onChange(of: model.copyFocusRequest) { _, _ in
                 copyFocused = true
@@ -64,9 +78,9 @@ private struct ThumbnailCard: View {
     private let panel: SelectionPanel
 
     init(revision: CaptureRevision, preview: CGImage, screen: NSScreen, offset: Int,
-         copy: @escaping () -> Void, discard: @escaping () -> Void, dismiss: @escaping () -> Void) {
+         copy: @escaping () -> Void, save: @escaping () -> Void, discard: @escaping () -> Void, dismiss: @escaping () -> Void) {
         self.revision = revision
-        panel = SelectionPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 300),
+        panel = SelectionPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 380),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
         panel.isRestorable = false
@@ -76,14 +90,14 @@ private struct ThumbnailCard: View {
         panel.backgroundColor = .windowBackgroundColor
         panel.hasShadow = true
         let image = NSImage(cgImage: preview, size: NSSize(width: preview.width, height: preview.height))
-        panel.contentView = NSHostingView(rootView: ThumbnailCard(image: image, model: model, copy: copy, discard: discard, dismiss: dismiss))
+        panel.contentView = NSHostingView(rootView: ThumbnailCard(image: image, model: model, copy: copy, save: save, discard: discard, dismiss: dismiss))
         let frame = screen.visibleFrame
         panel.setFrameOrigin(CGPoint(x: max(frame.minX, frame.maxX - 308 - CGFloat(offset % 3) * 24),
                                      y: frame.minY + 20 + CGFloat(offset % 3) * 24))
         panel.setAccessibilityLabel("Pending capture")
         panel.orderFrontRegardless()
         NSAccessibility.post(element: panel, notification: .announcementRequested,
-                             userInfo: [.announcement: "Capture ready. Use Frisket’s Focus Latest Thumbnail menu to copy, dismiss, or delete.",
+                             userInfo: [.announcement: "Capture ready. Use Frisket’s Focus Latest Thumbnail menu to copy, save, dismiss, or delete.",
                                         .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
     func focus() {

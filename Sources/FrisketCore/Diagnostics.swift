@@ -4,12 +4,12 @@ public enum DiagnosticEventName: String, Codable, Sendable {
     case capturePending, captureFailed, captureDiscarded, captureFinalized, finalizationFailed, deliverySucceeded, deliveryFailed, commandRejected
 }
 
-public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, discard, dismiss }
-public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history }
+public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss }
+public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history, fileExport }
 public enum DiagnosticErrorCode: String, Codable, Sendable {
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
-    case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired
+    case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired, insideHistory, unwritable
     case permissionRequired
 }
 
@@ -74,6 +74,8 @@ extension DiagnosticEvent {
         case .capture, .captureFullScreen: operation = .capture
         case .copy: operation = .copy
         case .retryCopy: operation = .retryCopy
+        case .save: operation = .save
+        case .retrySave: operation = .retrySave
         case .discard: operation = .discard
         case .dismiss: operation = .dismiss
         }
@@ -125,6 +127,25 @@ extension DiagnosticEvent {
             case .failed:
                 name = .deliveryFailed
                 error = DiagnosticError(domain: .clipboard, code: .unavailable)
+            }
+        case let .save(result):
+            switch result.delivery {
+            case .saved:
+                name = .deliverySucceeded
+                switch result.commit {
+                case .committed: error = nil
+                case .notCommitted(.historyUnavailable): error = DiagnosticError(domain: .history, code: .unavailable)
+                case .notCommitted(.unknownMigrations): error = DiagnosticError(domain: .history, code: .unknownMigrations)
+                case .notCommitted(.invalidImage): error = DiagnosticError(domain: .history, code: .invalidImage)
+                case .notCommitted(.recoveryRequired): error = DiagnosticError(domain: .history, code: .recoveryRequired)
+                }
+            case let .failed(failure):
+                name = .deliveryFailed
+                switch failure {
+                case .unavailable: error = DiagnosticError(domain: .fileExport, code: .unavailable)
+                case .insideHistory: error = DiagnosticError(domain: .fileExport, code: .insideHistory)
+                case .unwritable: error = DiagnosticError(domain: .fileExport, code: .unwritable)
+                }
             }
         case let .rejected(reason):
             name = .commandRejected

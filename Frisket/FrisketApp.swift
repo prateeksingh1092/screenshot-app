@@ -17,6 +17,7 @@ import FrisketCore
     private lazy var platform = ScreenCapturePlatform(permission: permission)
     private var commands: CaptureCommandLayer?
     private var statusItem: NSStatusItem?
+    private var settingsWindow: ExportSettingsWindow?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var arrivalOrder: [CaptureID] = []
     private var capturing = false
@@ -30,10 +31,13 @@ import FrisketCore
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let identifier = Bundle.main.bundleIdentifier else { NSApp.terminate(nil); return }
         let identity = AppIdentity(bundleIdentifier: identifier)
+        let exportSettings = ExportSettings(historyRoot: identity.historyRoot)
+        settingsWindow = ExportSettingsWindow(settings: exportSettings)
         commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier),
             clipboard: PasteboardAdapter(destination: GeneralPasteboardDestination()), pendingByteLimit: 256 * 1024 * 1024,
-            history: HistoryStore(root: identity.historyRoot))
+            history: HistoryStore(root: identity.historyRoot),
+            exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot))
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Frisket"
         item.button?.setAccessibilityLabel("Frisket capture menu")
@@ -47,6 +51,9 @@ import FrisketCore
         history.isEnabled = false
         menu.addItem(history)
         menu.addItem(.separator())
+        addSettings(to: menu)
+        menu.addItem(.separator())
+        installMainMenu()
         add("Quit Frisket", action: #selector(quit), to: menu)
         item.menu = menu
         statusItem = item
@@ -61,6 +68,63 @@ import FrisketCore
             notice("Shortcut unavailable", "Another app may be using Control–Option–Command–4. Capture Area is still available in the Frisket menu.")
         }
     }
+
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+        func submenu(_ title: String) -> NSMenu {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let menu = NSMenu(title: title)
+            item.submenu = menu
+            mainMenu.addItem(item)
+            return menu
+        }
+        func command(_ title: String, _ action: Selector, _ key: String, in menu: NSMenu,
+                     modifiers: NSEvent.ModifierFlags = .command) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            // A nil target uses the responder chain, including SwiftUI's selected text.
+            menu.addItem(item)
+        }
+        let app = submenu("Frisket")
+        command("About Frisket", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), "", in: app)
+        app.addItem(.separator())
+        addSettings(to: app)
+        app.addItem(.separator())
+        let services = NSMenu(title: "Services")
+        let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        servicesItem.submenu = services
+        app.addItem(servicesItem)
+        NSApp.servicesMenu = services
+        app.addItem(.separator())
+        command("Hide Frisket", #selector(NSApplication.hide(_:)), "h", in: app)
+        command("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", in: app,
+                modifiers: [.command, .option])
+        command("Show All", #selector(NSApplication.unhideAllApplications(_:)), "", in: app)
+        app.addItem(.separator())
+        command("Quit Frisket", #selector(NSApplication.terminate(_:)), "q", in: app)
+
+        let file = submenu("File")
+        command("Close Window", #selector(NSWindow.performClose(_:)), "w", in: file)
+        let edit = submenu("Edit")
+        command("Undo", Selector(("undo:")), "z", in: edit)
+        command("Redo", Selector(("redo:")), "z", in: edit, modifiers: [.command, .shift])
+        edit.addItem(.separator())
+        command("Cut", #selector(NSText.cut(_:)), "x", in: edit)
+        command("Copy", #selector(NSText.copy(_:)), "c", in: edit)
+        command("Paste", #selector(NSText.paste(_:)), "v", in: edit)
+        command("Delete", #selector(NSText.delete(_:)), "", in: edit)
+        command("Select All", #selector(NSText.selectAll(_:)), "a", in: edit)
+        NSApp.mainMenu = mainMenu
+    }
+
+    private func addSettings(to menu: NSMenu) {
+        let item = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        item.keyEquivalentModifierMask = .command
+        item.target = self
+        menu.addItem(item)
+    }
+
+    @objc private func showSettings() { settingsWindow?.show() }
 
     private func add(_ title: String, action: Selector, to menu: NSMenu) {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -96,7 +160,7 @@ import FrisketCore
                 }
                 let id = revision.captureID
                 let panel = ThumbnailPanel(revision: revision, preview: preview, screen: screen, offset: panels.count,
-                    copy: { [weak self] in self?.copy(id) }, discard: { [weak self] in self?.discard(id) },
+                    copy: { [weak self] in self?.copy(id) }, save: { [weak self] in self?.save(id) }, discard: { [weak self] in self?.discard(id) },
                     dismiss: { [weak self] in self?.dismiss(id) })
                 panels[id] = panel
                 arrivalOrder.append(id)
@@ -131,6 +195,31 @@ import FrisketCore
             } else {
                 panel.model.copyFailed = true
                 panel.model.dismissFailed = !panel.model.historyCommitted
+            }
+        }
+    }
+
+    private func save(_ id: CaptureID) {
+        guard !terminating, let panel = panels[id], !panel.model.busy, let commands else { return }
+        panel.model.busy = true
+        Task {
+            defer { panel.model.busy = false }
+            let result = await commands.execute(panel.model.saveFailed ? .retrySave(panel.revision) : .save(panel.revision))
+            guard case .save(let outcome) = result else {
+                panel.model.saveFailed = true
+                return
+            }
+            panel.model.historyCommitted = outcome.commit == .committed
+            if case .saved = outcome.delivery {
+                if case .notCommitted = outcome.commit {
+                    notice("Could not keep in History", "The PNG was saved to the export folder, but could not be kept in History.")
+                }
+                remove(id)
+            } else {
+                panel.model.saveFailed = true
+                notice("Save failed", panel.model.historyCommitted
+                    ? "The capture is kept in History. Check the export folder in Settings, then Retry Save or Dismiss."
+                    : "The capture could not be saved or kept in History. Check the export folder in Settings, then Retry Save or Dismiss.")
             }
         }
     }
@@ -217,7 +306,7 @@ import FrisketCore
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !capturing, !requestingPermission, !panels.values.contains(where: { $0.model.busy }) else {
             reopenAfterQuit = false
-            notice("Finish the current action", "Cancel selection with Escape or wait for Copy, then quit again.")
+            notice("Finish the current action", "Cancel selection with Escape or wait for Copy or Save, then quit again.")
             return .terminateCancel
         }
         guard !panels.isEmpty, let commands else { return prepareAcceptedQuit() ? .terminateNow : .terminateCancel }
