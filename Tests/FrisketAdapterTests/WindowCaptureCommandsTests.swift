@@ -93,14 +93,14 @@ private actor WindowClipboard: ImageClipboard {
 
 extension WindowCaptureCommandsTests {
     @Test(arguments: [CGPoint(x: -500, y: -50), CGPoint(x: 900, y: 400)])
-    func onlyVisibleNormalForeignWindowsParticipateInZOrder(pointer: CGPoint) async {
+    func onlyVisibleForeignWindowsParticipateInZOrder(pointer: CGPoint) async {
         let platform = FixtureWindowPlatform()
         platform.pointer = pointer
         let x = pointer.x - 100, y = pointer.y - 100
         platform.windows = [
             window(1, x: x, y: y, owner: 42, bundle: nil), // Own process, absent bundle metadata.
             window(2, x: x, y: y, bundle: ownBundle), // Another instance of Frisket.
-            window(3, x: x, y: y, layer: 3),
+            window(3, x: x, y: y, owner: 42, layer: 3), // Frisket's floating panel.
             window(4, x: x, y: y, onScreen: false), // Other Space.
             window(5, x: x, y: y, minimized: true),
             window(6, x: x, y: y, bundle: nil), // Fail closed for unknown app identity.
@@ -113,6 +113,25 @@ extension WindowCaptureCommandsTests {
         #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(CaptureRevision(captureID: id, number: 1)))
         #expect(platform.offered == [80, 7])
         #expect(platform.captured == [80])
+    }
+
+    @Test func foreignFloatingWindowIsCapturedAheadOfOverlappingNormalWindow() async {
+        let platform = FixtureWindowPlatform()
+        platform.windows = [
+            window(1, owner: 42, layer: 3), // Own floating panel stays excluded.
+            window(2, bundle: ownBundle, layer: 3), // Another Frisket instance.
+            window(80, layer: 3), // Visible foreign floating window.
+            window(7) // Normal window behind it.
+        ]
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+            windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
+            clipboard: WindowClipboard(), pendingByteLimit: 1024)
+        let id = CaptureID(), revision: CaptureRevision
+        revision = CaptureRevision(captureID: id, number: 1)
+        #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(revision))
+        #expect(platform.offered == [80, 7])
+        #expect(platform.captured == [80])
+        #expect(await commands.image(for: revision)?.pngData == fixturePNG)
     }
 }
 

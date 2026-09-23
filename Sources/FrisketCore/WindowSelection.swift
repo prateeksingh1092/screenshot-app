@@ -28,8 +28,10 @@ public struct WindowSelection: Sendable {
     public let candidates: [WindowCandidate]
 
     public init(windows: [WindowCandidate], ownProcessID: Int32, ownBundleIdentifier: String) {
+        // The platform excludes desktop elements. Exclude Frisket by identity,
+        // not window level: foreign floating windows remain valid candidates.
         candidates = windows.filter { window in
-            window.isOnScreen && !window.isMinimized && window.layer == 0
+            window.isOnScreen && !window.isMinimized
                 && window.ownerProcessID != ownProcessID
                 && window.bundleIdentifier != nil && window.bundleIdentifier != ownBundleIdentifier
                 && window.frame.origin.x.isFinite && window.frame.origin.y.isFinite
