@@ -1,6 +1,7 @@
 """Offline repository checks. Invoked by Swift Testing; also usable without its runner."""
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -10,8 +11,7 @@ import sys
 import tempfile
 import unicodedata
 
-TRIAL_ROOT = "Trials/StitcherTrial"
-TEST_ROOTS = ("Tests/", f"{TRIAL_ROOT}/Tests/")
+TEST_ROOTS = ("Tests/",)
 
 
 def dependency_issues(manifest, resolved=None):
@@ -102,7 +102,7 @@ def swift_code(text):
 def import_issues(files):
     issues = []
     for path, text in sorted(files.items()):
-        if not path.startswith(("Sources/", f"{TRIAL_ROOT}/Sources/")) or not path.endswith(".swift"):
+        if not path.startswith("Sources/") or not path.endswith(".swift"):
             continue
         code = swift_code(text).replace("`", "")
         imports = re.findall(r'\bimport\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(\w+)', code)
@@ -151,7 +151,10 @@ def capture_memory_issues(files):
         code = swift_code(text).replace("`", "")
         imports = re.findall(r'\bimport\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(\w+)', code)
         disk_symbols = r'\b(?:URL|NSURL|FileManager|FileHandle|OutputStream|InputStream|UserDefaults|Process|Bundle|NSFileCoordinator|StorageAdapter|GRDB|Darwin|Glibc|POSIX|fopen|freopen|open|openat|creat|fwrite|pwrite|writev|unlink|rename|mkdir|mmap)\b'
-        if (any(module not in {"Foundation", "Synchronization"} for module in imports)
+        allowed_imports = {"Foundation", "Synchronization"}
+        if path.startswith("Sources/FrisketCore/Stitcher/"):
+            allowed_imports |= {"CoreGraphics", "Vision"}
+        if (any(module not in allowed_imports for module in imports)
                 or re.search(disk_symbols, code)
                 or re.search(r'\.\s*write\s*\(\s*to\s*:', code)):
             issues.append(f"{path}: platform or filesystem capability in memory-only core")
@@ -220,6 +223,10 @@ def provenance_issues(files, entries):
                 or not re.fullmatch(r'[0-9a-f]{40}', entry.get("revision", ""))
                 or not entry.get("originalPath")):
             issues.append(f"{path}: incomplete provenance")
+        if "adaptedSHA256" in entry and (
+                not re.fullmatch(r'[0-9a-f]{64}', entry["adaptedSHA256"])
+                or hashlib.sha256(files[path].encode("utf-8")).hexdigest() != entry["adaptedSHA256"]):
+            issues.append(f"{path}: adapted source hash missing or changed")
         header = entry.get("licenseHeader", "")
         if not licence_header(header) or not files[path].startswith(header):
             issues.append(f"{path}: original licence header missing or changed")
@@ -266,13 +273,7 @@ def product_files(root):
     # Planning/reference material and checker fixtures are not product inputs.
     # Tests are included for port attribution, but excluded from identity scrub.
     paths = [root / "Package.swift"]
-    # The isolated stitcher trial is attributed and scrubbed like product code.
-    # Enumerate its inputs explicitly: its nested .build cache is not source.
-    for name in (f"{TRIAL_ROOT}/Package.swift", f"{TRIAL_ROOT}/LICENSE"):
-        if (root / name).exists():
-            paths.append(root / name)
-    for directory in ("Sources", "Frisket", "Resources", "Tests",
-                      f"{TRIAL_ROOT}/Sources", f"{TRIAL_ROOT}/Tests", f"{TRIAL_ROOT}/Resources"):
+    for directory in ("Sources", "Frisket", "Resources", "Tests"):
         folder = root / directory
         if folder.exists():
             paths.extend(sorted(path for path in folder.rglob("*") if path.is_file()))

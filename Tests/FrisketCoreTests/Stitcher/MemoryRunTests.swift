@@ -2,48 +2,40 @@ import CoreGraphics
 import Darwin
 import Foundation
 import Testing
-@testable import StitcherTrial
+import FrisketCore
 
 struct MemoryRunTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["FRISKET_MEMORY_RUN"] == "1"))
   func fullSizeCaptureFitsPhysicalFootprintBudget() throws {
     let started = ContinuousClock.now
-    let stitcher = ScrollingCaptureStitcher()
     let width = 5120, frameHeight = 1440, step = 720, finalHeight = 57_600
-    try autoreleasepool {
-      _ = try #require(stitcher.start(with: syntheticFrame(width: width, height: frameHeight, offset: 0)))
+    var generationFailure: Error?
+    let frames = stride(from: 0, through: finalHeight - frameHeight, by: step).lazy.compactMap { offset -> ScrollingCaptureFrame? in
+      do {
+        return ScrollingCaptureFrame(image: try syntheticFrame(width: width, height: frameHeight, offset: offset),
+          expectedVerticalStep: step)
+      } catch { generationFailure = error; return nil }
     }
-    var visionEstimates = 0
-    for offset in stride(from: step, through: finalHeight - frameHeight, by: step) {
-      try autoreleasepool {
-        let frame = try syntheticFrame(width: width, height: frameHeight, offset: offset)
-        let update = try #require(stitcher.append(frame, maxOutputHeight: finalHeight,
-          expectedSignedDeltaPixels: step, renderMergedImage: false))
-        try #require(update.alignmentDebug?.appendDeltaY == step, "Offset \(offset): \(update.outcome)")
-        if update.alignmentDebug?.usedVisionEstimate == true { visionEstimates += 1 }
-      }
-    }
-    #expect(stitcher.acceptedFrameCount == 79)
-    #expect(stitcher.outputHeight == finalHeight)
-    // Exercise the full image too, including a consumer that requests all its bytes.
-    let image = try #require(stitcher.mergedImage())
+    let capture = try Stitcher.stitch(frames)
+    if let generationFailure { throw generationFailure }
+    #expect(capture.alignments.count == 79)
+    #expect(capture.alignments.dropFirst().allSatisfy { $0.disposition == .appended && $0.appendedRows == step })
+    let visionEstimates = capture.alignments.filter(\.usedVisionEstimate).count
+    // Exercise the public image, including a consumer that requests all its bytes.
+    let image = capture.image
     #expect(image.width == width)
     #expect(image.height == finalHeight)
     let data = try #require(image.dataProvider?.data)
     #expect(CFDataGetLength(data) == 1_179_648_000)
     let actual = try #require(CFDataGetBytePtr(data))
     var row = 0, strips = 0
-    try stitcher.forEachStrip { strip in
+    for _ in 0..<225 {
       try autoreleasepool {
-        #expect(strip.width == width)
-        #expect(strip.height == 256)
-        let reference = try syntheticFrame(width: width, height: strip.height, offset: row)
+        let reference = try syntheticFrame(width: width, height: 256, offset: row)
         let expected = try #require(reference.dataProvider?.data)
-        let delivered = try #require(strip.dataProvider?.data)
-        #expect(delivered == expected, "Streamed rows starting at \(row)")
         #expect(memcmp(actual.advanced(by: row * width * 4), CFDataGetBytePtr(expected), CFDataGetLength(expected)) == 0,
           "Full-image rows starting at \(row)")
-        row += strip.height
+        row += 256
         strips += 1
       }
     }
@@ -51,7 +43,7 @@ struct MemoryRunTests {
     #expect(strips == 225)
     // The kernel maintains this high-water ledger; no sampling can miss a spike.
     let peak = try peakPhysicalFootprint()
-    print("MEMORY_RUN dimensions=5120x57600 frames=79 strips=\(strips) bytes=1179648000 peak_phys_footprint_bytes=\(peak) elapsed=\(started.duration(to: .now)) vision_estimates=\(visionEstimates)")
+    print("MEMORY_RUN dimensions=5120x57600 frames=79 validated_chunks=\(strips) bytes=1179648000 peak_phys_footprint_bytes=\(peak) elapsed=\(started.duration(to: .now)) vision_estimates=\(visionEstimates)")
     #expect(peak < 2_000_000_000)
     withExtendedLifetime(data) {}
   }

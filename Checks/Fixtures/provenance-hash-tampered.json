@@ -1,0 +1,19 @@
+{
+  "check": "provenance",
+  "files": {
+    "Sources/FrisketCore/Stitcher/Port.swift": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\nstruct Port {}\n"
+  },
+  "entries": [
+    {
+      "path": "Sources/FrisketCore/Stitcher/Port.swift",
+      "upstreamURL": "https://github.com/duongductrong/Snapzy",
+      "revision": "1234567890123456789012345678901234567890",
+      "originalPath": "Snapzy/Port.swift",
+      "licenseHeader": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\n",
+      "adaptedSHA256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "expected": [
+    "Sources/FrisketCore/Stitcher/Port.swift: adapted source hash missing or changed"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "check": "identity",
+  "repositoryFiles": {
+    "Package.swift": "// Fixture manifest\n",
+    "docs/ported-files.json": "[]\n",
+    "Sources/FrisketCore/Stitcher/Stitcher.swift": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\nlet name = \"Snapzy\"\n",
+    "Tests/FrisketCoreTests/Stitcher/StitcherTests.swift": "let scenario = \"Snapzy reference\"\n"
+  },
+  "expected": [
+    "Sources/FrisketCore/Stitcher/Stitcher.swift: upstream identity outside a licence header or notice"
+  ]
+}

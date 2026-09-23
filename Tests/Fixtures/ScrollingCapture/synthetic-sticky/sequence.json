@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "provenance": {
+    "kind": "synthetic",
+    "source": "generate-synthetic.py; deterministic coloured cells; no screen content",
+    "authorization": "ticket 34 synthetic fixture",
+    "osBuild": "not applicable; generated PNG bytes"
+  },
+  "frames": [
+    {
+      "file": "frame-0.png",
+      "expectedVerticalStep": 80
+    },
+    {
+      "file": "frame-1.png",
+      "expectedVerticalStep": 80
+    },
+    {
+      "file": "frame-2.png",
+      "expectedVerticalStep": 80
+    }
+  ],
+  "reference": "reference.png",
+  "expectedWidth": 240,
+  "expectedHeight": 560,
+  "heightTolerance": 0,
+  "uniqueBands": [
+    {
+      "referenceRow": 0,
+      "height": 16
+    },
+    {
+      "referenceRow": 16,
+      "height": 16
+    },
+    {
+      "referenceRow": 32,
+      "height": 16
+    },
+    {
+      "referenceRow": 48,
+      "height": 16
+    },
+    {
+      "referenceRow": 64,
+      "height": 16
+    },
+    {
+      "referenceRow": 80,
+      "height": 16
+    },
+    {
+      "referenceRow": 96,
+      "height": 16
+    },
+    {
+      "referenceRow": 112,
+      "height": 16
+    },
+    {
+      "referenceRow": 128,
+      "height": 16
+    },
+    {
+      "referenceRow": 144,
+      "height": 16
+    },
+    {
+      "referenceRow": 160,
+      "height": 16
+    },
+    {
+      "referenceRow": 176,
+      "height": 16
+    },
+    {
+      "referenceRow": 192,
+      "height": 16
+    },
+    {
+      "referenceRow": 208,
+      "height": 16
+    },
+    {
+      "referenceRow": 224,
+      "height": 16
+    },
+    {
+      "referenceRow": 240,
+      "height": 16
+    },
+    {
+      "referenceRow": 256,
+      "height": 16
+    },
+    {
+      "referenceRow": 272,
+      "height": 16
+    },
+    {
+      "referenceRow": 288,
+      "height": 16
+    },
+    {
+      "referenceRow": 304,
+      "height": 16
+    },
+    {
+      "referenceRow": 320,
+      "height": 16
+    },
+    {
+      "referenceRow": 336,
+      "height": 16
+    },
+    {
+      "referenceRow": 352,
+      "height": 16
+    },
+    {
+      "referenceRow": 368,
+      "height": 16
+    },
+    {
+      "referenceRow": 384,
+      "height": 16
+    },
+    {
+      "referenceRow": 400,
+      "height": 16
+    },
+    {
+      "referenceRow": 416,
+      "height": 16
+    },
+    {
+      "referenceRow": 432,
+      "height": 16
+    },
+    {
+      "referenceRow": 448,
+      "height": 16
+    },
+    {
+      "referenceRow": 464,
+      "height": 16
+    },
+    {
+      "referenceRow": 480,
+      "height": 16
+    },
+    {
+      "referenceRow": 496,
+      "height": 16
+    },
+    {
+      "referenceRow": 512,
+      "height": 16
+    },
+    {
+      "referenceRow": 528,
+      "height": 16
+    },
+    {
+      "referenceRow": 544,
+      "height": 16
+    }
+  ]
+}
