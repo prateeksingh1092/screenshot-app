@@ -18,3 +18,15 @@
 Claimed on `e00eed1` after ticket 36 closed. Coordinator chat implements
 (Codex/Other Models still limited). Branch `ticket/39-manual-checklist-first-run`.
 Hardware cases stay pending for Prateek.
+
+### 2026-09-23 — implementer
+
+Report: [39-implementer.md](../reports/39-implementer.md). Pixel-free record
+harness, bundled 320×180 pattern, and the first-run index. Hardware not run.
+Status/checkboxes unchanged pending review.
+
+### 2026-09-23 — review
+
+In-chat review vs `9575f6f`: [39-code-review.md](../reviews/39-code-review.md).
+Justified fixes: capture `codesign` stderr, `lipo` the Mach-O, and read
+`_spdisplays_resolution`.
