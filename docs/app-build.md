@@ -30,7 +30,10 @@ export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache"
 xcodebuild -project Frisket.xcodeproj -scheme Frisket \
   -configuration Development -destination 'platform=macOS,arch=x86_64' \
-  -derivedDataPath "$PWD/.build/DerivedData" CODE_SIGNING_ALLOWED=NO build
+  -derivedDataPath .build/DerivedData \
+  -clonedSourcePackagesDirPath .build/SourcePackages \
+  -onlyUsePackageVersionsFromResolvedFile -disableAutomaticPackageResolution \
+  CODE_SIGNING_ALLOWED=NO build
 swift test --disable-sandbox --disable-keychain --disable-xctest \
   --cache-path .build/cache --scratch-path .build \
   --config-path .build/config --security-path .build/security
@@ -128,25 +131,26 @@ claim is made by this ticket's automated checks.
 
 ## Ticket 09 resolver handoff
 
-The unsigned build was attempted with the configured in-worktree caches, but
-Xcode's GRDB manifest evaluation tried to emit
-`~/Library/Caches/org.swift.swiftpm/manifests/ManifestLoading/grdb.swift.dia`
-and failed with `Operation not permitted`. No resolver retry loop was run.
-The earlier explicit resolve attempt also required the Xcode workspace's own
-lockfile; it has now been added with the same approved pin as the root.
+The initial sandboxed resolution was blocked by Xcode's manifest-cache write
+outside the worktree. The coordinator subsequently verified resolution and the
+unsigned build outside that sandbox (2026-09-23). The earlier `-packageCachePath`
+form resolved no packages and caused `Missing package product 'GRDB'`; do not
+share SwiftPM's `.build/cache` with Xcode's resolver.
 
-The coordinator should run this exact command from the worktree, outside the
-restricted implementer sandbox, then the unsigned build above:
+The coordinator's verified resolution command is:
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache" \
 SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache" \
 xcodebuild -resolvePackageDependencies -project Frisket.xcodeproj -scheme Frisket \
-  -derivedDataPath "$PWD/.build/DerivedData" \
-  -clonedSourcePackagesDirPath "$PWD/.build/SourcePackages" \
-  -packageCachePath "$PWD/.build/cache" -onlyUsePackageVersionsFromResolvedFile
+  -derivedDataPath .build/DerivedData \
+  -clonedSourcePackagesDirPath .build/SourcePackages
 ```
+
+Then run the unsigned build above, using the resolved checkout and disabling
+automatic package resolution. Resolution may require network access when the
+approved dependency is not cached; do not run it under a no-network brief.
 
 Root SwiftPM builds/tests are the automated build gate available in the sandbox.
 An additional app-source typecheck uses those modules without resolving Xcode

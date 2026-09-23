@@ -60,6 +60,7 @@ actor CaptureLifecycleCoordinator {
         case let .discard(id):
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
+            guard !finalized.contains(id) else { return .rejected(.alreadyFinalized) }
             guard images[id] != nil else {
                 return .rejected(delivered.contains(id) ? .alreadyDelivered : .unknownCapture)
             }

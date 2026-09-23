@@ -89,9 +89,22 @@ import FrisketCore
         panel.model.busy = true
         Task {
             let result = await commands.execute(panel.model.copyFailed ? .retryCopy(panel.revision) : .copy(panel.revision))
-            panel.model.busy = false
-            if case .copy(let outcome) = result, case .copied = outcome.delivery { remove(id) }
-            else { panel.model.copyFailed = true }
+            defer { panel.model.busy = false }
+            guard case .copy(let outcome) = result else {
+                panel.model.copyFailed = true
+                return
+            }
+            panel.model.historyCommitted = outcome.commit == .committed
+            if case .copied = outcome.delivery {
+                if case .notCommitted = outcome.commit {
+                    // Keep the failure visible until acknowledged, even though delivery succeeded.
+                    notice("Could not keep in History", "The capture was copied to the clipboard, but could not be kept in History.")
+                }
+                remove(id)
+            } else {
+                panel.model.copyFailed = true
+                panel.model.dismissFailed = !panel.model.historyCommitted
+            }
         }
     }
 

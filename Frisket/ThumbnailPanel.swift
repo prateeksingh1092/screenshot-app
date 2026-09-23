@@ -7,6 +7,7 @@ import FrisketCore
     @Published var copyFailed = false
     @Published var dismissFailed = false
     @Published var keptInHistory = false
+    @Published var historyCommitted = false
     @Published var copyFocusRequest = UUID()
 }
 
@@ -37,16 +38,18 @@ private struct ThumbnailCard: View {
                             }
                         }
                         .accessibilityLabel("Copy capture")
-                    Button("Delete Capture", action: discard)
-                        .keyboardShortcut(.delete, modifiers: [])
-                        .accessibilityLabel("Delete pending capture")
+                    if !model.historyCommitted {
+                        Button("Delete Capture", action: discard)
+                            .keyboardShortcut(.delete, modifiers: [])
+                            .accessibilityLabel("Delete pending capture")
+                    }
                 }.disabled(model.busy)
                 Button("Dismiss", action: dismiss)
                     .keyboardShortcut(.cancelAction)
                     .accessibilityLabel("Dismiss capture to History")
                     .disabled(model.busy)
             }
-            Text(model.keptInHistory ? "Kept in History" : model.dismissFailed ? "Could not keep in History. Retry Dismiss or Copy." : model.copyFailed ? "Copy failed. Retry Copy or dismiss to History." : "Dismiss to keep in History.")
+            Text(model.keptInHistory ? "Kept in History" : model.dismissFailed ? "Could not keep in History. Retry Dismiss or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Dismiss." : "Copy failed. Retry Copy or dismiss to History.") : "Dismiss to keep in History.")
                 .font(.caption).fixedSize(horizontal: false, vertical: true)
         }.padding(14).frame(width: 260)
             .onChange(of: model.copyFocusRequest) { _, _ in

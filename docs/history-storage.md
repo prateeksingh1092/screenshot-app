@@ -17,6 +17,13 @@ retains the commit outcome across delivery retries. A failed clipboard delivery
 can be dismissed without inserting another row. A commit failure never prevents
 Copy. History deletion, recovery UI, retention and quota are later tickets.
 
+After a committed Copy whose delivery fails, discard returns `alreadyFinalized`;
+the thumbnail offers Retry Copy and Dismiss, without Delete Capture. Decision 44's
+pending discard remains memory-only (ticket 13); finalized deletion through
+`deleting`, direct unlink, then row removal belongs to ticket 15. If Copy succeeds
+but History fails, an acknowledgment-required notice remains visible before the
+thumbnail closes.
+
 ## Files and migrations
 
 The app derives `Application Support/<bundle identifier>/History.noindex` from

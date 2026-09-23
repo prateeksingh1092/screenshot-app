@@ -106,6 +106,31 @@ private actor RetryHistoryClipboard: ImageClipboard {
 }
 
 extension HistoryCommandsTests {
+    @Test func committedCaptureCannotBeDiscardedAfterCopyDeliveryFails() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = HistoryPixels()
+        let commands = CaptureCommandLayer(source: source, clipboard: RetryHistoryClipboard(),
+            pendingByteLimit: source.bytes.count, history: HistoryStore(root: root))
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+        #expect(await commands.execute(.capture(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
+        #expect(await commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
+            commit: .committed, delivery: .failed(.unavailable))))
+        let before = try await commands.historyEntries().get()
+        let entry = try #require(before.first)
+
+        // Discard applies to pending captures. Finalized deletion belongs to ticket 15.
+        #expect(await commands.execute(.discard(revision.captureID)) == .rejected(.alreadyFinalized))
+        #expect(try await commands.historyEntries().get() == before)
+        #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == source.bytes)
+        #expect(await commands.image(for: revision)?.pngData == source.bytes)
+        #expect(await commands.execute(.capture(CaptureID(), maximumBytes: source.bytes.count)) == .rejected(.pendingByteBudgetExceeded))
+        #expect(await commands.execute(.retryCopy(revision)) == .copy(CopyOutcome(revision: revision,
+            commit: .committed, delivery: .copied(ClipboardReceipt(changeCount: 2)))))
+        #expect(try await commands.historyEntries().get() == before)
+        #expect(await commands.image(for: revision) == nil)
+    }
+
     @Test(arguments: [false, true])
     func copyRetryOrDismissAfterDeliveryFailureKeepsTheSameCommittedRevision(dismiss: Bool) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")

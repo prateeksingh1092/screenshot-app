@@ -25,3 +25,13 @@ Stopped before review. Nothing staged or committed; ticket status and checkboxes
 - Without `-packageCachePath`, resolution works: `xcodebuild -resolvePackageDependencies -project Frisket.xcodeproj -scheme Frisket -derivedDataPath .build/DerivedData -clonedSourcePackagesDirPath .build/SourcePackages` resolved `GRDB @ 7.11.1`.
 - The unsigned build then **succeeded**. It used `xcodebuild -project Frisket.xcodeproj -scheme Frisket -configuration Development -destination 'platform=macOS,arch=x86_64' -derivedDataPath .build/DerivedData -clonedSourcePackagesDirPath .build/SourcePackages -onlyUsePackageVersionsFromResolvedFile -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO build`.
 - `docs/app-build.md` still documents the failing `-packageCachePath` form.
+
+## Fix pass
+
+- **Resolver command — fixed:** documentation now uses the coordinator's verified resolution without `-packageCachePath` and the unsigned build with the shared checkout, pinned versions, and automatic resolution disabled.
+- **History failure notice — fixed:** successful Copy with failed persistence shows an acknowledgment-required alert before closing the thumbnail.
+- **Delete after failed delivery — fixed:** after a committed Copy fails delivery, Delete Capture is hidden and discard returns `alreadyFinalized`, preserving Retry Copy and Dismiss. Decision 44's pending discard stays memory-only. Ticket 13 covers pending deletion; ticket 15 owns finalized deletion through `deleting`, direct unlink, then row removal. No partial deletion implementation was added.
+
+Verification used the required Xcode `DEVELOPER_DIR` and root SwiftPM flags: regression red→green; History suite **8 tests / 19 cases passed**; full suite **63 passed, 3 skipped**, including static checks. App-source typecheck and `git diff --check` passed. The corrected unsigned Xcode build was attempted once; GRDB manifest-cache writes outside the sandbox were denied. No resolution retry. UI runtime verification remains manual. **x86_64 macOS 26.7 (25G229); arm64 not executed.**
+
+No review findings remain open. Nothing staged or committed; ticket status and checkboxes unchanged.
