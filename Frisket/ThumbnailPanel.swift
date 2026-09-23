@@ -5,6 +5,7 @@ import FrisketCore
 @MainActor final class ThumbnailModel: ObservableObject {
     @Published var busy = false
     @Published var copyFailed = false
+    @Published var copyFocusRequest = UUID()
 }
 
 private struct ThumbnailCard: View {
@@ -12,6 +13,7 @@ private struct ThumbnailCard: View {
     @ObservedObject var model: ThumbnailModel
     let copy: () -> Void
     let discard: () -> Void
+    @FocusState private var copyFocused: Bool
 
     var body: some View {
         VStack(spacing: 10) {
@@ -20,7 +22,17 @@ private struct ThumbnailCard: View {
             HStack {
                 Button(model.copyFailed ? "Retry Copy" : "Copy", action: copy)
                     .keyboardShortcut("c", modifiers: [])
-                    .accessibilityLabel(model.copyFailed ? "Retry copying capture" : "Copy capture")
+                    .focused($copyFocused)
+                    .overlay {
+                        if copyFocused {
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.accentColor, lineWidth: 2)
+                                .padding(-3)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .accessibilityLabel("Copy capture")
                 Button("Delete Capture", action: discard)
                     .keyboardShortcut(.delete, modifiers: [])
                     .accessibilityLabel("Delete pending capture")
@@ -28,6 +40,9 @@ private struct ThumbnailCard: View {
             Text(model.copyFailed ? "Copy failed. The capture is still pending." : "History unavailable. Copy or delete this capture.")
                 .font(.caption).fixedSize(horizontal: false, vertical: true)
         }.padding(14).frame(width: 260)
+            .onChange(of: model.copyFocusRequest) { _, _ in
+                copyFocused = true
+            }
     }
 }
 
@@ -59,6 +74,10 @@ private struct ThumbnailCard: View {
                              userInfo: [.announcement: "Capture ready. Use Frisket’s Focus Latest Thumbnail menu to copy or delete.",
                                         .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
-    func focus() { panel.makeKeyAndOrderFront(nil) }
+    func focus() {
+        panel.makeKeyAndOrderFront(nil)
+        // A fresh request also restores Copy focus after tabbing to Delete.
+        model.copyFocusRequest = UUID()
+    }
     func close() { panel.orderOut(nil); panel.contentView = nil }
 }

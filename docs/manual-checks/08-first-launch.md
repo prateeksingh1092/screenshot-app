@@ -46,8 +46,15 @@ permissions or change the signing identity between runs.
    those extra captures explicitly. Check that macOS ⇧⌘3/4/5/6 still belong to
    macOS; do not take real-content screenshots to test them.
 
-6. Use Frisket's **Focus Latest Thumbnail** menu item, Tab to **Copy**, and
-   press Space (or use C). With VoiceOver, confirm “Copy capture” is announced.
+6. Use Frisket's **Focus Latest Thumbnail** menu item. **Copy** must immediately
+   have keyboard focus and a visible outline, without first pressing Tab.
+   Tab to Delete Capture and Shift-Tab back to Copy; confirm Space copies.
+   On fresh captures, test C, and test choosing the menu item again after
+   tabbing to Delete: focus and the outline must return to Copy. With multiple
+   pending captures, the menu must target the latest thumbnail. With no pending
+   captures, it must do nothing. With VoiceOver, confirm “Copy capture” is announced.
+   Focus routing is in the SwiftUI window layer, outside the adapter test seam;
+   these keyboard, visible-focus and VoiceOver checks require a manual run.
    The thumbnail must disappear only on successful Copy. In Preview choose
    File → New from Clipboard, then save as PNG at
    `$PWD/.build/pasted-pattern.png`. This is the operator's paste action, not
@@ -61,6 +68,12 @@ permissions or change the signing identity between runs.
    correct four quadrants and black marker, and a PASS message. Record FAIL
    verbatim without saving any personal pixels. The verifier normalizes to
    sRGB, samples away from edges and permits 3/255 color-management rounding.
+   **Fix-pass colour rerun:** rebuild and relaunch the helper with its explicit
+   sRGB window colour space, then repeat this pasted-PNG verification on the
+   built-in wide-gamut 2× display. The earlier colour failure remains open
+   until this manual rerun passes; retain the ±3 tolerance. If it still fails,
+   investigate the capture's colour conversion, comparing the direct captured
+   PNG with the pasted PNG before Preview export in an authorized diagnostic run.
    Repeat the capture on the external 1× display if available. A denied grant,
    pixel mismatch or inaccessible Copy is an open failure, not a passed check.
 

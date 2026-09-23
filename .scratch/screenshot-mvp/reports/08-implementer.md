@@ -55,3 +55,13 @@ The build was the pre-review snapshot's signed build, made with the documented c
 - **Focus Latest Thumbnail: needs retest.** While a thumbnail was visible, Prateek chose the menu item and saw no visible effect. After Copy, with no thumbnail, nothing happening is expected. Keyboard Tab/Space Copy and VoiceOver were not exercised.
 - **Not run:** drag area, display-edge clamp, Esc cancellation without activation, ⇧⌘3/4/5/6 ownership, external-display capture, and grant persistence across two signed rebuilds.
 - Pressing Esc while the pattern is key closes the helper, as designed; that is not a defect.
+
+## Fix pass
+
+- **Focus Latest Thumbnail — fixed in code.** The menu now explicitly requests Copy focus through SwiftUI FocusState, with a visible outline. Native button keyboard handling and C remain; the VoiceOver label is “Copy capture”. No behavioural adapter seam exists for this window-layer routing, so the manual checklist covers immediate focus, Tab/Shift-Tab, Space, C, repeated focus, latest-thumbnail targeting and VoiceOver.
+- **Colour fixture — fixed; colour result still open.** The helper window explicitly uses sRGB. The verifier retains ±3 tolerance. The checklist requires a fresh pasted-PNG verification on the built-in wide-gamut display; continued failure calls for investigating capture colour conversion and comparing direct/pasted PNGs before Preview export. No colour pass is claimed.
+- **Single Carbon hot key — fixed.** The static check rejects multiple registration call sites across product files. Added rejected duplicate and accepted single-registration fixtures; observed red → green.
+- **Verification:** `sh scripts/test-core.sh` passed: 55 tests passed, 3 opt-in tests skipped (58 reported), including six adapter tests, seven repository-check cases and 26 fixture cases. Unsigned x86_64 `xcodebuild` with `CODE_SIGNING_ALLOWED=NO` succeeded; the helper compiled. Used the required `DEVELOPER_DIR` and in-worktree caches. arm64 was not executed.
+- **Manual pending:** keyboard/focus/VoiceOver, pasted-PNG colour rerun, drag selection, edge clamp, Esc cancellation, system screenshot shortcuts, external-display capture and Screen Recording grant persistence across two signed rebuilds.
+
+No staging, commits, ticket status/checkbox changes, signing, launches, capture or clipboard access.

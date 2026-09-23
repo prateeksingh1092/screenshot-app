@@ -35,7 +35,9 @@ The app targets macOS 26.0 with the macOS 26.5 SDK and x86_64 only. The build
 phase `Reject Event Taps and Global Monitors` runs on **every build**, fails on
 forbidden APIs under `Frisket/` and `Sources/`, and needs no network. Fixtures
 cover direct, C, and aliased event-tap calls and global event monitors. Like
-other lexical checks, this is not a proof against deliberately obfuscated or
+the test suite, this phase also rejects multiple Carbon hot-key registration
+call sites across product files; fixtures cover duplicate and single registrations.
+Like other lexical checks, this is not a proof against deliberately obfuscated or
 dynamically resolved APIs. Swift Testing runs all repository static checks.
 
 ## One signing and install path (coordinator only, after approval)

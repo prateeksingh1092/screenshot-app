@@ -49,6 +49,7 @@ import ImageIO
         app.setActivationPolicy(.regular)
         guard let screen = NSScreen.main else { exit(1) }
         let window = PatternWindow(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.colorSpace = .sRGB
         window.isReleasedWhenClosed = false
         window.title = "Frisket Synthetic Test Pattern"
         let view = PatternView(frame: CGRect(origin: .zero, size: screen.frame.size))

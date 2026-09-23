@@ -175,14 +175,18 @@ def capture_memory_issues(files):
 
 def input_monitoring_issues(files):
     issues = []
+    registrations = 0
     for path, text in sorted(files.items()):
         if not path.endswith((".swift", ".m", ".mm", ".h", ".c", ".cc", ".cpp")):
             continue
         if not path.startswith(("Sources/", "Frisket/")):
             continue
         code = swift_code(text).replace("`", "")
+        registrations += len(re.findall(r'\bRegisterEventHotKey\s*\(', code))
         if re.search(r'\b(?:CGEventTap\w*|CGEvent\s*\.\s*tap\w*|tapCreate\w*|tapEnable|tapIsEnabled|addGlobalMonitorForEvents\w*)\b', code):
             issues.append(f"{path}: event tap or global event monitor is forbidden")
+    if registrations > 1:
+        issues.append(f"product: more than one Carbon hot-key registration (found {registrations})")
     return issues
 
 

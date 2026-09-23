@@ -27,6 +27,7 @@ func repositorySatisfiesStaticChecks(check: String) throws {
 }
 
 @Test(arguments: [
+    "input-hot-key-duplicate-rejected", "input-hot-key-single-accepted",
     "input-monitoring-rejected", "input-monitoring-accepted", "dependencies-rejected", "dependencies-accepted", "dependencies-lockfile-rejected",
     "imports-rejected", "imports-accepted", "imports-qualified-type-rejected", "imports-interpolation-rejected",
     "identity-rejected", "identity-accepted", "identity-after-header-rejected",
