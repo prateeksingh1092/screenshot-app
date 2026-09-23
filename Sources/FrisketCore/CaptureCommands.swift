@@ -21,6 +21,7 @@ public enum CaptureCommand: Sendable {
     case retryCopy(CaptureRevision)
     case dismiss(CaptureRevision)
     case discard(CaptureID)
+    case exitThumbnail(CaptureRevision, ThumbnailExit)
 }
 
 public enum CommitOutcome: Equatable, Sendable {
@@ -46,7 +47,7 @@ public struct CopyOutcome: Equatable, Sendable {
     }
 }
 
-public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance }
+public enum CommandRejection: Equatable, Sendable { case unknownCapture, duplicateCapture, staleRevision, alreadyDelivered, alreadyFinalized, retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress, invalidByteAllowance, thumbnailExitNotDue }
 
 public enum CaptureCommandOutcome: Equatable, Sendable {
     case pending(CaptureRevision)
@@ -65,10 +66,18 @@ public struct CaptureCommandLayer: Sendable {
 
     public init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
-                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil) {
+                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil,
+                thumbnailPolicy: ThumbnailStackPolicy = ThumbnailStackPolicy(),
+                clock: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, clipboard: clipboard,
-                                                  pendingByteLimit: pendingByteLimit, history: history)
+                                                  pendingByteLimit: pendingByteLimit, history: history,
+                                                  thumbnailPolicy: thumbnailPolicy, clock: clock)
+    }
+
+    /// The thumbnail stack, newest first, with any exit the policy requires now.
+    public func thumbnails() async -> [ThumbnailCard] {
+        await coordinator.thumbnails()
     }
 
     public func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {

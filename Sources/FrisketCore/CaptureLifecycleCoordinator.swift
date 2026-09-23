@@ -15,9 +15,15 @@ actor CaptureLifecycleCoordinator {
     private var failedDelivery: Set<CaptureID> = []
     private var delivered: Set<CaptureID> = []
     private var images: [CaptureID: CaptureImage] = [:]
+    // Holds exactly the captures in `images`; update both together.
+    private var stack: ThumbnailStack
+    private let clock: @Sendable () -> ContinuousClock.Instant
 
     init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
-         clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?) {
+         clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?,
+         thumbnailPolicy: ThumbnailStackPolicy, clock: @escaping @Sendable () -> ContinuousClock.Instant) {
+        stack = ThumbnailStack(policy: thumbnailPolicy)
+        self.clock = clock
         self.pendingByteLimit = max(0, pendingByteLimit)
         self.permission = permission
         self.source = source
@@ -35,6 +41,8 @@ actor CaptureLifecycleCoordinator {
         guard revision.number == 1 else { return nil }
         return images[revision.captureID]
     }
+
+    func thumbnails() -> [ThumbnailCard] { stack.cards(at: clock()) }
 
     func execute(_ command: CaptureCommand) async -> CaptureCommandOutcome {
         switch command {
@@ -57,6 +65,7 @@ actor CaptureLifecycleCoordinator {
                 finalized.insert(id)
                 pendingBytes -= image.pngData.count
                 images.removeValue(forKey: id)
+                stack.remove(id)
                 failedDelivery.remove(id)
             }
             inProgress.remove(id)
@@ -70,6 +79,7 @@ actor CaptureLifecycleCoordinator {
             }
             pendingBytes -= images[id]?.pngData.count ?? 0
             images.removeValue(forKey: id)
+            stack.remove(id)
             failedDelivery.remove(id)
             discarded.insert(id)
             return .discarded(id)
@@ -105,6 +115,7 @@ actor CaptureLifecycleCoordinator {
                 guard image.pngData.count <= maximumBytes else { return .rejected(.pendingByteBudgetExceeded) }
                 pendingBytes += image.pngData.count
                 images[id] = image
+                stack.insert(CaptureRevision(captureID: id, number: 1), at: clock())
                 return .pending(CaptureRevision(captureID: id, number: 1))
             case let .failure(.permissionRequired(state)):
                 return .permissionRequired(state)
@@ -143,6 +154,7 @@ actor CaptureLifecycleCoordinator {
                 failedDelivery.remove(revision.captureID)
                 pendingBytes -= image.pngData.count
                 images.removeValue(forKey: revision.captureID)
+                stack.remove(revision.captureID)
             case let .failure(error):
                 delivery = .failed(error)
                 failedDelivery.insert(revision.captureID)
@@ -150,6 +162,16 @@ actor CaptureLifecycleCoordinator {
             inProgress.remove(revision.captureID)
             return .copy(CopyOutcome(revision: revision, commit: commit,
                                      delivery: delivery))
+        case let .exitThumbnail(revision, exit):
+            let id = revision.captureID
+            if images[id] != nil, !inProgress.contains(id) {
+                guard revision.number == 1 else { return .rejected(.staleRevision) }
+                guard stack.admits(exit, for: id, at: clock()) else { return .rejected(.thumbnailExitNotDue) }
+            }
+            switch exit.outcome {
+            case .finalizeToHistory: return await execute(.dismiss(revision))
+            case .discard: return await execute(.discard(id))
+            }
         }
     }
 }

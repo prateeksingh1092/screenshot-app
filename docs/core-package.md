@@ -261,6 +261,41 @@ Xcode toolchain as the full `sh scripts/test-core.sh` run. Original ticket 06
 History-unavailable descriptions above remain applicable when no `CaptureHistory`
 is injected. The app now injects the lazy disk store.
 
+## Ticket 13 thumbnail stack
+
+The coordinator holds a pure `ThumbnailStack` containing exactly its Pending
+captures: a card arrives with `.pending` and leaves whenever the capture stops
+being pending (a committed exit, Delete, or a successful Copy). The public interface:
+
+- `ThumbnailStackPolicy(maximumCount: 4, autoDismissDelay: .seconds(10))` and a
+  `clock: () -> ContinuousClock.Instant`, both optional on the command layer's
+  initializer. These defaults are the implementer's choice and are not yet
+  ratified by Prateek.
+- `thumbnails() -> [ThumbnailCard]`: newest first. Each card has its revision,
+  `expiresAt` (arrival plus the delay, on the injected clock), and `dueExit`:
+  `.overflow` beyond the maximum count, otherwise `.timeout` once expired, else nil.
+- `execute(.exitThumbnail(revision, exit))`, with `ThumbnailExit.outcome`:
+
+  | Exit | Outcome | Admitted |
+  | --- | --- | --- |
+  | timeout | finalize to History | only once `expiresAt` is reached |
+  | swipe, close, escape | finalize to History | always |
+  | overflow | finalize to History | only when the card is beyond the maximum count |
+  | delete | discard; nothing written | always |
+
+  An exit that isn't due returns `rejected(thumbnailExitNotDue)` and changes
+  nothing. Finalizing exits return `dismiss`'s outcomes, and delete returns
+  `discard`'s. After a committed Copy whose delivery failed, delete is still
+  `alreadyFinalized` (ticket 09). A failed commit leaves the card on the stack.
+
+Overflow is a separate command rather than a side effect of capture, so the
+`capture-memory` rule that capture can't authorize persistence still holds.
+The app queries `thumbnails()` after each arrival and removal, and when a card's
+`expiresAt` passes, then issues the due exits. Quit, display unplug, screen lock,
+the auto-dismiss setting and pausing under focus belong to tickets 14 and 32.
+`sh scripts/test-core.sh --filter ThumbnailStackCommandsTests` runs the seam 1
+tests with a manual clock, real files and SQLite.
+
 ## Ticket 23 permission gate
 
 The command initializer now requires a `CapturePermissionSource` in addition to

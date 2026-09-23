@@ -54,16 +54,20 @@ import ImageIO
             }
             return
         }
-        guard args.count == 2, ["--show", "--show-all"].contains(args[1]) else {
-            fputs("Usage: FrisketTestPattern --show | --show-all | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
+        guard args.count == 2, ["--show", "--show-all", "--full-screen"].contains(args[1]) else {
+            fputs("Usage: FrisketTestPattern --show | --show-all | --full-screen | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2\n", stderr)
             exit(2)
         }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         let screens = args[1] == "--show-all" ? NSScreen.screens : NSScreen.main.map { [$0] } ?? []
         guard !screens.isEmpty else { exit(1) }
+        // --full-screen puts the same pattern in its own full-screen Space.
+        let fullScreen = args[1] == "--full-screen"
         let windows = screens.map { screen in
-            let window = PatternWindow(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            let window = PatternWindow(contentRect: screen.frame, styleMask: fullScreen ? [.titled, .resizable] : [.borderless],
+                                       backing: .buffered, defer: false)
+            if fullScreen { window.collectionBehavior = [.fullScreenPrimary] }
             window.colorSpace = .sRGB
             window.isReleasedWhenClosed = false
             window.title = "Frisket Synthetic Test Pattern"
@@ -74,6 +78,7 @@ import ImageIO
             return window
         }
         app.activate(ignoringOtherApps: true)
+        if fullScreen { DispatchQueue.main.async { windows.first?.toggleFullScreen(nil) } }
         withExtendedLifetime(windows) { app.run() }
     }
 

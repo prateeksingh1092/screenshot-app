@@ -19,6 +19,7 @@ import FrisketCore
     private var statusItem: NSStatusItem?
     private var panels: [CaptureID: ThumbnailPanel] = [:]
     private var arrivalOrder: [CaptureID] = []
+    private var timeouts: [CaptureID: Task<Void, Never>] = [:]
     private var capturing = false
     private var terminating = false
     private var requestingPermission = false
@@ -95,11 +96,15 @@ import FrisketCore
                     return
                 }
                 let id = revision.captureID
-                let panel = ThumbnailPanel(revision: revision, preview: preview, screen: screen, offset: panels.count,
-                    copy: { [weak self] in self?.copy(id) }, discard: { [weak self] in self?.discard(id) },
-                    dismiss: { [weak self] in self?.dismiss(id) })
+                let panel = ThumbnailPanel(revision: revision, preview: preview, displayID: displayID(of: screen),
+                    actions: ThumbnailCardActions(copy: { [weak self] in self?.copy(id) },
+                                                  delete: { [weak self] in self?.discard(id) },
+                                                  close: { [weak self] in self?.leave(id, by: .close) },
+                                                  escape: { [weak self] in self?.leave(id, by: .escape) },
+                                                  swipe: { [weak self] in self?.leave(id, by: .swipe) }))
                 panels[id] = panel
                 arrivalOrder.append(id)
+                await settleThumbnails()
             case .captureFailed(.cancelled): break
             case let .permissionRequired(state):
                 showPermissionRecovery(state)
@@ -131,19 +136,25 @@ import FrisketCore
             } else {
                 panel.model.copyFailed = true
                 panel.model.dismissFailed = !panel.model.historyCommitted
+                settleSoon()
             }
         }
     }
 
-    private func dismiss(_ id: CaptureID) {
+    /// Timeout, swipe, close, overflow and Escape all finalize into History (decision 44).
+    private func leave(_ id: CaptureID, by exit: ThumbnailExit) {
         guard !terminating, let panel = panels[id], !panel.model.busy, let commands else { return }
         panel.model.busy = true
         Task {
-            if case .finalized(_, .committed) = await commands.execute(.dismiss(panel.revision)) {
+            switch await commands.execute(.exitThumbnail(panel.revision, exit)) {
+            case .finalized(_, .committed):
+                timeouts.removeValue(forKey: id)?.cancel()
                 panel.showKeptInHistory()
                 try? await Task.sleep(for: .seconds(1.2))
                 remove(id)
-            } else {
+            case .rejected(.thumbnailExitNotDue):
+                panel.model.busy = false
+            default:
                 panel.model.dismissFailed = true
                 panel.model.busy = false
             }
@@ -154,13 +165,65 @@ import FrisketCore
         guard !terminating, let panel = panels[id], !panel.model.busy, let commands else { return }
         panel.model.busy = true
         Task {
-            if case .discarded = await commands.execute(.discard(id)) { remove(id) }
-            else { panel.model.busy = false }
+            if case .discarded = await commands.execute(.exitThumbnail(panel.revision, .delete)) { remove(id) }
+            else { panel.model.busy = false; settleSoon() }
         }
     }
     private func remove(_ id: CaptureID) {
         panels.removeValue(forKey: id)?.close()
         arrivalOrder.removeAll { $0 == id }
+        timeouts.removeValue(forKey: id)?.cancel()
+        settleSoon()
+    }
+
+    private func settleSoon() { Task { await settleThumbnails() } }
+
+    /// Lays cards out in the core's order and performs the exits it reports as due.
+    private func settleThumbnails() async {
+        guard !terminating, let commands else { return }
+        let cards = await commands.thumbnails()
+        guard !terminating else { return }
+        layoutThumbnails(cards.map(\.revision.captureID))
+        for card in cards {
+            let id = card.revision.captureID
+            guard let panel = panels[id] else { continue }
+            if let exit = card.dueExit {
+                // A failed commit stays visible for the user to retry; don't retry it automatically.
+                if !panel.model.dismissFailed { leave(id, by: exit) }
+            } else if timeouts[id] == nil {
+                timeouts[id] = Task { [weak self] in
+                    try? await Task.sleep(until: card.expiresAt, clock: .continuous)
+                    guard !Task.isCancelled else { return }
+                    self?.timeouts[id] = nil
+                    await self?.settleThumbnails()
+                }
+            }
+        }
+    }
+
+    /// Newest card nearest the corner of its capture display; older cards stack upward.
+    private func layoutThumbnails(_ newestFirst: [CaptureID]) {
+        var stacks: [UInt32?: [ThumbnailPanel]] = [:]
+        for id in newestFirst {
+            if let panel = panels[id] { stacks[panel.displayID, default: []].append(panel) }
+        }
+        let margin: CGFloat = 20, gap: CGFloat = 10
+        for (displayID, stack) in stacks {
+            guard let screen = NSScreen.screens.first(where: { self.displayID(of: $0) == displayID }),
+                  let height = stack.first?.size.height else { continue }
+            let frame = screen.visibleFrame
+            // Overlap cards rather than leave the display when they don't fit.
+            let room = max(0, frame.height - 2 * margin - height)
+            let step = stack.count > 1 ? min(height + gap, room / CGFloat(stack.count - 1)) : 0
+            for (slot, panel) in stack.enumerated() {
+                panel.place(at: CGPoint(x: frame.maxX - margin - panel.size.width,
+                                        y: frame.minY + margin + CGFloat(slot) * step))
+            }
+        }
+    }
+
+    private func displayID(of screen: NSScreen) -> UInt32? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
     @objc private func focusThumbnail() {
         if let id = arrivalOrder.last { panels[id]?.focus() }

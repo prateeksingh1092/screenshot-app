@@ -11,80 +11,152 @@ import FrisketCore
     @Published var copyFocusRequest = UUID()
 }
 
+/// Each card control and gesture issues exactly one of these.
+struct ThumbnailCardActions {
+    let copy: () -> Void
+    let delete: () -> Void
+    let close: () -> Void
+    let escape: () -> Void
+    let swipe: () -> Void
+}
+
 private struct ThumbnailCard: View {
     let image: NSImage
     @ObservedObject var model: ThumbnailModel
-    let copy: () -> Void
-    let discard: () -> Void
-    let dismiss: () -> Void
+    let actions: ThumbnailCardActions
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 240, maxHeight: 120).accessibilityLabel("Pending capture preview")
+            if !model.keptInHistory {
+                ThumbnailCardControls(model: model, actions: actions)
+            }
+            Text(model.keptInHistory ? "Kept in History" : model.dismissFailed ? "Could not keep in History. Retry Close or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Close." : "Copy failed. Retry Copy or close to keep in History.") : "Close, swipe, or press Esc to keep in History.")
+                .font(.caption).fixedSize(horizontal: false, vertical: true)
+        }.padding(14).frame(width: 260)
+    }
+}
+
+/// The card's single controls row. Every control has a VoiceOver label and a key.
+private struct ThumbnailCardControls: View {
+    @ObservedObject var model: ThumbnailModel
+    let actions: ThumbnailCardActions
     @FocusState private var copyFocused: Bool
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-                .frame(maxWidth: 240, maxHeight: 150).accessibilityLabel("Pending capture preview")
-            if !model.keptInHistory {
-                HStack {
-                    Button(model.copyFailed ? "Retry Copy" : "Copy", action: copy)
-                        .keyboardShortcut("c", modifiers: [])
-                        .focused($copyFocused)
-                        .overlay {
-                            if copyFocused {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.accentColor, lineWidth: 2)
-                                    .padding(-3)
-                                    .allowsHitTesting(false)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        .accessibilityLabel("Copy capture")
-                    if !model.historyCommitted {
-                        Button("Delete Capture", action: discard)
-                            .keyboardShortcut(.delete, modifiers: [])
-                            .accessibilityLabel("Delete pending capture")
+        HStack {
+            Button(model.copyFailed ? "Retry Copy" : "Copy", action: actions.copy)
+                .keyboardShortcut("c", modifiers: [])
+                .focused($copyFocused)
+                .overlay {
+                    if copyFocused {
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.accentColor, lineWidth: 2)
+                            .padding(-3)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
-                }.disabled(model.busy)
-                Button("Dismiss", action: dismiss)
-                    .keyboardShortcut(.cancelAction)
-                    .accessibilityLabel("Dismiss capture to History")
-                    .disabled(model.busy)
+                }
+                .accessibilityLabel("Copy capture")
+            if !model.historyCommitted {
+                Button("Delete Capture", action: actions.delete)
+                    .keyboardShortcut(.delete, modifiers: [])
+                    .accessibilityLabel("Delete pending capture")
             }
-            Text(model.keptInHistory ? "Kept in History" : model.dismissFailed ? "Could not keep in History. Retry Dismiss or Copy." : model.copyFailed ? (model.historyCommitted ? "Kept in History. Copy failed. Retry Copy or Dismiss." : "Copy failed. Retry Copy or dismiss to History.") : "Dismiss to keep in History.")
-                .font(.caption).fixedSize(horizontal: false, vertical: true)
-        }.padding(14).frame(width: 260)
+            Button("Close", action: actions.close)
+                .keyboardShortcut("w", modifiers: .command)
+                .accessibilityLabel("Close thumbnail and keep capture in History")
+        }.disabled(model.busy)
             .onChange(of: model.copyFocusRequest) { _, _ in
                 copyFocused = true
             }
     }
 }
 
+/// Recognizes Escape and a horizontal two-finger swipe within this window only.
+private final class ThumbnailCardPanel: NSPanel {
+    var escape: (() -> Void)?
+    var swipe: (() -> Void)?
+    private var swipeDistance = CGSize.zero
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.charactersIgnoringModifiers == "\u{1b}",
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+            escape?()
+            return
+        }
+        if event.type == .scrollWheel, event.hasPreciseScrollingDeltas {
+            trackSwipe(event)
+        }
+        super.sendEvent(event)
+    }
+
+    private func trackSwipe(_ event: NSEvent) {
+        switch event.phase {
+        case .began:
+            swipeDistance = .zero
+        case .changed:
+            swipeDistance.width += event.scrollingDeltaX
+            swipeDistance.height += event.scrollingDeltaY
+        case .ended:
+            if abs(swipeDistance.width) >= 60, abs(swipeDistance.width) > 2 * abs(swipeDistance.height) { swipe?() }
+            swipeDistance = .zero
+        case .cancelled:
+            swipeDistance = .zero
+        default:
+            break
+        }
+    }
+}
+
 @MainActor final class ThumbnailPanel {
     let revision: CaptureRevision
+    let displayID: UInt32?
     let model = ThumbnailModel()
-    private let panel: SelectionPanel
+    private let panel: ThumbnailCardPanel
+    private var shown = false
 
-    init(revision: CaptureRevision, preview: CGImage, screen: NSScreen, offset: Int,
-         copy: @escaping () -> Void, discard: @escaping () -> Void, dismiss: @escaping () -> Void) {
+    init(revision: CaptureRevision, preview: CGImage, displayID: UInt32?, actions: ThumbnailCardActions) {
         self.revision = revision
-        panel = SelectionPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 300),
-                               styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        self.displayID = displayID
+        panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 250),
+                                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.escape = actions.escape
+        panel.swipe = actions.swipe
         panel.isReleasedWhenClosed = false
         panel.isRestorable = false
         panel.hidesOnDeactivate = false
         panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Every Space, including full-screen ones, and unaffected by Mission Control.
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.backgroundColor = .windowBackgroundColor
         panel.hasShadow = true
         let image = NSImage(cgImage: preview, size: NSSize(width: preview.width, height: preview.height))
-        panel.contentView = NSHostingView(rootView: ThumbnailCard(image: image, model: model, copy: copy, discard: discard, dismiss: dismiss))
-        let frame = screen.visibleFrame
-        panel.setFrameOrigin(CGPoint(x: max(frame.minX, frame.maxX - 308 - CGFloat(offset % 3) * 24),
-                                     y: frame.minY + 20 + CGFloat(offset % 3) * 24))
+        panel.contentView = NSHostingView(rootView: ThumbnailCard(image: image, model: model, actions: actions))
         panel.setAccessibilityLabel("Pending capture")
-        panel.orderFrontRegardless()
-        NSAccessibility.post(element: panel, notification: .announcementRequested,
-                             userInfo: [.announcement: "Capture ready. Use Frisket’s Focus Latest Thumbnail menu to copy, dismiss, or delete.",
-                                        .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+    }
+
+    var size: CGSize { panel.frame.size }
+
+    /// Moves the card to its stack slot; the first placement shows and announces it.
+    func place(at origin: CGPoint) {
+        guard shown else {
+            shown = true
+            panel.setFrameOrigin(origin)
+            panel.orderFrontRegardless()
+            NSAccessibility.post(element: panel, notification: .announcementRequested,
+                                 userInfo: [.announcement: "Capture ready. Use Frisket’s Focus Latest Thumbnail menu to copy, close, or delete.",
+                                            .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            return
+        }
+        guard panel.frame.origin != origin else { return }
+        NSAnimationContext.runAnimationGroup { _ in
+            panel.animator().setFrameOrigin(origin)
+        }
     }
     func focus() {
         panel.makeKeyAndOrderFront(nil)

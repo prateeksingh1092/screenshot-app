@@ -10,7 +10,7 @@ public enum DiagnosticErrorCode: String, Codable, Sendable {
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired
-    case permissionRequired
+    case permissionRequired, thumbnailExitNotDue
 }
 
 public struct DiagnosticError: Equatable, Codable, Sendable {
@@ -76,6 +76,11 @@ extension DiagnosticEvent {
         case .retryCopy: operation = .retryCopy
         case .discard: operation = .discard
         case .dismiss: operation = .dismiss
+        case let .exitThumbnail(_, exit):
+            switch exit.outcome {
+            case .finalizeToHistory: operation = .dismiss
+            case .discard: operation = .discard
+            }
         }
         let name: DiagnosticEventName
         let error: DiagnosticError?
@@ -141,6 +146,7 @@ extension DiagnosticEvent {
             case .pendingByteBudgetExceeded: code = .pendingByteBudgetExceeded
             case .commandInProgress: code = .commandInProgress
             case .invalidByteAllowance: code = .invalidByteAllowance
+            case .thumbnailExitNotDue: code = .thumbnailExitNotDue
             }
             error = DiagnosticError(domain: .lifecycle, code: code)
         }
