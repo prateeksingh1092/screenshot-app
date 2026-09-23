@@ -1,0 +1,67 @@
+<!-- Source: Cursor Claude Opus 5.5 High, performance and reliability engineer, agent ce8bc2c6-43a6-46ca-b0ba-74f6bf394e1b. Final response ballot saved verbatim, 00:10 UTC Sep 23. -->
+## PERF: round 2 votes
+ARCH-1: agree
+ARCH-2: superseded
+ARCH-3: agree
+ARCH-4: agree
+ARCH-5: agree
+ARCH-6: agree
+ARCH-7: agree
+UX-1: abstain
+UX-2: agree
+UX-3: agree
+UX-4: abstain
+UX-5: abstain
+UX-6: abstain
+UX-7: abstain
+UX-8: abstain
+QA-1: agree
+QA-2: agree
+QA-3: abstain
+QA-4: agree
+QA-5: agree
+QA-6: agree
+QA-7: agree
+QA-8: agree
+DATA-1: agree
+DATA-2: agree
+DATA-3: agree
+DATA-4: agree
+DATA-5: agree
+DATA-6: agree
+DATA-7: agree
+DATA-8: agree
+REL-1: agree
+REL-2: agree
+REL-3: agree
+REL-4: abstain
+REL-5: superseded
+REL-6: agree
+REL-7: abstain
+REL-8: abstain
+PERF-1: agree
+PERF-2: agree
+PERF-3: agree
+PERF-4: agree
+PERF-5: agree
+PERF-6: agree
+PERF-7: agree
+SEC-1: abstain
+SEC-2: agree
+SEC-3: abstain
+SEC-4: abstain
+SEC-5: agree
+SEC-6: agree
+SEC-7: agree
+SEC-8: abstain
+PLAT-1: abstain
+PLAT-2: agree
+PLAT-3: abstain
+PLAT-4: agree
+PLAT-5: abstain
+PLAT-6: agree
+PLAT-7: abstain
+PLAT-8: abstain
+C1: b: Originals never reach disk, so orphan files are safe; keep PERF-4's F_FULLFSYNC and fault points.
+C2: b: The original exists only in memory, so refusing it risks losing the only copy.
+C3: b: Universal builds double compile time on this heat-limited Intel Mac; arm64 can't run here.

@@ -1,0 +1,13 @@
+## Principal Architect: port question
+
+- **Position: C-ref.** Build the architecture fresh and use Snapzy as an engineering reference. Decision 13 assumes copying selected code will save effort; our source review establishes candidates, not that saving. The difficult requirement is coherent Capture ownership and finalization, which we must design ourselves under every option. C-clean unnecessarily discards useful evidence.
+
+- **Code worth porting verbatim-ish (if any):** None proven yet. The strongest candidate is `ScrollingCaptureStitcher`: its `append(CGImage, …)` interface isolates substantial alignment work. Adaptation still requires extracting supporting types, understanding accumulated heuristics, and validating behavior on our fixtures. Release evidence: `.scratch/evaluation/Snapzy/Snapzy/Services/Capture/ScrollingCapture/ScrollingCaptureStitcher.swift:372–405`. I would permit copying only after a bounded comparison demonstrates lower implementation **and maintenance** cost.
+
+- **What Snapzy is worth as reference only:** Scrolling overlap, static headers/footers, directional changes, alignment failure outcomes, overlay coordination, Retina rendering, and the persistence failures already traced. These help us write realistic specifications and tests without inheriting upstream organization. The stitcher explicitly detects static bands and uses Vision alignment at lines 387–405.
+
+- **Cost of porting that from-scratch avoids:** Hidden dependencies and inherited policy. The exporter mixes rendering with file writes and history updates (`Features/Annotate/Services/AnnotateExporter.swift:45–106`); overlays control Quick Access (`Services/Capture/AreaSelectionWindow.swift:574,1351`); database migrations include cloud tables (`Services/Cloud/DatabaseManager.swift:183–235`). All paths are relative to the pinned release above. Fresh implementations can enforce our dependency direction immediately.
+
+- **Cost of from-scratch that porting avoids:** Reimplementing mature algorithmic detail, rediscovering failure cases, and reproducing regression fixes. Reference reading reduces that cost but does not eliminate it. Scrolling is the clearest potential exception.
+
+- **Confidence: medium.** Source inspection cannot estimate extraction versus rewrite effort reliably. A small stitcher comparison using identical fixtures, dependency inventories, and measured implementation effort could move me toward B. Until then, reuse knowledge first; justify copied code individually.

@@ -1,0 +1,67 @@
+<!-- Source: Cursor Claude Opus 5.5 High, UX designer, agent 2fde8f32-9f18-43df-a854-1a693065d40c. Final response ballot saved verbatim, 00:10 UTC Sep 23. -->
+## UX: round 2 votes
+ARCH-1: agree
+ARCH-2: superseded
+ARCH-3: agree
+ARCH-4: agree
+ARCH-5: abstain
+ARCH-6: abstain
+ARCH-7: abstain
+UX-1: agree
+UX-2: agree
+UX-3: agree
+UX-4: agree
+UX-5: agree
+UX-6: agree
+UX-7: agree
+UX-8: agree
+QA-1: agree
+QA-2: abstain
+QA-3: agree
+QA-4: abstain
+QA-5: abstain
+QA-6: abstain
+QA-7: agree
+QA-8: agree
+DATA-1: agree
+DATA-2: abstain
+DATA-3: abstain
+DATA-4: abstain
+DATA-5: abstain
+DATA-6: abstain
+DATA-7: abstain
+DATA-8: agree
+REL-1: superseded
+REL-2: abstain
+REL-3: abstain
+REL-4: agree
+REL-5: superseded
+REL-6: abstain
+REL-7: abstain
+REL-8: abstain
+PERF-1: abstain
+PERF-2: agree
+PERF-3: agree
+PERF-4: abstain
+PERF-5: abstain
+PERF-6: abstain
+PERF-7: agree
+SEC-1: agree
+SEC-2: agree
+SEC-3: agree
+SEC-4: agree
+SEC-5: agree
+SEC-6: agree
+SEC-7: abstain
+SEC-8: agree
+PLAT-1: agree
+PLAT-2: agree
+PLAT-3: agree
+PLAT-4: agree
+PLAT-5: agree
+PLAT-6: abstain
+PLAT-7: abstain
+PLAT-8: agree
+C1: b: Fewer states, so history never shows a half-committed item.
+C2: b: Refusing a capture the user just took surprises them; keep it, and show the overage in Settings plus a notice.
+C3: b: Fast native development builds; the arm64 slice is labelled honestly, and distribution is gated on an Apple-silicon test run.

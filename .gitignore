@@ -1,0 +1,78 @@
+# SwiftPM and Xcode generated output (at any package depth).
+.build/
+.swiftpm/
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcarchive/
+*.app/
+*.dSYM/
+*.dmg
+*.pkg
+
+# macOS metadata.
+.DS_Store
+._*
+
+# Local test output, caches, and runtime storage.
+TestResults/
+test-results/
+test-artifacts/
+*.xcresult/
+*.profraw
+*.profdata
+*.log
+__pycache__/
+*.pyc
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+
+# Captures and recordings are private by default, including test output.
+# Add only individually reviewed synthetic fixtures with explicit exceptions.
+captures/
+recordings/
+*.[pP][nN][gG]
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+*.[gG][iI][fF]
+*.[tT][iI][fF]
+*.[tT][iI][fF][fF]
+*.[hH][eE][iI][cC]
+*.[hH][eE][iI][fF]
+*.[wW][eE][bB][pP]
+*.[bB][mM][pP]
+*.[pP][dD][fF]
+*.[mM][oO][vV]
+*.[mM][pP]4
+*.[mM]4[vV]
+*.[aA][vV][iI]
+*.[mM][kK][vV]
+*.[wW][eE][bB][mM]
+
+# Credentials and local overrides; never add signing material to the repo.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+Codex.local.md
+.cursor/mcp.json
+.cursor/settings.local.json
+
+# Raw upstream downloads, probes, and agent execution records are local only.
+# Authored decisions, tickets, research reports, and review ballots remain visible.
+/.scratch/research/
+/.scratch/evaluation/
+/.scratch/**/prompts/
+*.jsonl

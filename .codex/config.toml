@@ -1,0 +1,4 @@
+# Use the current Codex model through the existing ChatGPT subscription.
+model = "gpt-6-astra"
+model_reasoning_effort = "high"
+forced_login_method = "chatgpt"
