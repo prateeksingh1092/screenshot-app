@@ -1,6 +1,7 @@
 import Foundation
 
 actor CaptureLifecycleCoordinator {
+    private let permission: any CapturePermissionSource
     private let pendingByteLimit: Int
     private var pendingBytes = 0
     private let source: any CapturePixelSource
@@ -12,9 +13,10 @@ actor CaptureLifecycleCoordinator {
     private var delivered: Set<CaptureID> = []
     private var images: [CaptureID: CaptureImage] = [:]
 
-    init(source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
+    init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
          clipboard: any ImageClipboard, pendingByteLimit: Int) {
         self.pendingByteLimit = max(0, pendingByteLimit)
+        self.permission = permission
         self.source = source
         self.fullScreenSource = fullScreenSource
         self.clipboard = clipboard
@@ -55,6 +57,12 @@ actor CaptureLifecycleCoordinator {
             }
             pendingBytes += maximumBytes
             inProgress.insert(id)
+            let access = await permission.capturePermission()
+            guard access == .granted else {
+                pendingBytes -= maximumBytes
+                inProgress.remove(id)
+                return .permissionRequired(access)
+            }
             let result = await captureSource.capture(maximumBytes: maximumBytes)
             pendingBytes -= maximumBytes
             inProgress.remove(id)
@@ -65,6 +73,8 @@ actor CaptureLifecycleCoordinator {
                 pendingBytes += image.pngData.count
                 images[id] = image
                 return .pending(CaptureRevision(captureID: id, number: 1))
+            case let .failure(.permissionRequired(state)):
+                return .permissionRequired(state)
             case let .failure(error):
                 return .captureFailed(error)
             }

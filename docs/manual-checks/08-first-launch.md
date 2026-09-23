@@ -32,10 +32,12 @@ permissions or change the signing identity between runs.
    plus a black marker. It never captures or accesses the pasteboard. Leave
    private content off the other display; move the pointer over the pattern.
 
-4. Press **⌃⌥⌘4**. On a first run, approve Frisket's Screen Recording request
+4. Press **⌃⌥⌘4**. On a first run, choose **Request Screen Recording** in
+   Frisket's recovery panel, then approve Frisket's Screen Recording request
    in System Settings → Privacy & Security → Screen & System Audio Recording.
-   If macOS asks for relaunch, cancel the selection, quit Frisket, and reopen
-   **the fixed installed path**. Retry ⌃⌥⌘4. Denial must show a static notice,
+   No selection should appear before permission is granted. If macOS asks for
+   relaunch, use **Quit & Reopen** to reopen **the fixed installed path**.
+   Retry ⌃⌥⌘4. Denial must show permission recovery,
    never an image; do not interpret the first blank attempt as success.
 
 5. With permission granted, press ⌃⌥⌘4 and **Return without moving the

@@ -245,3 +245,11 @@ shortcut defaults/remapping belong to ticket 24. Seam 1 fixtures cover 1×, 2×,
 negative global coordinates, exclusion requests, Pending image dimensions,
 thumbnail downsampling and unchanged Copy bytes. Actual display selection and
 OS exclusion require [the manual checklist](manual-checks/20-full-screen-capture.md).
+
+## Ticket 23 permission gate
+
+The command initializer now requires a `CapturePermissionSource` in addition to
+pixels and clipboard. Existing fixtures explicitly inject a granted stand-in;
+the app supplies the CoreGraphics/ScreenCaptureKit adapter. See
+[permission model, platform evidence and alert ordering](permission-recovery.md)
+and [the manual state checklist](manual-checks/23-permission-states.md).

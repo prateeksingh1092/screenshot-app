@@ -16,9 +16,9 @@ struct AreaCaptureRequest {
     let excludingBundleIdentifier: String
 }
 
-/// The OS seam: prefetch begins synchronously; all selection paths hide before pixels.
+/// The OS seam: prefetch completes before selection; all selection paths hide before pixels.
 @MainActor protocol AreaCapturePlatform: AnyObject {
-    func prefetchShareableContent()
+    func prefetchShareableContent() async throws
     func selectArea() async -> AreaSelection?
     func hideSelection()
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data
@@ -34,8 +34,10 @@ struct AreaCaptureRequest {
     }
 
     func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
-        platform.prefetchShareableContent()
         defer { platform.finishCapture() }
+        do { try await platform.prefetchShareableContent() }
+        catch let failure as CaptureSourceFailure { return .failure(failure) }
+        catch { return .failure(.unavailable) }
         let selection = await platform.selectArea()
         platform.hideSelection()
         guard let selection else { return .failure(.cancelled) }
@@ -57,6 +59,8 @@ struct AreaCaptureRequest {
             let data = try await platform.capture(request, maximumBytes: maximumBytes)
             guard data.count <= maximumBytes else { return .failure(.unavailable) }
             return .success(CaptureImage(pngData: data))
+        } catch let failure as CaptureSourceFailure {
+            return .failure(failure)
         } catch {
             return .failure(.unavailable)
         }

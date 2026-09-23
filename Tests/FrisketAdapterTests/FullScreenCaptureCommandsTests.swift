@@ -52,7 +52,7 @@ private actor FixtureClipboard: ImageClipboard {
     ) async throws {
         let platform = FixtureDisplayPlatform(frame: CGRect(x: x, y: y, width: 800, height: 600), scale: scale)
         let clipboard = FixtureClipboard()
-        let commands = CaptureCommandLayer(source: UnavailableAreaSource(),
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailableAreaSource(),
             fullScreenSource: FullScreenCaptureSource(platform: platform,
                 bundleIdentifier: "io.github.prateeksingh1092.frisket.debug"),
             clipboard: clipboard, pendingByteLimit: 16_000_000)
