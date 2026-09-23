@@ -31,6 +31,7 @@ actor CaptureLifecycleCoordinator {
     private var unfinishedRedactions: Set<CaptureID> = []
     private var stackFocused = false
     private var focusedCapture: CaptureID?
+    private var screenLocked = false
     // Holds exactly the captures in `images`; update both together.
     private var stack: ThumbnailStack
     private let clock: @Sendable () -> ContinuousClock.Instant
@@ -119,13 +120,44 @@ actor CaptureLifecycleCoordinator {
         return cards[next].revision
     }
 
+    func setThumbnailPolicy(_ policy: ThumbnailStackPolicy) {
+        stack.setPolicy(policy)
+    }
+
+    func assignThumbnailDisplay(_ id: CaptureID, displayID: UInt32) {
+        stack.assignDisplay(id, displayID: displayID)
+    }
+
+    func handleSystemEvent(_ event: ThumbnailSystemEvent) async -> [CaptureCommandOutcome] {
+        switch event {
+        case .quit:
+            var outcomes: [CaptureCommandOutcome] = []
+            for revision in stack.arrivalOrder() {
+                let outcome = await execute(.dismiss(revision))
+                outcomes.append(outcome)
+                guard case .finalized(_, .committed) = outcome else { break }
+            }
+            return outcomes
+        case .screenLocked:
+            screenLocked = true
+            return []
+        case .screenUnlocked:
+            screenLocked = false
+            return []
+        case let .displaysChanged(remaining):
+            stack.rehome(remaining: remaining)
+            return []
+        }
+    }
+
     func thumbnails() -> [ThumbnailCard] {
         stack.cards(at: clock()).map { card in
             let suppressed = automaticExitSuppressed.contains(card.revision.captureID)
-            let pauseTimeout = stackFocused && card.dueExit == .timeout
+            let pauseTimeout = (stackFocused || screenLocked) && card.dueExit == .timeout
             return ThumbnailCard(revision: card.revision, expiresAt: card.expiresAt,
                                  dueExit: (suppressed || pauseTimeout) ? nil : card.dueExit,
-                                 automaticExitSuppressed: suppressed)
+                                 automaticExitSuppressed: suppressed,
+                                 displayID: card.displayID)
         }
     }
 
@@ -307,7 +339,7 @@ actor CaptureLifecycleCoordinator {
                     guard !automaticExitSuppressed.contains(id) else { return .rejected(.thumbnailExitNotDue) }
                 }
                 if exit == .timeout {
-                    guard !stackFocused else { return .rejected(.thumbnailExitNotDue) }
+                    guard !stackFocused, !screenLocked else { return .rejected(.thumbnailExitNotDue) }
                 }
                 guard stack.admits(exit, for: id, at: clock()) else { return .rejected(.thumbnailExitNotDue) }
             }

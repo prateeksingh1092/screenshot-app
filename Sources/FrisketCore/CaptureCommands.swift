@@ -122,6 +122,19 @@ public struct CaptureCommandLayer: Sendable {
         await coordinator.setThumbnailStackFocus(focused)
     }
 
+    public func setThumbnailPolicy(_ policy: ThumbnailStackPolicy) async {
+        await coordinator.setThumbnailPolicy(policy)
+    }
+
+    public func assignThumbnailDisplay(_ id: CaptureID, displayID: UInt32) async {
+        await coordinator.assignThumbnailDisplay(id, displayID: displayID)
+    }
+
+    /// Quit, lock, unlock, and display-unplug outcomes. Quit finalizes oldest first.
+    public func handleSystemEvent(_ event: ThumbnailSystemEvent) async -> [CaptureCommandOutcome] {
+        await coordinator.handleSystemEvent(event)
+    }
+
     public func focusedThumbnail() async -> CaptureRevision? {
         await coordinator.focusedThumbnail()
     }

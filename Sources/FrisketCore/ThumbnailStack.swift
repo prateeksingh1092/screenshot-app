@@ -40,45 +40,105 @@ public enum ThumbnailKeys {
     }
 }
 
+/// Timeout policy. Zero seconds expire immediately; only `.never` disables timeout.
+public enum ThumbnailAutoDismiss: Equatable, Sendable {
+    case after(Duration)
+    case never
+}
+
+/// Persisted Settings mapping. `never` is an explicit flag so stored zero stays immediate timeout.
+public struct ThumbnailAutoDismissPreference: Equatable, Sendable {
+    public static let neverKey = "thumbnailAutoDismissNever"
+    public static let secondsKey = "thumbnailAutoDismissSeconds"
+    public static let defaultSeconds = 10
+
+    public var never: Bool
+    public var seconds: Int
+
+    public var autoDismiss: ThumbnailAutoDismiss {
+        never ? .never : .after(.seconds(Int64(max(0, seconds))))
+    }
+
+    public init(never: Bool = false, seconds: Int = defaultSeconds) {
+        self.never = never
+        self.seconds = max(0, seconds)
+    }
+
+    public static func load(never: Bool, seconds: Any?) -> ThumbnailAutoDismissPreference {
+        let parsed = (seconds as? Int).map { max(0, $0) } ?? defaultSeconds
+        return ThumbnailAutoDismissPreference(never: never, seconds: parsed)
+    }
+}
+
+public enum ThumbnailSystemEvent: Equatable, Sendable {
+    case quit
+    case screenLocked
+    case screenUnlocked
+    case displaysChanged(remaining: [UInt32])
+}
+
 public struct ThumbnailStackPolicy: Sendable {
     public let maximumCount: Int
-    public let autoDismissDelay: Duration
-    // Decision 54: 4 cards / 10 seconds are working defaults, configurable through Settings later.
-    public init(maximumCount: Int = 4, autoDismissDelay: Duration = .seconds(10)) {
+    public let autoDismiss: ThumbnailAutoDismiss
+    /// Delay used by callers that still read the ticket-13 field. Never reports the working default.
+    public var autoDismissDelay: Duration {
+        switch autoDismiss {
+        case .after(let delay): return delay
+        case .never: return .seconds(Int64(ThumbnailAutoDismissPreference.defaultSeconds))
+        }
+    }
+
+    // Decision 54: 4 cards / 10 seconds are working defaults, configurable through Settings.
+    public init(maximumCount: Int = 4, autoDismiss: ThumbnailAutoDismiss = .after(.seconds(10))) {
         self.maximumCount = max(1, maximumCount)
-        self.autoDismissDelay = max(.zero, autoDismissDelay)
+        switch autoDismiss {
+        case .after(let delay): self.autoDismiss = .after(max(.zero, delay))
+        case .never: self.autoDismiss = .never
+        }
+    }
+
+    public init(maximumCount: Int = 4, autoDismissDelay: Duration) {
+        self.init(maximumCount: maximumCount, autoDismiss: .after(autoDismissDelay))
     }
 }
 
 public struct ThumbnailCard: Equatable, Sendable {
     public let revision: CaptureRevision
-    /// On the command layer's injected clock.
-    public let expiresAt: ContinuousClock.Instant
+    /// Arrival plus the delay on the injected clock; nil when auto-dismiss is never.
+    public let expiresAt: ContinuousClock.Instant?
     /// The exit the policy requires now; nil while the card may stay.
     public let dueExit: ThumbnailExit?
     /// A failed action requires an explicit user retry; do not schedule automatic exits.
     public let automaticExitSuppressed: Bool
-    public init(revision: CaptureRevision, expiresAt: ContinuousClock.Instant, dueExit: ThumbnailExit?,
-                automaticExitSuppressed: Bool = false) {
+    public let displayID: UInt32?
+    public init(revision: CaptureRevision, expiresAt: ContinuousClock.Instant?, dueExit: ThumbnailExit?,
+                automaticExitSuppressed: Bool = false, displayID: UInt32? = nil) {
         self.revision = revision
         self.expiresAt = expiresAt
         self.dueExit = dueExit
         self.automaticExitSuppressed = automaticExitSuppressed
+        self.displayID = displayID
     }
 }
 
 /// Pure ordering and exit policy for the cards of Pending captures.
 struct ThumbnailStack: Sendable {
-    private let policy: ThumbnailStackPolicy
-    private var newestFirst: [(revision: CaptureRevision, expiresAt: ContinuousClock.Instant)] = []
+    private var policy: ThumbnailStackPolicy
+    private var newestFirst: [(revision: CaptureRevision, arrivedAt: ContinuousClock.Instant)] = []
+    private var displays: [CaptureID: UInt32] = [:]
 
     init(policy: ThumbnailStackPolicy) { self.policy = policy }
 
+    mutating func setPolicy(_ policy: ThumbnailStackPolicy) { self.policy = policy }
+
     mutating func insert(_ revision: CaptureRevision, at now: ContinuousClock.Instant) {
-        newestFirst.insert((revision, now + policy.autoDismissDelay), at: 0)
+        newestFirst.insert((revision, now), at: 0)
     }
 
-    mutating func remove(_ id: CaptureID) { newestFirst.removeAll { $0.revision.captureID == id } }
+    mutating func remove(_ id: CaptureID) {
+        newestFirst.removeAll { $0.revision.captureID == id }
+        displays.removeValue(forKey: id)
+    }
 
     /// Keeps arrival order and expiry; only the current revision changes after Done.
     mutating func replace(_ revision: CaptureRevision) {
@@ -86,12 +146,38 @@ struct ThumbnailStack: Sendable {
         newestFirst[index].revision = revision
     }
 
+    mutating func assignDisplay(_ id: CaptureID, displayID: UInt32) {
+        guard newestFirst.contains(where: { $0.revision.captureID == id }) else { return }
+        displays[id] = displayID
+    }
+
+    mutating func rehome(remaining: [UInt32]) {
+        guard let fallback = remaining.first else { return }
+        let connected = Set(remaining)
+        for (id, display) in displays where !connected.contains(display) {
+            displays[id] = fallback
+        }
+    }
+
+    /// Oldest first, matching quit finalization order.
+    func arrivalOrder() -> [CaptureRevision] { newestFirst.reversed().map(\.revision) }
+
     func cards(at now: ContinuousClock.Instant) -> [ThumbnailCard] {
         newestFirst.enumerated().map { index, card in
             let overflowing = index >= policy.maximumCount
-            let expired = now >= card.expiresAt
-            return ThumbnailCard(revision: card.revision, expiresAt: card.expiresAt,
-                                 dueExit: overflowing ? .overflow : expired ? .timeout : nil)
+            let expiresAt: ContinuousClock.Instant?
+            let expired: Bool
+            switch policy.autoDismiss {
+            case .after(let delay):
+                expiresAt = card.arrivedAt + delay
+                expired = now >= card.arrivedAt + delay
+            case .never:
+                expiresAt = nil
+                expired = false
+            }
+            return ThumbnailCard(revision: card.revision, expiresAt: expiresAt,
+                                 dueExit: overflowing ? .overflow : expired ? .timeout : nil,
+                                 displayID: displays[card.revision.captureID])
         }
     }
 
@@ -100,7 +186,9 @@ struct ThumbnailStack: Sendable {
         guard let index = newestFirst.firstIndex(where: { $0.revision.captureID == id }) else { return false }
         switch exit {
         case .overflow: return index >= policy.maximumCount
-        case .timeout: return now >= newestFirst[index].expiresAt
+        case .timeout:
+            guard case .after(let delay) = policy.autoDismiss else { return false }
+            return now >= newestFirst[index].arrivedAt + delay
         case .swipe, .close, .escape, .delete: return true
         }
     }
