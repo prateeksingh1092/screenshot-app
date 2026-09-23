@@ -4,11 +4,11 @@
 
 **Blocked by:** 09, 11, 12
 
-**Status:** in-progress (branch `ticket/17-history-database-failure`)
+**Status:** resolved (tested on `main` at `43b93ae`; History failure notice/folder manual pending)
 
-- [ ] Open and migration failures (corrupt file, unknown migration, permission denied) put History in a disabled state without writing to the database.
-- [ ] A visible notice and a recovery option are shown; the recovery never erases the database silently.
-- [ ] Seam 1 tests prove capture, copy, save, and drag still succeed in the disabled state, and that dismiss behaves safely without History.
+- [x] Open and migration failures (corrupt file, unknown migration, permission denied) put History in a disabled state without writing to the database.
+- [x] A visible notice and a recovery option are shown; the recovery never erases the database silently.
+- [x] Seam 1 tests prove capture, copy, save, and drag still succeed in the disabled state, and that dismiss behaves safely without History.
 
 ## Comments
 
@@ -23,3 +23,5 @@ Report: [17-implementer.md](../reports/17-implementer.md). Seam 1 covers corrupt
 ### 2026-09-23 — review and fix
 
 In-chat review vs `9abd3c2`: [17-code-review.md](../reviews/17-code-review.md). Availability no longer re-runs recovery on every Settings or thumbnail refresh.
+
+- **Integration:** `integrate/17` fast-forwarded `main` to `43b93ae`. Corrupt, unknown-migration, and permission-denied open failures plus recover-after-repair are seam 1. Root `swift test`: 252 tests in 37 suites passed. Unsigned x86_64 `xcodebuild` succeeded. x86_64 only; arm64 not executed. Coordinator chat after Codex/Other Models limits. Manual notice/folder/VoiceOver remain for Prateek.
