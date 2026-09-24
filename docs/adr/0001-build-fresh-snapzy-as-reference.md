@@ -18,9 +18,9 @@ The scrolling stitcher that was briefly adapted from that project has been remov
 
 ## Stitcher trial outcome (decision 48)
 
-Decision 48 accepted the port after ticket 05 met the synthetic memory gate and
-the coordinator verified Vision outside the sandbox. Ticket 34 adopts it in
-FrisketCore behind the pure frame-sequence stitcher interface. Real recorded
-sequence acceptance remains pending authorized captures; see
-[the stitcher documentation](../stitcher.md). The broader fresh-build decision
-remains in force.
+Decision 48 accepted a port after ticket 05 met the synthetic memory gate and
+the coordinator verified Vision outside the sandbox. That port was later
+removed. The stitcher that ships is Frisket-owned code, and
+`docs/ported-files.json` is empty. Real recorded sequence acceptance remains
+pending authorized captures; see [the stitcher documentation](../stitcher.md).
+The broader fresh-build decision remains in force.

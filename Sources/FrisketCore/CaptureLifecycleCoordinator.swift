@@ -552,8 +552,7 @@ actor CaptureLifecycleCoordinator {
             inProgress.remove(id)
             return .permissionRequired(access)
         }
-        let sessionBudget = ScrollingCaptureBudget(pixelCap: scrollingBudget.pixelCap,
-                                                   memoryBudgetBytes: min(scrollingBudget.memoryBudgetBytes, maximumBytes))
+        let sessionBudget = ScrollingCaptureBudget.forCapture(template: scrollingBudget, encodedByteCeiling: maximumBytes)
         let session = ScrollingCaptureSession(budget: sessionBudget)
         while true {
             switch await scrollingFrames.nextFrame() {

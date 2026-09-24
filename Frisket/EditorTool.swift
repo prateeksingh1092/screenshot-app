@@ -4,18 +4,24 @@ import FrisketCore
 /// A canvas tool. The editor lists every tool in its palette and hands the active one
 /// each completed canvas drag, in document points. Later tools (crop, arrows, shapes,
 /// text, blur) add conformers here; the document and renderer stay the only pixel path.
+enum EditorToolRole: Equatable {
+    case conceal, frame, draw
+}
+
 @MainActor protocol EditorTool: AnyObject {
     var title: String { get }
     var accessibilityLabel: String { get }
     var keyEquivalent: String { get }
+    var role: EditorToolRole { get }
     /// Applies a drag from `start` to `end`; returns false when the drag changes nothing.
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool
 }
 
 @MainActor final class SolidRedactionTool: EditorTool {
     let title = "Solid Redaction"
-    let accessibilityLabel = "Solid redaction tool"
+    let accessibilityLabel = "Solid redaction. Hides pixels with opaque black."
     let keyEquivalent = "r"
+    let role = EditorToolRole.conceal
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
         let originX = edits.crop?.x ?? 0
@@ -31,6 +37,7 @@ import FrisketCore
     let title = "Crop"
     let accessibilityLabel = "Crop tool"
     let keyEquivalent = "c"
+    let role = EditorToolRole.frame
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
         let originX = edits.crop?.x ?? 0
@@ -44,8 +51,9 @@ import FrisketCore
 
 @MainActor final class RectangleTool: EditorTool {
     let title = "Shape"
-    let accessibilityLabel = "Rectangle shape tool"
+    let accessibilityLabel = "Rectangle shape tool. Drawing does not hide pixels."
     let keyEquivalent = "s"
+    let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
         let originX = edits.crop?.x ?? 0
@@ -59,8 +67,9 @@ import FrisketCore
 
 @MainActor final class ArrowTool: EditorTool {
     let title = "Arrow"
-    let accessibilityLabel = "Arrow tool"
+    let accessibilityLabel = "Arrow tool. Drawing does not hide pixels."
     let keyEquivalent = "a"
+    let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
         let originX = edits.crop?.x ?? 0
@@ -74,8 +83,9 @@ import FrisketCore
 
 @MainActor final class TextTool: EditorTool {
     let title = "Text"
-    let accessibilityLabel = "Text label tool"
+    let accessibilityLabel = "Text label tool. Drawing does not hide pixels."
     let keyEquivalent = "t"
+    let role = EditorToolRole.draw
     var text: () -> String = { "A" }
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
@@ -90,8 +100,9 @@ import FrisketCore
 
 @MainActor final class BlurTool: EditorTool {
     let title = "Blur"
-    let accessibilityLabel = "Blur effect tool"
+    let accessibilityLabel = "Blur. Softens pixels and does not hide them. Use Solid Redaction to conceal."
     let keyEquivalent = "b"
+    let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
         let originX = edits.crop?.x ?? 0
@@ -105,8 +116,9 @@ import FrisketCore
 
 @MainActor final class MagnifyTool: EditorTool {
     let title = "Magnify"
-    let accessibilityLabel = "Magnify effect tool"
+    let accessibilityLabel = "Magnify. Doubles pixels and does not hide them. Use Solid Redaction to conceal."
     let keyEquivalent = "m"
+    let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
         let originX = edits.crop?.x ?? 0

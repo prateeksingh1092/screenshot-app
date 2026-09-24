@@ -11,23 +11,39 @@ import ImageIO
 public struct ScrollingCaptureBudget: Equatable, Sendable {
   public let pixelCap: Int
   public let memoryBudgetBytes: Int
+  /// Encoded-byte reservation for this capture. Defaults to no extra ceiling so a
+  /// memory-only fixture does not inherit the app's pending-session cap.
+  public let encodedByteCeiling: Int
 
-  public init(pixelCap: Int, memoryBudgetBytes: Int) {
+  public init(pixelCap: Int, memoryBudgetBytes: Int, encodedByteCeiling: Int = .max) {
     self.pixelCap = pixelCap
     self.memoryBudgetBytes = memoryBudgetBytes
+    self.encodedByteCeiling = encodedByteCeiling
   }
 
-  public static let v1 = ScrollingCaptureBudget(pixelCap: 5_120 * 57_600, memoryBudgetBytes: 2_000_000_000)
+  /// Keeps the template's process peak. `encodedByteCeiling` is this capture's reservation.
+  public static func forCapture(template: ScrollingCaptureBudget, encodedByteCeiling: Int) -> ScrollingCaptureBudget {
+    ScrollingCaptureBudget(pixelCap: template.pixelCap, memoryBudgetBytes: template.memoryBudgetBytes,
+                           encodedByteCeiling: encodedByteCeiling)
+  }
+
+  public static let v1 = ScrollingCaptureBudget(
+    pixelCap: CaptureBudgets.v1.scrollingPixelCap,
+    memoryBudgetBytes: CaptureBudgets.v1.scrollingMemoryBytes,
+    encodedByteCeiling: CaptureBudgets.v1.scrollingEncodedBytes)
 }
 
 public enum ScrollingCaptureNotice: Equatable, Sendable {
   case pixelCap
+  case encodedCeiling
   case memoryBudget
 
   public var message: String {
     switch self {
     case .pixelCap:
       return "Scrolling capture stopped at the pixel limit. The image includes only the section that fit."
+    case .encodedCeiling:
+      return "Scrolling capture stopped at the size limit. The image includes only the section that fit."
     case .memoryBudget:
       return "Scrolling capture stopped at the memory limit. The image includes only the section that fit."
     }
@@ -130,15 +146,14 @@ public final class ScrollingCaptureSession: @unchecked Sendable {
     let framePixels = viewport.width * viewport.height
     if matcher.acceptedFrameCount == 0 {
       if framePixels > budget.pixelCap { return .refused(.pixelCap) }
+      if frameBytes > budget.encodedByteCeiling { return .refused(.encodedCeiling) }
       if frameBytes > budget.memoryBudgetBytes { return .refused(.memoryBudget) }
+    } else if matcher.retainedByteCount + frameBytes > budget.encodedByteCeiling {
+      return stop(.encodedCeiling)
     } else if matcher.retainedByteCount + frameBytes > budget.memoryBudgetBytes {
-      self.notice = .memoryBudget
-      guard let preview = currentPreview(.memoryBudget) else { return .refused(.memoryBudget) }
-      return .stopped(.memoryBudget, preview)
+      return stop(.memoryBudget)
     } else if matcher.pixelWidth > 0, matcher.outputHeight >= budget.pixelCap / matcher.pixelWidth {
-      self.notice = .pixelCap
-      guard let preview = currentPreview(.pixelCap) else { return .refused(.pixelCap) }
-      return .stopped(.pixelCap, preview)
+      return stop(.pixelCap)
     }
     guard let image = cgImage(viewport) else { return .failed }
     let update: ScrollingCaptureStitchUpdate?
@@ -151,6 +166,10 @@ public final class ScrollingCaptureSession: @unchecked Sendable {
       }
     }
     guard let update else { return .failed }
+    if matcher.retainedByteCount > budget.encodedByteCeiling {
+      cancel()
+      return .refused(.encodedCeiling)
+    }
     if matcher.retainedByteCount > budget.memoryBudgetBytes {
       cancel()
       return .refused(.memoryBudget)
@@ -190,6 +209,12 @@ public final class ScrollingCaptureSession: @unchecked Sendable {
     matcher = ScrollingCaptureStitcher()
     notice = nil
     rejection = nil
+  }
+
+  private func stop(_ notice: ScrollingCaptureNotice) -> ScrollingIngest {
+    self.notice = notice
+    guard let preview = currentPreview(notice) else { return .refused(notice) }
+    return .stopped(notice, preview)
   }
 
   private func currentPreview(_ notice: ScrollingCaptureNotice?) -> ScrollingPreview? {

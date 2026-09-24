@@ -80,6 +80,9 @@ import FrisketCore
 
     func finishCapture() { content = nil }
 
+    /// Uncompressed RGBA ceiling. Nil uses the encoded `maximumBytes` allowance.
+    var decodedByteCeiling: Int?
+
     func capture(_ selected: WindowCandidate, maximumBytes: Int) async throws -> Data {
         // Selection has already been hidden. Refresh after clicking so closed,
         // minimized, moved-to-another-Space, or recycled windows fail closed.
@@ -101,7 +104,7 @@ import FrisketCore
         let height = (filter.contentRect.height * CGFloat(filter.pointPixelScale)).rounded(.up)
         guard width.isFinite, height.isFinite, width > 0, height > 0,
               width < Double(Int.max), height < Double(Int.max),
-              width * height * 4 <= Double(maximumBytes) else { throw CaptureSourceFailure.unavailable }
+              width * height * 4 <= Double(decodedByteCeiling ?? maximumBytes) else { throw CaptureSourceFailure.unavailable }
         let configuration = SCStreamConfiguration()
         configuration.width = Int(width)
         configuration.height = Int(height)

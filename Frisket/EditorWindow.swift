@@ -20,7 +20,7 @@ import FrisketCore
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        setAccessibilityLabel("Capture canvas. Drag with the pointer to crop or add a Solid redaction.")
+        setAccessibilityLabel("Capture canvas. Drag to hide pixels with a solid black redaction.")
     }
 
     required init?(coder: NSCoder) { nil }
@@ -129,7 +129,7 @@ import FrisketCore
     private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
     private let saveButton = NSButton(title: "Save", target: nil, action: nil)
     private let dragWell = HistoryDragView()
-    private let doneButton = NSButton(title: "Done", target: nil, action: nil)
+    private let doneButton = NSButton(title: "Keep in History", target: nil, action: nil)
     var onFileDrag: ((NSView, NSEvent) -> Void)?
     var currentEdits: DocumentEdits { edits }
     var dragPreview: NSImage? { canvas.rendered }
@@ -139,7 +139,6 @@ import FrisketCore
     private var finish: ((EditorLeave) async -> Bool)?
     private var promptOpen = false
     private let placementScreen: NSScreen?
-    private static let chrome = EditorWindowLayout.Chrome(toolbarHeight: 118, titlebarHeight: 28)
 
     init?(base: Bitmap, pixelSize: CGSize? = nil, scale: Double, screen: NSScreen?,
           finish: @escaping (EditorLeave) async -> Bool) {
@@ -154,24 +153,15 @@ import FrisketCore
         canvas = EditorCanvasView(documentSize: documentSize)
         placementScreen = screen ?? NSScreen.main
         let visible = placementScreen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
-        let chrome = Self.chrome
-        let size = EditorWindowLayout.contentSize(document: documentSize, visible: visible.size, chrome: chrome)
-        let barHeight = chrome.toolbarHeight
-        window = NSWindow(contentRect: CGRect(origin: .zero, size: size),
+        window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 640, height: 480),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init()
         window.title = "Edit Capture"
         window.isRestorable = false
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
-        window.minSize = CGSize(width: min(320, size.width), height: min(200, size.height))
-        window.maxSize = visible.size
         window.delegate = self
 
-        let content = NSView(frame: CGRect(origin: .zero, size: size))
-        canvas.frame = CGRect(x: 0, y: 0, width: size.width, height: size.height - barHeight)
-        canvas.autoresizingMask = [.width, .height]
-        canvas.onDrag = { [weak self] start, end in self?.applyDrag(from: start, to: end) }
         let toolsRow = NSStackView()
         toolsRow.orientation = .horizontal
         toolsRow.alignment = .centerY
@@ -181,27 +171,29 @@ import FrisketCore
         actionsRow.alignment = .centerY
         actionsRow.spacing = 4
         for row in [toolsRow, actionsRow] {
-            row.setHuggingPriority(.fittingSizeCompression, for: .horizontal)
-            row.setClippingResistancePriority(.fittingSizeCompression, for: .horizontal)
+            row.setHuggingPriority(.defaultHigh, for: .horizontal)
+            row.setClippingResistancePriority(.defaultHigh, for: .horizontal)
         }
-        let bar = NSStackView(frame: CGRect(x: 0, y: size.height - barHeight, width: size.width, height: barHeight))
-        bar.autoresizingMask = [.width, .minYMargin]
+        let bar = NSStackView()
         bar.orientation = .vertical
         bar.alignment = .leading
         bar.spacing = 4
         bar.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
-        bar.setHuggingPriority(.fittingSizeCompression, for: .horizontal)
-        bar.setClippingResistancePriority(.fittingSizeCompression, for: .horizontal)
+        bar.setHuggingPriority(.defaultHigh, for: .horizontal)
+        bar.setClippingResistancePriority(.defaultHigh, for: .horizontal)
         for (index, tool) in tools.enumerated() {
+            if index > 0, tools[index - 1].role == .conceal { toolsRow.addArrangedSubview(Self.shelfSeparator()) }
+            if tool.title == "Blur" { toolsRow.addArrangedSubview(Self.shelfSeparator()) }
             let button = NSButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
             button.setButtonType(.pushOnPushOff)
-            button.bezelStyle = .push
-            button.controlSize = .small
+            button.bezelStyle = tool.role == .conceal ? .rounded : .push
+            button.controlSize = .regular
             button.tag = index
             button.keyEquivalent = tool.keyEquivalent
             button.keyEquivalentModifierMask = []
             button.setAccessibilityLabel(tool.accessibilityLabel)
             button.toolTip = "\(tool.title) (\(tool.keyEquivalent.uppercased()))"
+            button.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
             toolButtons.append(button)
             toolsRow.addArrangedSubview(button)
         }
@@ -209,7 +201,7 @@ import FrisketCore
         labelField.stringValue = ""
         labelField.setAccessibilityLabel("Annotation label text")
         labelField.bezelStyle = .roundedBezel
-        labelField.controlSize = .small
+        labelField.controlSize = .regular
         labelField.frame.size.width = 140
         labelField.delegate = self
         toolsRow.addArrangedSubview(labelField)
@@ -227,7 +219,7 @@ import FrisketCore
         configure(saveButton, action: #selector(saveRendered), key: "s", modifiers: .command,
                   label: "Save the edited capture", tip: "Save the edited result (⌘S)")
         configure(doneButton, action: #selector(done), key: "\r", modifiers: [],
-                  label: "Done: keep the redacted capture", tip: "Finish editing and keep the redacted result (Return)")
+                  label: "Keep this capture in History", tip: "Keep this capture in History (Return)")
         dragWell.setAccessibilityLabel("Drag the edited capture")
         dragWell.toolTip = "Drag the edited result"
         dragWell.setFrameSize(NSSize(width: 56, height: 36))
@@ -240,6 +232,27 @@ import FrisketCore
         bar.addArrangedSubview(toolsRow)
         bar.addArrangedSubview(hintField)
         bar.addArrangedSubview(actionsRow)
+
+        let measured = bar.fittingSize
+        let toolbarHeight = measured.height >= 72 ? measured.height : 120
+        let shelfWidth = measured.width >= 520 ? measured.width : 760
+        var size = EditorWindowLayout.contentSize(document: documentSize, visible: visible.size,
+            chrome: EditorWindowLayout.Chrome(toolbarHeight: toolbarHeight, titlebarHeight: 28))
+        size.width = max(size.width, min(shelfWidth, visible.width))
+        window.minSize = CGSize(width: min(shelfWidth, visible.width), height: min(toolbarHeight + 80, size.height))
+        window.maxSize = visible.size
+        let content = NSView(frame: CGRect(origin: .zero, size: size))
+        canvas.frame = CGRect(x: 0, y: 0, width: size.width, height: max(1, size.height - toolbarHeight))
+        canvas.autoresizingMask = [.width, .height]
+        canvas.onDrag = { [weak self] start, end in self?.applyDrag(from: start, to: end) }
+        bar.frame = CGRect(x: 0, y: size.height - toolbarHeight, width: size.width, height: toolbarHeight)
+        bar.autoresizingMask = [.width, .minYMargin]
+        let shelf = NSVisualEffectView(frame: bar.frame)
+        shelf.material = .menu
+        shelf.blendingMode = .withinWindow
+        shelf.state = .followsWindowActiveState
+        shelf.autoresizingMask = [.width, .minYMargin]
+        content.addSubview(shelf)
         content.addSubview(canvas)
         content.addSubview(bar)
         window.contentView = content
@@ -248,12 +261,21 @@ import FrisketCore
         refresh()
     }
 
+    private static func shelfSeparator() -> NSView {
+        let box = NSBox()
+        box.boxType = .separator
+        box.translatesAutoresizingMaskIntoConstraints = false
+        box.widthAnchor.constraint(equalToConstant: 1).isActive = true
+        box.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        return box
+    }
+
     private func configure(_ button: NSButton, action: Selector, key: String, modifiers: NSEvent.ModifierFlags,
                            label: String, tip: String) {
         button.target = self
         button.action = action
         button.bezelStyle = .push
-        button.controlSize = .small
+        button.controlSize = .regular
         button.keyEquivalent = key
         button.keyEquivalentModifierMask = modifiers
         button.setAccessibilityLabel(label)
@@ -326,28 +348,43 @@ import FrisketCore
         case is SolidRedactionTool:
             canvas.guide = .box
             hintField.stringValue = "Drag a box. It is painted solid black and stays hidden under blur."
+            canvas.setAccessibilityLabel("Capture canvas. Drag to hide pixels with a solid black redaction.")
         case is CropTool:
             canvas.guide = .crop
             hintField.stringValue = "Drag the area to keep. Everything outside it is removed."
+            canvas.setAccessibilityLabel("Capture canvas. Drag the area to keep.")
         case is ArrowTool:
             canvas.guide = .line
-            hintField.stringValue = "Drag from the tail to the point."
+            hintField.stringValue = "Drag from the tail to the point. Drawing does not hide pixels."
+            canvas.setAccessibilityLabel("Capture canvas. Drag to draw. Drawing does not hide pixels.")
         case is RectangleTool:
             canvas.guide = .box
-            hintField.stringValue = "Drag a rectangle outline."
+            hintField.stringValue = "Drag a rectangle outline. Drawing does not hide pixels."
+            canvas.setAccessibilityLabel("Capture canvas. Drag to draw. Drawing does not hide pixels.")
         case is TextTool:
             canvas.guide = .label(labelField.stringValue)
-            hintField.stringValue = "Type letters or digits, then click where the label should start."
+            hintField.stringValue = "Type letters or digits, then click where the label should start. Drawing does not hide pixels."
+            canvas.setAccessibilityLabel("Capture canvas. Drag to draw. Drawing does not hide pixels.")
         case is BlurTool:
             canvas.guide = .box
-            hintField.stringValue = "Drag a box to soften the pixels inside it."
+            hintField.stringValue = "Drag a box to soften the pixels inside it. Blur does not hide pixels. Use Solid Redaction to conceal."
+            canvas.setAccessibilityLabel("Capture canvas. Drag to blur. Blur does not hide pixels. Use Solid Redaction to conceal.")
         case is MagnifyTool:
             canvas.guide = .box
-            hintField.stringValue = "Drag a box. Those pixels are doubled from its top-left corner."
+            hintField.stringValue = "Drag a box. Those pixels are doubled from its top-left corner. Magnify does not hide pixels. Use Solid Redaction to conceal."
+            canvas.setAccessibilityLabel("Capture canvas. Drag to magnify. Magnify does not hide pixels. Use Solid Redaction to conceal.")
         default:
             canvas.guide = .box
             hintField.stringValue = "Drag on the image."
+            canvas.setAccessibilityLabel("Capture canvas. Drag on the image.")
         }
+        let redacted = !edits.redactions.isEmpty
+        doneButton.toolTip = redacted
+            ? "Keep the redacted capture in History (Return)"
+            : "Keep this capture in History (Return)"
+        doneButton.setAccessibilityLabel(redacted
+            ? "Keep the redacted capture in History"
+            : "Keep this capture in History")
     }
 
     private func applyDrag(from start: CGPoint, to end: CGPoint) {

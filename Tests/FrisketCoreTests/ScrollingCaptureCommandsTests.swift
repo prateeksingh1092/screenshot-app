@@ -44,8 +44,15 @@ private struct IgnoringClipboard: ImageClipboard {
 extension ScrollingCaptureCommandsTests {
     @Test func v1BudgetMatchesTheStitcherTrialMeasurement() {
         // Ticket 34 completed 5,120 × 57,600 at a 1,270,796,288 byte peak, under ticket 05's 2,000,000,000 byte gate.
+        #expect(ScrollingCaptureBudget.v1.pixelCap == CaptureBudgets.v1.scrollingPixelCap)
         #expect(ScrollingCaptureBudget.v1.pixelCap == 294_912_000)
+        #expect(ScrollingCaptureBudget.v1.memoryBudgetBytes == CaptureBudgets.v1.scrollingMemoryBytes)
         #expect(ScrollingCaptureBudget.v1.memoryBudgetBytes == 2_000_000_000)
+        #expect(ScrollingCaptureBudget.v1.encodedByteCeiling == CaptureBudgets.v1.scrollingEncodedBytes)
+        let applied = ScrollingCaptureBudget.forCapture(template: .v1, encodedByteCeiling: 128 * 1024 * 1024)
+        #expect(applied.memoryBudgetBytes == 2_000_000_000)
+        #expect(applied.encodedByteCeiling == 128 * 1024 * 1024)
+        #expect(applied.memoryBudgetBytes > applied.encodedByteCeiling)
     }
 
     @Test func doneScrollingCaptureBecomesAPendingImageAndLivePreview() async throws {
@@ -165,6 +172,25 @@ extension ScrollingCaptureCommandsTests {
         let image = try decoded(try #require(await commands.image(for: revision)?.pngData))
         #expect(image.width == 240)
         #expect(image.height == 400)
+    }
+
+    @Test func encodedCeilingStopsScrollingWithoutReducingTheMemoryBudget() async throws {
+        let frames = ScriptedFrames(try manualFrames(offsets: [0, 80]) + [.done])
+        let budget = ScrollingCaptureBudget(pixelCap: CaptureBudgets.v1.scrollingPixelCap,
+                                             memoryBudgetBytes: CaptureBudgets.v1.scrollingMemoryBytes,
+                                             encodedByteCeiling: 240 * 400 * 4 * 2)
+        let allowance = 240 * 400 * 4 * 2
+        let commands = layer(frames: frames, budget: budget, pendingByteLimit: allowance)
+        guard case let .scrollingLimited(revision, notice) = await commands.execute(.captureScrolling(CaptureID(), maximumBytes: allowance)) else {
+            Issue.record("Expected the encoded ceiling to stop the capture")
+            return
+        }
+        #expect(notice == .encodedCeiling)
+        #expect(notice.message == "Scrolling capture stopped at the size limit. The image includes only the section that fit.")
+        let image = try decoded(try #require(await commands.image(for: revision)?.pngData))
+        #expect(image.width == 240)
+        #expect(image.height == 400)
+        #expect(budget.memoryBudgetBytes == 2_000_000_000)
     }
 
     @Test func ingestReleasesTheViewportImage() throws {

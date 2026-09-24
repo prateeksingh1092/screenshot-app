@@ -54,12 +54,14 @@ Swift 6.3.2, on the same x86_64 macOS build. There is no XCTest substitution.
 
 ## Scrolling capture stitcher
 
-Decision 48 adopted the adapted stitcher in `Sources/FrisketCore/Stitcher/`.
-Ticket 34 retired `Trials/StitcherTrial/` and moved all regression tests and
-opt-in probes to the core test target. See [stitcher.md](stitcher.md) for the
-pure sequence interface, ownership, current commands, limitations and attribution;
-[the fixture guide](../Tests/Fixtures/ScrollingCapture/README.md) defines the
-recording format. Real-sequence acceptance remains pending authorized recordings.
+The stitcher in `Sources/FrisketCore/Stitcher/` is Frisket's own code.
+`docs/ported-files.json` is empty, and nothing from the read-only reference
+project ships. Ticket 34 retired `Trials/StitcherTrial/` and moved the
+regression tests and opt-in probes to the core test target. See
+[stitcher.md](stitcher.md) for the pure sequence interface, ownership, current
+commands, and limitations; [the fixture guide](../Tests/Fixtures/ScrollingCapture/README.md)
+defines the recording format. Real-sequence acceptance remains pending
+authorized recordings.
 
 ## Static-check interface
 
@@ -598,14 +600,19 @@ LZFSE strips plus the previous viewport, then releases each frame. Done returns
 that image through the existing thumbnail, Copy, and History commands. Cancel
 releases the reservation and keeps nothing.
 
-`ScrollingCaptureBudget.v1` sets the pixel cap to **294,912,000** (5,120 × 57,600),
-the capture ticket 34 completed at a peak physical footprint of **1,270,796,288**
-bytes, and the memory budget to **2,000,000,000** bytes, ticket 05's gate.
-A command stops earlier when retained strip bytes plus the next frame would
-exceed the reserved pending allowance (`maximumBytes`). Pixel cap and memory
-budget both stop with `ScrollingCaptureNotice.message` and keep the section
-that fit. Starting is refused with `pendingByteBudgetExceeded` when the global
-pending-byte budget cannot reserve `maximumBytes`; the feed is not called.
+`CaptureBudgets.v1` names the limits. The pending session holds **256 MB** of
+encoded bytes. A still capture reserves **128 MB** and uses a separate **128 MB**
+decoded RGBA ceiling. A scrolling capture reserves **128 MB** as its encoded
+ceiling. `ScrollingCaptureBudget.v1` keeps the pixel cap at **294,912,000**
+(5,120 × 57,600) and the process peak at **2,000,000,000** bytes. That peak is
+not reduced to the encoded reservation. `ScrollingCaptureBudget.forCapture`
+copies the peak and sets `encodedByteCeiling` from the command's `maximumBytes`.
+
+Pixel cap, encoded ceiling, and memory budget each stop with
+`ScrollingCaptureNotice.message` and keep the section that fit. The encoded
+notice is “Scrolling capture stopped at the size limit. The image includes only
+the section that fit.” Starting is refused with `pendingByteBudgetExceeded`
+when the pending session cannot reserve `maximumBytes`; the feed is not called.
 
 The app menu **Capture Scrolling Page** selects a region with the existing
 overlay, then samples that region through `ScreenCapturePolicy` and

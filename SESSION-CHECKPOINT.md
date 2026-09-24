@@ -1,8 +1,16 @@
 # screenshot-app — resume checkpoint
 
-Read this first after context compaction or in a new Codex session. The repository files own project state; do not restart setup or broad research.
+## Current state (2026-09-24)
 
-## Latest update (2026-09-22 23:31 UTC): read this first
+Frisket is implemented. It is a menu-bar capture app: area, window, full screen, and manual scrolling, then a pending thumbnail, an editor, and local History. The stitcher in `Sources/FrisketCore/Stitcher/` is Frisket-owned code. `docs/ported-files.json` is empty.
+
+`CaptureBudgets.v1` is the byte policy. The pending session is 256 MB of encoded bytes. Each still or scrolling capture reserves 128 MB. Still captures also have a 128 MB decoded RGBA ceiling. Scrolling's process peak stays 2 GB and is not clamped to that reservation. An encoded-ceiling stop keeps the section that fit.
+
+Screen Recording stays unsandboxed. Empty entitlements do not block the network. The repository checks and the absence of a network client are the current fence. Sandbox is a later platform decision. arm64 has not been executed. This Mac is x86_64. A universal Release build stays out of scope until it can be launched on Apple silicon.
+
+The notes below are the historical research log. They describe the project before the app existed.
+
+## Latest update (2026-09-22 23:31 UTC): historical
 
 - Prateek **approved all thirteen architecture recommendations**; recorded as decisions 13-25 in `.scratch/screenshot-mvp/decisions.md`.
 - He then asked for specialist roles, a **red-team process** incorporating mutually agreed decisions, and then continuing the Pocock process. The panel (Codex ARCH + seven Cursor Claude Opus 5.5 High roles) is mid-process. **Resume from `.scratch/red-team/status.md`**: it lists every agent id, what is saved, what is pending (SEC and PLAT round 1; the port-vs-scratch side question), known conflicts, the deduplicated questions for Prateek, and the next steps.
