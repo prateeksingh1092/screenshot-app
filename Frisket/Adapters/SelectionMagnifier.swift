@@ -72,7 +72,7 @@ import CoreVideo
         marker.lineWidth = 2
         marker.stroke()
         NSGraphicsContext.restoreGraphicsState()
-        "Frozen pixel preview".draw(at: CGPoint(x: destination.minX + 3, y: destination.maxY + 4),
+        "Pixels under the pointer".draw(at: CGPoint(x: destination.minX + 3, y: destination.maxY + 4),
             withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.white])
     }
 

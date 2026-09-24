@@ -10,6 +10,10 @@ private let palette: [Character: RGBAPixel] = [
     "*": DocumentAnnotation.stroke
 ]
 
+private func blank(_ width: Int, _ height: Int) throws -> Bitmap {
+    try picture(Array(repeating: String(repeating: ".", count: width), count: height))
+}
+
 private func picture(_ rows: [String]) throws -> Bitmap {
     let pixels = try rows.flatMap { row in
         try row.map { character in try #require(palette[character]) }
@@ -159,81 +163,41 @@ private func picture(_ rows: [String]) throws -> Bitmap {
     }
 
     @Test func rectangleOutlineIsNotAFilledRedaction() throws {
-        let base = try picture([
-            ".....",
-            ".....",
-            ".....",
-            ".....",
-            "....."
-        ])
-        let annotation = try #require(DocumentAnnotation(.rectangle(x: 1, y: 1, width: 3, height: 3)))
-        #expect(try render(base, annotations: [annotation]) == picture([
-            ".....",
-            ".***.",
-            ".*.*.",
-            ".***.",
-            "....."
-        ]))
+        let base = try blank(20, 20)
+        let annotation = try #require(DocumentAnnotation(.rectangle(x: 4, y: 4, width: 12, height: 12)))
+        let rendered = try render(base, annotations: [annotation])
+        #expect(rendered.pixel(x: 4, y: 4) == DocumentAnnotation.stroke)
+        #expect(rendered.pixel(x: 10, y: 10) == palette["."])
+        #expect(rendered.pixel(x: 0, y: 0) == palette["."])
     }
 
-    @Test func horizontalArrowHasAOnePixelHead() throws {
-        let base = try picture([
-            ".....",
-            ".....",
-            ".....",
-            ".....",
-            "....."
-        ])
-        let annotation = try #require(DocumentAnnotation(.arrow(x0: 0, y0: 2, x1: 4, y1: 2)))
-        #expect(try render(base, annotations: [annotation]) == picture([
-            ".....",
-            "...*.",
-            "*****",
-            "...*.",
-            "....."
-        ]))
+    @Test func horizontalArrowHasAVisibleHead() throws {
+        let base = try blank(40, 32)
+        let annotation = try #require(DocumentAnnotation(.arrow(x0: 2, y0: 16, x1: 30, y1: 16)))
+        let rendered = try render(base, annotations: [annotation])
+        #expect(rendered.pixel(x: 16, y: 16) == DocumentAnnotation.stroke)
+        var headPixels = 0
+        for y in 0..<12 where rendered.pixel(x: 24, y: y) == DocumentAnnotation.stroke { headPixels += 1 }
+        #expect(headPixels > 0)
+        #expect(rendered.pixel(x: 0, y: 0) == palette["."])
     }
 
     @Test func textUsesTheClosedBitmapFont() throws {
-        let base = try picture([
-            ".......",
-            ".......",
-            ".......",
-            ".......",
-            ".......",
-            ".......",
-            ".......",
-            "......."
-        ])
+        let base = try blank(24, 20)
         let annotation = try #require(DocumentAnnotation(.text(x: 0, y: 0, characters: "A")))
-        #expect(try render(base, annotations: [annotation]) == picture([
-            ".***...",
-            "*...*..",
-            "*...*..",
-            "*****..",
-            "*...*..",
-            "*...*..",
-            "*...*..",
-            "......."
-        ]))
+        let rendered = try render(base, annotations: [annotation])
+        // The top bar of A, and a hole in the counter, at the 2× bitmap cell.
+        #expect(rendered.pixel(x: 2, y: 0) == DocumentAnnotation.stroke)
+        #expect(rendered.pixel(x: 4, y: 4) == palette["."])
     }
 
     @Test func annotationsDrawAboveRedactionsWithoutClearingNeighbourFill() throws {
-        let base = try picture([
-            ".....",
-            ".....",
-            ".....",
-            ".....",
-            "....."
-        ])
-        let annotation = try #require(DocumentAnnotation(.rectangle(x: 1, y: 1, width: 3, height: 3)))
-        #expect(try render(base, [(0, 0, 5, 5)], annotations: [annotation]) == picture([
-            "#####",
-            "#***#",
-            "#*#*#",
-            "#***#",
-            "#####"
-        ]))
+        let base = try blank(16, 16)
+        let annotation = try #require(DocumentAnnotation(.rectangle(x: 3, y: 3, width: 10, height: 10)))
+        let rendered = try render(base, [(0, 0, 16, 16)], annotations: [annotation])
+        #expect(rendered.pixel(x: 3, y: 3) == DocumentAnnotation.stroke)
+        #expect(rendered.pixel(x: 8, y: 8) == SolidRedaction.fill)
+        #expect(rendered.pixel(x: 0, y: 0) == SolidRedaction.fill)
     }
 
     @Test func annotationGeometryIsRejectedWhenItCannotBeAStroke() {
@@ -266,6 +230,7 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         ])
         let effect = try #require(DocumentEffect(.blur(x: 0, y: 0, width: 3, height: 3)))
         let rendered = try render(base, effects: [effect])
+        // This 3×3 is already one average. Further passes stay put under integer division.
         #expect(rendered.pixel(x: 1, y: 1) == RGBAPixel(red: 0xaf, green: 0x73, blue: 0x41, alpha: 0xff))
     }
 

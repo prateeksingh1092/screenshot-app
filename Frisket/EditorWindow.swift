@@ -4,8 +4,13 @@ import FrisketCore
 /// Shows the rendered document and hands each drag to the active tool. The canvas is one
 /// labelled element; its contents are exempt from VoiceOver and keyboard operation.
 @MainActor final class EditorCanvasView: NSView {
+    enum DragGuide {
+        case box, line, crop, label(String)
+    }
+
     var rendered: NSImage? { didSet { needsDisplay = true } }
     var documentSize: CGSize { didSet { needsDisplay = true } }
+    var guide: DragGuide = .box { didSet { needsDisplay = true } }
     var onDrag: ((CGPoint, CGPoint) -> Void)?
     private var dragStart: CGPoint?
     private var dragCurrent: CGPoint?
@@ -46,15 +51,41 @@ import FrisketCore
         rendered?.draw(in: imageRect, from: .zero, operation: .copy, fraction: 1, respectFlipped: true,
                        hints: [.interpolation: NSNumber(value: NSImageInterpolation.none.rawValue)])
         guard let start = dragStart, let current = dragCurrent else { return }
-        // A neutral outline only; the rendered document shows the real result after the drag.
-        let outline = NSBezierPath(rect: CGRect(x: imageRect.minX + min(start.x, current.x) * zoom,
-                                                y: imageRect.minY + min(start.y, current.y) * zoom,
-                                                width: abs(current.x - start.x) * zoom,
-                                                height: abs(current.y - start.y) * zoom))
-        outline.lineWidth = 1
-        outline.setLineDash([4, 3], count: 2, phase: 0)
-        NSColor.selectedContentBackgroundColor.setStroke()
-        outline.stroke()
+        let startView = CGPoint(x: imageRect.minX + start.x * zoom, y: imageRect.minY + start.y * zoom)
+        let currentView = CGPoint(x: imageRect.minX + current.x * zoom, y: imageRect.minY + current.y * zoom)
+        switch guide {
+        case .line:
+            let line = NSBezierPath()
+            line.move(to: startView)
+            line.line(to: currentView)
+            line.lineWidth = 3
+            NSColor.systemRed.setStroke()
+            line.stroke()
+        case .label(let text):
+            let shown = text.isEmpty ? "Label" : text
+            shown.draw(at: startView, withAttributes: [
+                .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
+                .foregroundColor: NSColor.systemRed
+            ])
+        case .crop:
+            let kept = CGRect(x: min(startView.x, currentView.x), y: min(startView.y, currentView.y),
+                              width: abs(currentView.x - startView.x), height: abs(currentView.y - startView.y))
+            NSColor.black.withAlphaComponent(0.45).setFill()
+            NSBezierPath(rect: CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: max(0, kept.minY - bounds.minY))).fill()
+            NSBezierPath(rect: CGRect(x: bounds.minX, y: kept.maxY, width: bounds.width, height: max(0, bounds.maxY - kept.maxY))).fill()
+            NSBezierPath(rect: CGRect(x: bounds.minX, y: kept.minY, width: max(0, kept.minX - bounds.minX), height: kept.height)).fill()
+            NSBezierPath(rect: CGRect(x: kept.maxX, y: kept.minY, width: max(0, bounds.maxX - kept.maxX), height: kept.height)).fill()
+            NSColor.white.setStroke()
+            let border = NSBezierPath(rect: kept)
+            border.lineWidth = 1
+            border.stroke()
+        case .box:
+            let outline = NSBezierPath(rect: CGRect(x: min(startView.x, currentView.x), y: min(startView.y, currentView.y),
+                                                    width: abs(currentView.x - startView.x), height: abs(currentView.y - startView.y)))
+            outline.lineWidth = 2
+            NSColor.systemRed.setStroke()
+            outline.stroke()
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -88,6 +119,7 @@ import FrisketCore
     private var edits: DocumentEdits
     private var undoStack: [DocumentEdits] = []
     private let textTool = TextTool()
+    private let hintField = NSTextField(labelWithString: "")
     private let tools: [any EditorTool]
     private let labelField = NSTextField(string: "A")
     private var activeTool: Int = 0
@@ -106,7 +138,7 @@ import FrisketCore
     private var finish: ((EditorLeave) async -> Bool)?
     private var promptOpen = false
     private let placementScreen: NSScreen?
-    private static let chrome = EditorWindowLayout.Chrome(toolbarHeight: 88, titlebarHeight: 28)
+    private static let chrome = EditorWindowLayout.Chrome(toolbarHeight: 118, titlebarHeight: 28)
 
     init?(base: Bitmap, pixelSize: CGSize? = nil, scale: Double, screen: NSScreen?,
           finish: @escaping (EditorLeave) async -> Bool) {
@@ -173,12 +205,18 @@ import FrisketCore
             toolsRow.addArrangedSubview(button)
         }
         labelField.placeholderString = "Label"
+        labelField.stringValue = ""
         labelField.setAccessibilityLabel("Annotation label text")
         labelField.bezelStyle = .roundedBezel
         labelField.controlSize = .small
-        labelField.frame.size.width = 72
+        labelField.frame.size.width = 140
+        labelField.delegate = self
         toolsRow.addArrangedSubview(labelField)
-        textTool.text = { [weak labelField] in labelField?.stringValue ?? "A" }
+        textTool.text = { [weak labelField] in labelField?.stringValue ?? "" }
+        hintField.textColor = .secondaryLabelColor
+        hintField.font = .systemFont(ofSize: 11)
+        hintField.lineBreakMode = .byTruncatingTail
+        hintField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         configure(undoButton, action: #selector(undo), key: "z", modifiers: .command,
                   label: "Undo last edit", tip: "Undo last edit (⌘Z)")
         configure(closeButton, action: #selector(closeWithoutChanges), key: "\u{1b}", modifiers: [],
@@ -199,6 +237,7 @@ import FrisketCore
         for button in [undoButton, closeButton, copyButton, saveButton, doneButton] { actionsRow.addArrangedSubview(button) }
         actionsRow.addArrangedSubview(dragWell)
         bar.addArrangedSubview(toolsRow)
+        bar.addArrangedSubview(hintField)
         bar.addArrangedSubview(actionsRow)
         content.addSubview(canvas)
         content.addSubview(bar)
@@ -267,12 +306,42 @@ import FrisketCore
             button.isEnabled = !finishing
         }
         undoButton.isEnabled = !finishing && !undoStack.isEmpty
+        describeActiveTool()
         closeButton.isEnabled = !finishing && unchanged
         copyButton.isEnabled = !finishing
         saveButton.isEnabled = !finishing
         doneButton.isEnabled = !finishing
         dragWell.image = canvas.rendered
         dragWell.alphaValue = finishing ? 0.4 : 1
+    }
+
+    private func describeActiveTool() {
+        switch tools[activeTool] {
+        case is SolidRedactionTool:
+            canvas.guide = .box
+            hintField.stringValue = "Drag a box. It is painted solid black and stays hidden under blur."
+        case is CropTool:
+            canvas.guide = .crop
+            hintField.stringValue = "Drag the area to keep. Everything outside it is removed."
+        case is ArrowTool:
+            canvas.guide = .line
+            hintField.stringValue = "Drag from the tail to the point."
+        case is RectangleTool:
+            canvas.guide = .box
+            hintField.stringValue = "Drag a rectangle outline."
+        case is TextTool:
+            canvas.guide = .label(labelField.stringValue)
+            hintField.stringValue = "Type letters or digits, then click where the label should start."
+        case is BlurTool:
+            canvas.guide = .box
+            hintField.stringValue = "Drag a box to soften the pixels inside it."
+        case is MagnifyTool:
+            canvas.guide = .box
+            hintField.stringValue = "Drag a box. Those pixels are doubled from its top-left corner."
+        default:
+            canvas.guide = .box
+            hintField.stringValue = "Drag on the image."
+        }
     }
 
     private func applyDrag(from start: CGPoint, to end: CGPoint) {
@@ -371,5 +440,12 @@ import FrisketCore
             }
         }
         return false
+    }
+}
+
+extension EditorWindow: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard tools[activeTool] is TextTool else { return }
+        canvas.guide = .label(labelField.stringValue)
     }
 }

@@ -127,24 +127,30 @@ public enum DocumentRenderer {
         var next = output
         switch effect.kind {
         case .blur:
-            for y in bounds.minY..<bounds.maxY {
-                for x in bounds.minX..<bounds.maxX {
-                    var red = 0, green = 0, blue = 0, alpha = 0
-                    for dy in -1...1 {
-                        for dx in -1...1 {
-                            let sampleX = min(max(x + dx, 0), output.width - 1)
-                            let sampleY = min(max(y + dy, 0), output.height - 1)
-                            let pixel = output.pixel(x: sampleX, y: sampleY)!
-                            red += Int(pixel.red)
-                            green += Int(pixel.green)
-                            blue += Int(pixel.blue)
-                            alpha += Int(pixel.alpha)
+            // Six passes of the same 3×3 average. Samples stay inside the box, so a
+            // solid redaction that fills the box cannot pick up colour from outside it.
+            for _ in 0..<6 {
+                var pass = next
+                for y in bounds.minY..<bounds.maxY {
+                    for x in bounds.minX..<bounds.maxX {
+                        var red = 0, green = 0, blue = 0, alpha = 0
+                        for dy in -1...1 {
+                            for dx in -1...1 {
+                                let sampleX = min(max(x + dx, bounds.minX), bounds.maxX - 1)
+                                let sampleY = min(max(y + dy, bounds.minY), bounds.maxY - 1)
+                                let pixel = next.pixel(x: sampleX, y: sampleY)!
+                                red += Int(pixel.red)
+                                green += Int(pixel.green)
+                                blue += Int(pixel.blue)
+                                alpha += Int(pixel.alpha)
+                            }
                         }
+                        write(RGBAPixel(red: UInt8(red / 9), green: UInt8(green / 9),
+                                        blue: UInt8(blue / 9), alpha: UInt8(alpha / 9)),
+                              x: x, y: y, on: &pass)
                     }
-                    write(RGBAPixel(red: UInt8(red / 9), green: UInt8(green / 9),
-                                    blue: UInt8(blue / 9), alpha: UInt8(alpha / 9)),
-                          x: x, y: y, on: &next)
                 }
+                next = pass
             }
         case .magnify:
             for y in bounds.minY..<bounds.maxY {
@@ -182,11 +188,19 @@ public enum DocumentRenderer {
                              originX: Double, originY: Double, rowShift: Int, fullWidth: Int, fullHeight: Int) {
         func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullWidth))) }
         func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullHeight))) - rowShift }
+        let pen = max(2, Int((2 * scale).rounded()))
         func plot(_ x: Int, _ y: Int) {
-            guard (0..<output.width).contains(x), (0..<output.height).contains(y) else { return }
             let stroke = DocumentAnnotation.stroke
-            let index = (y * output.width + x) * 4
-            output.bytes.replaceSubrange(index..<index + 4, with: [stroke.red, stroke.green, stroke.blue, stroke.alpha])
+            let half = pen / 2
+            for dy in 0..<pen {
+                for dx in 0..<pen {
+                    let px = x - half + dx
+                    let py = y - half + dy
+                    guard (0..<output.width).contains(px), (0..<output.height).contains(py) else { continue }
+                    let index = (py * output.width + px) * 4
+                    output.bytes.replaceSubrange(index..<index + 4, with: [stroke.red, stroke.green, stroke.blue, stroke.alpha])
+                }
+            }
         }
         switch annotation.kind {
         case let .rectangle(x, y, width, height):
@@ -213,7 +227,7 @@ public enum DocumentRenderer {
         case let .text(x, y, characters):
             let originColumn = Int(((x - originX) * scale).rounded(.down))
             let originRow = Int(((y - originY) * scale).rounded(.down))
-            let cell = max(1, Int(scale.rounded(.down)))
+            let cell = max(2, Int((2 * scale).rounded()))
             var cursor = 0
             for character in AnnotationFont.glyphs(in: characters) {
                 for glyphRow in 0..<AnnotationFont.height {
@@ -251,11 +265,14 @@ public enum DocumentRenderer {
         let vx = Double(end.0 - start.0), vy = Double(end.1 - start.1)
         let length = (vx * vx + vy * vy).squareRoot()
         guard length > 0 else { return }
-        let size = max(1, scale.rounded(.down))
+        let size = max(8, 10 * scale)
         let ux = vx / length, uy = vy / length
         let backX = Double(end.0) - ux * size, backY = Double(end.1) - uy * size
-        plot(Int((backX - uy * size).rounded()), Int((backY + ux * size).rounded()))
-        plot(Int((backX + uy * size).rounded()), Int((backY - ux * size).rounded()))
+        let tip = (end.0, end.1)
+        let wingA = (Int((backX - uy * size).rounded()), Int((backY + ux * size).rounded()))
+        let wingB = (Int((backX + uy * size).rounded()), Int((backY - ux * size).rounded()))
+        plotLine(from: tip, to: wingA, plot: plot)
+        plotLine(from: tip, to: wingB, plot: plot)
     }
 
     private static func cropBounds(_ base: Bitmap, crop: DocumentCrop?, scale: Double) -> (width: Int, height: Int) {
