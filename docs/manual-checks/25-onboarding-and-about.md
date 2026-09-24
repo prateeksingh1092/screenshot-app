@@ -42,9 +42,8 @@ do that only in a test account, not on the account that holds the ticket 08 gran
    was not created merely by completing onboarding.
 
 4. **About.** Choose About Frisket in the status menu. The window shows
-   version 0.1.0 (8) and the bundled third-party notices: GRDB.swift (MIT),
-   Matt Pocock skills (MIT), and the Snapzy stitcher (BSD-3-Clause), which
-   decision 48 ported. VoiceOver reads the version and the notices. Escape
+   version 0.1.0 (8) and the bundled third-party notices: GRDB.swift (MIT)
+   and the Matt Pocock skills (MIT). VoiceOver reads the version and the notices. Escape
    or Return closes the window. Command-W closes it. Tab reaches Close.
 
 5. **Keyboard capture.** With onboarding visible, the capture hot key and

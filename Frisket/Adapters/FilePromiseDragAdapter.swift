@@ -220,6 +220,33 @@ final class ThumbnailDragWellView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard dragEnabled else { return }
-        onMouseDown?(self, event)
+        DragStart.track(from: self, event: event) { [weak self] drag in
+            guard let self, self.dragEnabled else { return }
+            self.onMouseDown?(self, drag)
+        }
+    }
+}
+
+@MainActor enum DragStart {
+    /// Accessory apps ignore a drag that begins on mouse-down before the app is active.
+    static func track(from view: NSView, event: NSEvent, perform: (NSEvent) -> Void) {
+        guard let window = view.window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKey()
+        let start = view.convert(event.locationInWindow, from: nil)
+        var dragEvent: NSEvent?
+        window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: NSEvent.foreverDuration, mode: .eventTracking) { next, stop in
+            guard let next else { return }
+            if next.type == .leftMouseUp {
+                stop.pointee = true
+                return
+            }
+            let point = view.convert(next.locationInWindow, from: nil)
+            if hypot(point.x - start.x, point.y - start.y) >= 3 {
+                dragEvent = next
+                stop.pointee = true
+            }
+        }
+        if let dragEvent { perform(dragEvent) }
     }
 }

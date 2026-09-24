@@ -72,7 +72,6 @@ private let repository = URL(fileURLWithPath: #filePath)
         #expect(about.noticeHeadings == [
             "GRDB.swift — MIT",
             "Matt Pocock skills — MIT",
-            "Snapzy stitcher — BSD-3-Clause (product component)",
         ])
         #expect(about.notices == notices)
         #expect(!about.noticesAccessibilityLabel.isEmpty)

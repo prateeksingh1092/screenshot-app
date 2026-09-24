@@ -14,7 +14,6 @@ import UniformTypeIdentifiers
     private var areaLayout: DisplaySelectionSession?
     private var selectionPointer: CGPoint = .zero
     private var selectionDisplays: [SelectionDisplay] = []
-    private var magnifiers: [UInt32: SelectionMagnifier] = [:]
     private(set) var captureDisplayID: UInt32?
 
     private let loadContent: @MainActor () async throws -> any ScreenCaptureContent
@@ -65,33 +64,17 @@ import UniformTypeIdentifiers
         selectionDisplays = displays
         guard !displays.isEmpty else { return }
         areaLayout = DisplaySelectionSession(displays: displays, pointer: pointer)
-        // Prepare all previews before ANY overlay is visible. No screen pixels
-        // are sampled on hover, on a Space switch, or while selection is active.
         hideSelection()
-        discardSelectionPreviews()
-        if content != nil, let identifier = Bundle.main.bundleIdentifier {
-            for screen in screens {
-                guard let display = screen.selectionDisplay else { continue }
-                let generation = applicationGeneration
-                // Each frozen preview is also a capture; refresh after earlier
-                // asynchronous previews rather than reusing prefetch identities.
-                guard let available = try? await loadContent(), generation == applicationGeneration else { continue }
-                magnifiers[display.id] = try? await available.prepareMagnifier(on: screen,
-                                                                            excluding: identifier, additionalExclusions: exclusions())
-                if generation != applicationGeneration { discardSelectionPreviews() }
-            }
-        }
     }
 
-    func discardSelectionPreviews() { magnifiers.removeAll() }
+    func discardSelectionPreviews() {}
 
     func selectArea() async -> AreaSelection? {
         // A change on ANY display during preparation invalidates the whole layout.
         areaLayout?.updateDisplays(connectedDisplays())
         guard areaLayout?.isCancelled == false else { return nil }
         let selection = await overlay.select(displays: selectionDisplays, pointer: selectionPointer,
-                                             magnifiers: magnifiers, spaceGeneration: { self.spaceGeneration })
-        discardSelectionPreviews()
+                                             spaceGeneration: { self.spaceGeneration })
         captureDisplayID = selection?.displayID
         return selection
     }

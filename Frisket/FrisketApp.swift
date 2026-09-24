@@ -134,12 +134,6 @@ import FrisketCore
         item.menu = menu
         statusItem = item
         refreshPermissionIndicator()
-        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.refreshPermissionIndicator() }
-        }
-        timer.tolerance = 0.25
-        RunLoop.main.add(timer, forMode: .common)
-        permissionTimer = timer
         shortcutSettings.changed = { [weak self] in self?.refreshShortcutTitles() }
         shortcutSettings.onClaimSystemScreenshots = { [weak self] in self?.claimSystemScreenshotShortcuts() }
         shortcutSettings.onRestoreSystemScreenshots = { [weak self] in
@@ -265,7 +259,7 @@ import FrisketCore
 
     private func refreshHistorySurfaces() async {
         await historySettings?.refresh()
-        await historyWindow?.model.reload()
+        await historyWindow?.reloadIfVisible()
     }
 
     private func revealHistoryFolder() {
@@ -782,13 +776,27 @@ import FrisketCore
     func menuWillOpen(_ menu: NSMenu) { refreshPermissionIndicator() }
     func applicationDidBecomeActive(_ notification: Notification) { refreshPermissionIndicator() }
 
+    private var permissionMissing: Bool?
+
     private func refreshPermissionIndicator() {
         let missing = permission.refresh() != .granted
-        statusItem?.button?.image = NSImage(systemSymbolName: missing ? "exclamationmark.triangle.fill" : "camera",
-            accessibilityDescription: missing ? "Screen Recording permission required" : "Screen Recording available")
-        statusItem?.button?.imagePosition = .imageLeading
-        statusItem?.button?.setAccessibilityLabel(missing ? "Frisket capture menu, Screen Recording permission required" : "Frisket capture menu")
-        statusItem?.button?.toolTip = missing ? "Screen Recording permission required" : "Capture with Frisket"
+        if permissionMissing != missing || statusItem?.button?.image == nil {
+            permissionMissing = missing
+            statusItem?.button?.image = NSImage(systemSymbolName: missing ? "exclamationmark.triangle.fill" : "camera",
+                accessibilityDescription: missing ? "Screen Recording permission required" : "Screen Recording available")
+            statusItem?.button?.imagePosition = .imageLeading
+            statusItem?.button?.setAccessibilityLabel(missing ? "Frisket capture menu, Screen Recording permission required" : "Frisket capture menu")
+            statusItem?.button?.toolTip = missing ? "Screen Recording permission required" : "Capture with Frisket"
+        }
+        permissionTimer?.invalidate()
+        permissionTimer = nil
+        guard missing else { return }
+        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshPermissionIndicator() }
+        }
+        timer.tolerance = 5
+        RunLoop.main.add(timer, forMode: .common)
+        permissionTimer = timer
     }
 
     private func showPermissionRecovery(_ state: CapturePermissionState) {

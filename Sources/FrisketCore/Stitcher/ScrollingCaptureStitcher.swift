@@ -1,1931 +1,454 @@
-/*
-BSD 3-Clause License
-
-Copyright (c) 2026, Trong Duong Duc
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
-//
-//  ScrollingCaptureStitcher.swift
-//  Snapzy
-//
-//  Vertical stitcher for scrolling capture sessions.
-//
-
 import CoreGraphics
 import Foundation
-import Vision
 
+/// How successive viewports were joined. Downward scrolling appends from the bottom.
 nonisolated enum ScrollingCaptureMergeDirection {
-  case unresolved
-  case appendFromBottom
-  case appendFromTop
+    case unresolved
+    case appendFromBottom
+    case appendFromTop
 }
 
 nonisolated enum ScrollingCaptureStitchOutcome {
-  case initialized
-  case appended(deltaY: Int)
-  case ignoredNoMovement
-  case ignoredAlignmentFailed
-  case reachedHeightLimit
+    case initialized
+    case appended(deltaY: Int)
+    case ignoredNoMovement
+    case ignoredAlignmentFailed
+    case reachedHeightLimit
 }
 
 nonisolated enum ScrollingCaptureStitchSafety: Equatable {
-  case confirmed
-  case tentative(reason: String)
-  case unsafe(reason: String)
+    case confirmed
+    case tentative(reason: String)
+    case unsafe(reason: String)
 
-  var isUnsafe: Bool {
-    if case .unsafe = self {
-      return true
+    var isUnsafe: Bool {
+        if case .unsafe = self { return true }
+        return false
     }
-    return false
-  }
 }
 
 nonisolated enum ScrollingCaptureAlignmentPath: String {
-  case initialFrame = "initial-frame"
-  case fastGuided = "fast-guided"
-  case guidedVision = "guided-vision"
-  case recoveryVision = "recovery-vision"
-  case noMovement = "no-movement"
-  case duplicateBoundary = "duplicate-boundary"
-  case alignmentFailed = "alignment-failed"
-  case heightLimit = "height-limit"
+    case initialFrame = "initial-frame"
+    case fastGuided = "fast-guided"
+    case guidedVision = "guided-vision"
+    case recoveryVision = "recovery-vision"
+    case noMovement = "no-movement"
+    case duplicateBoundary = "duplicate-boundary"
+    case alignmentFailed = "alignment-failed"
+    case heightLimit = "height-limit"
 }
 
 nonisolated struct ScrollingCaptureAlignmentDebugInfo {
-  let path: ScrollingCaptureAlignmentPath
-  let usedVisionEstimate: Bool
-  let confidence: Double
-  let pixelScore: Double?
-  let totalScore: Double?
-  let appendDeltaY: Int?
-  let visionAgreementCount: Int
+    let path: ScrollingCaptureAlignmentPath
+    let usedVisionEstimate: Bool
+    let confidence: Double
+    let pixelScore: Double?
+    let totalScore: Double?
+    let appendDeltaY: Int?
+    let visionAgreementCount: Int
 }
 
 nonisolated struct ScrollingCaptureStitchUpdate {
-  let outcome: ScrollingCaptureStitchOutcome
-  let mergedImage: CGImage?
-  let acceptedFrameCount: Int
-  let outputHeight: Int
-  let matchFailureCount: Int
-  let mergeDirection: ScrollingCaptureMergeDirection
-  let likelyReachedBoundary: Bool
-  let safety: ScrollingCaptureStitchSafety
-  let alignmentDebug: ScrollingCaptureAlignmentDebugInfo?
+    let outcome: ScrollingCaptureStitchOutcome
+    let mergedImage: CGImage?
+    let acceptedFrameCount: Int
+    let outputHeight: Int
+    let matchFailureCount: Int
+    let mergeDirection: ScrollingCaptureMergeDirection
+    let likelyReachedBoundary: Bool
+    let safety: ScrollingCaptureStitchSafety
+    let alignmentDebug: ScrollingCaptureAlignmentDebugInfo?
 }
 
-// Instances are confined to the coordinator's serial processing queue during capture.
+/// Joins same-size viewports into a tall page. Static bands that repeat at the
+/// top or bottom are removed once movement is confirmed. Output is stored as
+/// 256-row strips so a long page does not stay as one bitmap.
 nonisolated final class ScrollingCaptureStitcher: @unchecked Sendable {
-  private enum MatchSearchMode {
-    case guided
-    case recovery
-  }
+    private struct Strip {
+        let rowCount: Int
+        let payload: Data
+        let compressed: Bool
 
-  private struct RasterImage {
-    let width: Int
-    let height: Int
-    let bytesPerRow: Int
-    let pixels: [UInt8]
-
-    init?(cgImage: CGImage) {
-      let width = cgImage.width
-      let height = cgImage.height
-      let bytesPerRow = width * 4
-      var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
-      let colorSpace = CGColorSpaceCreateDeviceRGB()
-      let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-
-      let drew = pixels.withUnsafeMutableBytes { rawBuffer -> Bool in
-        guard let baseAddress = rawBuffer.baseAddress else { return false }
-        guard
-          let context = CGContext(
-            data: baseAddress,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo
-          )
-        else {
-          return false
+        init(rows: Data, rowCount: Int) {
+            self.rowCount = rowCount
+            if let packed = try? (rows as NSData).compressed(using: .lzfse) {
+                payload = packed as Data
+                compressed = true
+            } else {
+                payload = rows
+                compressed = false
+            }
         }
 
-        context.interpolationQuality = .none
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return true
-      }
-
-      guard drew else { return nil }
-
-      self.width = width
-      self.height = height
-      self.bytesPerRow = bytesPerRow
-      self.pixels = pixels
-    }
-
-    func rowDifference(
-      comparedTo other: RasterImage,
-      row: Int,
-      otherRow: Int,
-      xStart: Int,
-      xEnd: Int,
-      columnStride: Int
-    ) -> Double {
-      blockDifference(
-        comparedTo: other,
-        startRow: row,
-        otherStartRow: otherRow,
-        rowCount: 1,
-        xStart: xStart,
-        xEnd: xEnd,
-        columnStride: columnStride,
-        rowStride: 1
-      )
-    }
-
-    func blockDifference(
-      comparedTo other: RasterImage,
-      startRow: Int,
-      otherStartRow: Int,
-      rowCount: Int,
-      xStart: Int,
-      xEnd: Int,
-      columnStride: Int,
-      rowStride: Int
-    ) -> Double {
-      guard rowCount > 0 else { return 255 }
-      guard startRow >= 0, otherStartRow >= 0 else { return 255 }
-      guard startRow + rowCount <= height, otherStartRow + rowCount <= other.height else { return 255 }
-
-      let safeStart = max(0, xStart)
-      let safeEnd = min(min(width, other.width), xEnd)
-      guard safeStart < safeEnd else { return 255 }
-
-      let safeColumnStride = max(1, columnStride)
-      let safeRowStride = max(1, rowStride)
-      var total = 0.0
-      var count = 0
-
-      for rowOffset in stride(from: 0, to: rowCount, by: safeRowStride) {
-        let lhsOffset = (startRow + rowOffset) * bytesPerRow
-        let rhsOffset = (otherStartRow + rowOffset) * other.bytesPerRow
-
-        for x in stride(from: safeStart, to: safeEnd, by: safeColumnStride) {
-          let lhsIndex = lhsOffset + x * 4
-          let rhsIndex = rhsOffset + x * 4
-          total += colorDifference(comparedTo: other, lhsIndex: lhsIndex, rhsIndex: rhsIndex)
-          count += 1
+        func rows() -> Data? {
+            if !compressed { return payload }
+            return (try? (payload as NSData).decompressed(using: .lzfse)) as Data?
         }
-      }
-
-      return count > 0 ? total / Double(count) : 255
     }
 
-    func copyRows(
-      startRow: Int,
-      rowCount: Int,
-      into destination: inout [UInt8],
-      destinationRow: Int
-    ) {
-      guard rowCount > 0 else { return }
-
-      for localRow in 0..<rowCount {
-        let sourceIndex = (startRow + localRow) * bytesPerRow
-        let destinationIndex = (destinationRow + localRow) * bytesPerRow
-        destination[destinationIndex..<(destinationIndex + bytesPerRow)] =
-          pixels[sourceIndex..<(sourceIndex + bytesPerRow)]
-      }
-    }
-
-    func makeCGImage() -> CGImage? {
-      Self.makeCGImage(width: width, height: height, bytesPerRow: bytesPerRow, pixels: pixels)
-    }
-
-    func makeCroppedCGImage(
-      xStart: Int,
-      xEnd: Int,
-      startRow: Int,
-      rowCount: Int
-    ) -> CGImage? {
-      let safeXStart = max(0, xStart)
-      let safeXEnd = min(width, xEnd)
-      let safeStartRow = max(0, startRow)
-      let safeRowCount = min(rowCount, height - safeStartRow)
-
-      guard safeXStart < safeXEnd, safeRowCount > 0 else { return nil }
-
-      let croppedWidth = safeXEnd - safeXStart
-      let croppedBytesPerRow = croppedWidth * 4
-      var croppedPixels = [UInt8](repeating: 0, count: safeRowCount * croppedBytesPerRow)
-
-      for localRow in 0..<safeRowCount {
-        let sourceIndex = (safeStartRow + localRow) * bytesPerRow + safeXStart * 4
-        let destinationIndex = localRow * croppedBytesPerRow
-        croppedPixels[destinationIndex..<(destinationIndex + croppedBytesPerRow)] =
-          pixels[sourceIndex..<(sourceIndex + croppedBytesPerRow)]
-      }
-
-      return Self.makeCGImage(
-        width: croppedWidth,
-        height: safeRowCount,
-        bytesPerRow: croppedBytesPerRow,
-        pixels: croppedPixels
-      )
-    }
-
-    static func makeCGImage(
-      width: Int,
-      height: Int,
-      bytesPerRow: Int,
-      pixels: [UInt8]
-    ) -> CGImage? {
-      let data = Data(pixels) as CFData
-      guard let provider = CGDataProvider(data: data) else { return nil }
-
-      let bitmapInfo = CGBitmapInfo(rawValue:
-        CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-      )
-
-      return CGImage(
-        width: width,
-        height: height,
-        bitsPerComponent: 8,
-        bitsPerPixel: 32,
-        bytesPerRow: bytesPerRow,
-        space: CGColorSpaceCreateDeviceRGB(),
-        bitmapInfo: bitmapInfo,
-        provider: provider,
-        decode: nil,
-        shouldInterpolate: false,
-        intent: .defaultIntent
-      )
-    }
-
-    private func colorDifference(comparedTo other: RasterImage, lhsIndex: Int, rhsIndex: Int) -> Double {
-      let dr = abs(Int(pixels[lhsIndex]) - Int(other.pixels[rhsIndex]))
-      let dg = abs(Int(pixels[lhsIndex + 1]) - Int(other.pixels[rhsIndex + 1]))
-      let db = abs(Int(pixels[lhsIndex + 2]) - Int(other.pixels[rhsIndex + 2]))
-
-      let lhsLuma =
-        Int(pixels[lhsIndex]) * 299 +
-        Int(pixels[lhsIndex + 1]) * 587 +
-        Int(pixels[lhsIndex + 2]) * 114
-      let rhsLuma =
-        Int(other.pixels[rhsIndex]) * 299 +
-        Int(other.pixels[rhsIndex + 1]) * 587 +
-        Int(other.pixels[rhsIndex + 2]) * 114
-
-      let colorAverage = Double(dr + dg + db) / 3.0
-      let lumaDifference = Double(abs(lhsLuma - rhsLuma)) / 1000.0
-      return colorAverage * 0.42 + lumaDifference * 0.58
-    }
-  }
-
-  // Own only copied rows, never a frame raster. All completed strips are 256 rows.
-  private struct ContentStrip {
-    let rowCount: Int
-    let data: Data
-    let isCompressed: Bool
-
-    init(rows: Data, rowCount: Int) {
-      self.rowCount = rowCount
-      if let compressed = try? (rows as NSData).compressed(using: .lzfse) {
-        data = compressed as Data
-        isCompressed = true
-      } else {
-        data = rows
-        isCompressed = false
-      }
-    }
-
-    func decoded() -> Data? {
-      if !isCompressed { return data }
-      return (try? (data as NSData).decompressed(using: .lzfse)) as Data?
-    }
-  }
-
-  // An immutable output snapshot owns compressed rows, not input frames. Core
-  // Graphics can request arbitrary byte ranges without a second full bitmap.
-  private final class StripSnapshot {
-    let strips: [ContentStrip]
-    let bytesPerRow: Int
-    let byteCount: Int
-    private let lock = NSLock()
-    private var cachedIndex = -1
-    private var cachedRows = Data()
-
-    init(strips: [ContentStrip], bytesPerRow: Int) {
-      self.strips = strips
-      self.bytesPerRow = bytesPerRow
-      byteCount = strips.reduce(0) { $0 + $1.rowCount * bytesPerRow }
-    }
-
-    func read(into buffer: UnsafeMutableRawPointer, position: Int, count: Int) -> Int {
-      guard position >= 0, position < byteCount, count > 0 else { return 0 }
-      lock.lock()
-      defer { lock.unlock() }
-      let length = min(count, byteCount - position)
-      var copied = 0
-      while copied < length {
-        let offset = position + copied
-        let index = offset / (256 * bytesPerRow)
-        let withinStrip = offset % (256 * bytesPerRow)
-        let readCount: Int = autoreleasepool {
-          if cachedIndex != index {
-            guard let rows = strips[index].decoded() else { return 0 }
-            cachedRows = rows
-            cachedIndex = index
-          }
-          let amount = min(length - copied, cachedRows.count - withinStrip)
-          guard amount > 0 else { return 0 }
-          cachedRows.copyBytes(to: buffer.advanced(by: copied).assumingMemoryBound(to: UInt8.self),
-            from: withinStrip..<(withinStrip + amount))
-          return amount
-        }
-        guard readCount > 0 else { break }
-        copied += readCount
-      }
-      return copied
-    }
-  }
-
-  private struct Match {
-    let direction: ScrollingCaptureMergeDirection
-    let deltaY: Int
-    let pixelScore: Double
-    let totalScore: Double
-    let strongBandCount: Int
-    let bandCount: Int
-    let worstBandScore: Double
-    let bandVariance: Double
-  }
-
-  private struct MatchSearchResult {
-    let best: Match
-    let runnerUp: Match?
-  }
-
-  private struct OverlapMetrics {
-    let averageDifference: Double
-    let strongBandCount: Int
-    let bandCount: Int
-    let worstDifference: Double
-    let variance: Double
-  }
-
-  private struct VisionAlignmentEstimate {
-    let deltaY: Int
-    let agreementCount: Int
-    let observedCount: Int
-    let deltaSpread: Int
-  }
-
-  private var imageWidth = 0
-  private var lastRaster: RasterImage?
-  private var contentSlices: [ContentStrip] = []
-  private var headerHeight = 0
-  private var footerHeight = 0
-  private var leadingStaticWidth = 0
-  private var trailingStaticWidth = 0
-  private var mergeDirection: ScrollingCaptureMergeDirection = .unresolved
-  private var cachedMergedImage: CGImage?
-  private var lastMatch: Match?
-  private var matchNotFoundCount = 0
-
-  private(set) var acceptedFrameCount = 0
-
-  var outputHeight: Int {
-    contentSlices.reduce(0) { $0 + $1.rowCount }
-  }
-
-  var pixelWidth: Int { imageWidth }
-
-  /// Compressed strips plus the one previous viewport kept for alignment.
-  var retainedByteCount: Int {
-    contentSlices.reduce(0) { $0 + $1.data.count } + (lastRaster?.pixels.count ?? 0)
-  }
-
-  func start(with image: CGImage) -> ScrollingCaptureStitchUpdate? {
-    guard let raster = RasterImage(cgImage: image) else { return nil }
-
-    imageWidth = raster.width
-    lastRaster = raster
-    contentSlices = []
-    appendRows(from: raster, startRow: 0, rowCount: raster.height)
-    headerHeight = 0
-    footerHeight = 0
-    leadingStaticWidth = 0
-    trailingStaticWidth = 0
-    mergeDirection = .unresolved
-    cachedMergedImage = nil
-    lastMatch = nil
-    matchNotFoundCount = 0
-    acceptedFrameCount = 1
-
-    return ScrollingCaptureStitchUpdate(
-      outcome: .initialized,
-      mergedImage: mergedImage(),
-      acceptedFrameCount: acceptedFrameCount,
-      outputHeight: outputHeight,
-      matchFailureCount: matchNotFoundCount,
-      mergeDirection: mergeDirection,
-      likelyReachedBoundary: false,
-      safety: .confirmed,
-      alignmentDebug: ScrollingCaptureAlignmentDebugInfo(
-        path: .initialFrame,
-        usedVisionEstimate: false,
-        confidence: 1,
-        pixelScore: nil,
-        totalScore: nil,
-        appendDeltaY: nil,
-        visionAgreementCount: 0
-      )
-    )
-  }
-
-  func append(
-    _ image: CGImage,
-    maxOutputHeight: Int,
-    expectedSignedDeltaPixels: Int? = nil,
-    renderMergedImage: Bool = true,
-    allowsSettledPartialStep: Bool = false
-  ) -> ScrollingCaptureStitchUpdate? {
-    guard let lastRaster else { return start(with: image) }
-    guard let raster = RasterImage(cgImage: image) else { return nil }
-    let expectedDeltaPixels = expectedSignedDeltaPixels.map(abs)
-    guard raster.width == lastRaster.width, raster.height == lastRaster.height else {
-      matchNotFoundCount += 1
-      return currentUpdate(outcome: .ignoredAlignmentFailed, includeMergedImage: renderMergedImage)
-    }
-
-    let inferredHeaderHeight = headerHeight == 0
-      ? detectStaticBandHeight(previous: lastRaster, current: raster, fromTop: true)
-      : headerHeight
-    let inferredFooterHeight = footerHeight == 0
-      ? detectStaticBandHeight(previous: lastRaster, current: raster, fromTop: false)
-      : footerHeight
-    let inferredLeadingStaticWidth = leadingStaticWidth == 0
-      ? detectStaticSideBandWidth(previous: lastRaster, current: raster, fromLeading: true)
-      : leadingStaticWidth
-    let inferredTrailingStaticWidth = trailingStaticWidth == 0
-      ? detectStaticSideBandWidth(previous: lastRaster, current: raster, fromLeading: false)
-      : trailingStaticWidth
-    let visionAlignmentEstimate = estimateVisionAlignment(
-      previous: lastRaster,
-      current: raster,
-      headerHeight: inferredHeaderHeight,
-      footerHeight: inferredFooterHeight,
-      leadingStaticWidth: inferredLeadingStaticWidth,
-      trailingStaticWidth: inferredTrailingStaticWidth
-    )
-    // Vision can fail to allocate its pixel buffer on this Intel host.
-    // Only a unique, byte-exact overlap may replace that missing evidence.
-    let exactPartialDelta = allowsSettledPartialStep && visionAlignmentEstimate == nil
-      ? exactSettledPartialDelta(previous: lastRaster, current: raster,
-          headerHeight: inferredHeaderHeight, footerHeight: inferredFooterHeight,
-          expectedDelta: expectedDeltaPixels)
-      : nil
-    // A wheel request is an upper bound at the end of a scroll area. Only a
-    // viewport independently verified as settled may use a smaller visual prior.
-    let matchingExpectedDelta: Int?
-    if allowsSettledPartialStep,
-       let expectedDeltaPixels,
-       let estimate = visionAlignmentEstimate,
-       estimate.agreementCount >= 2,
-       estimate.deltaY > 0, estimate.deltaY < expectedDeltaPixels {
-      matchingExpectedDelta = estimate.deltaY * ((expectedSignedDeltaPixels ?? 0) < 0 ? -1 : 1)
-    } else if let exactPartialDelta {
-      matchingExpectedDelta = exactPartialDelta * ((expectedSignedDeltaPixels ?? 0) < 0 ? -1 : 1)
-    } else {
-      matchingExpectedDelta = expectedSignedDeltaPixels
-    }
-    let frameDifference = contentDifference(
-      previous: lastRaster,
-      current: raster,
-      headerHeight: inferredHeaderHeight,
-      footerHeight: inferredFooterHeight,
-      leadingStaticWidth: inferredLeadingStaticWidth,
-      trailingStaticWidth: inferredTrailingStaticWidth
-    )
-    let fastGuidedMatch = bestMatch(
-      previous: lastRaster,
-      current: raster,
-      headerHeight: inferredHeaderHeight,
-      footerHeight: inferredFooterHeight,
-      leadingStaticWidth: inferredLeadingStaticWidth,
-      trailingStaticWidth: inferredTrailingStaticWidth,
-      expectedSignedDeltaPixels: matchingExpectedDelta,
-      visionAlignmentEstimate: nil,
-      searchMode: .guided
-    )
-    let strongVisionMovement = hasStrongVisionMovement(visionAlignmentEstimate)
-
-    if
-      frameDifference < 8.5,
-      !strongVisionMovement,
-      fastGuidedMatch == nil
-    {
-      return currentUpdate(
-        outcome: .ignoredNoMovement,
-        includeMergedImage: renderMergedImage,
-        likelyReachedBoundary: true,
-        alignmentDebug: ScrollingCaptureAlignmentDebugInfo(
-          path: .duplicateBoundary,
-          usedVisionEstimate: visionAlignmentEstimate != nil,
-          confidence: 1,
-          pixelScore: nil,
-          totalScore: nil,
-          appendDeltaY: nil,
-          visionAgreementCount: 0
-        )
-      )
-    }
-
-    var alignmentPath: ScrollingCaptureAlignmentPath = .fastGuided
-    var match = fastGuidedMatch
-
-    if shouldValidateFastGuidedMatch(match, visionAlignmentEstimate: visionAlignmentEstimate) {
-      let guidedVisionMatch = bestMatch(
-        previous: lastRaster,
-        current: raster,
-        headerHeight: inferredHeaderHeight,
-        footerHeight: inferredFooterHeight,
-        leadingStaticWidth: inferredLeadingStaticWidth,
-        trailingStaticWidth: inferredTrailingStaticWidth,
-        expectedSignedDeltaPixels: matchingExpectedDelta,
-        visionAlignmentEstimate: visionAlignmentEstimate,
-        searchMode: .guided
-      )
-
-      if let guidedVisionMatch {
-        match = guidedVisionMatch
-        alignmentPath = .guidedVision
-      } else if match == nil || !fastGuidedMatchDisagreesWithVision(match, visionAlignmentEstimate: visionAlignmentEstimate) {
-        match = fastGuidedMatch
-        alignmentPath = .fastGuided
-      } else {
-        match = nil
-      }
-    }
-
-    if match == nil {
-      match = bestMatch(
-        previous: lastRaster,
-        current: raster,
-        headerHeight: inferredHeaderHeight,
-        footerHeight: inferredFooterHeight,
-        leadingStaticWidth: inferredLeadingStaticWidth,
-        trailingStaticWidth: inferredTrailingStaticWidth,
-        expectedSignedDeltaPixels: matchingExpectedDelta,
-        visionAlignmentEstimate: visionAlignmentEstimate,
-        searchMode: .recovery
-      )
-      alignmentPath = .recoveryVision
-    }
-
-    if
-      let expectedDeltaPixels,
-      expectedDeltaPixels > 0,
-      let candidate = match,
-      candidate.deltaY != exactPartialDelta,
-      !isVerifiedSettledPartialMatch(candidate, expectedDeltaPixels: expectedDeltaPixels,
-        visionAlignmentEstimate: visionAlignmentEstimate, allowed: allowsSettledPartialStep),
-      stronglyContradictsKnownStep(
-        candidate,
-        expectedDeltaPixels: expectedDeltaPixels,
-        visionAlignmentEstimate: visionAlignmentEstimate
-      )
-    {
-      matchNotFoundCount += 1
-      return currentUpdate(
-        outcome: .ignoredAlignmentFailed,
-        includeMergedImage: renderMergedImage,
-        alignmentDebug: ScrollingCaptureAlignmentDebugInfo(
-          path: .alignmentFailed,
-          usedVisionEstimate: visionAlignmentEstimate != nil,
-          confidence: matcherConfidence(for: candidate),
-          pixelScore: candidate.pixelScore,
-          totalScore: candidate.totalScore,
-          appendDeltaY: candidate.deltaY,
-          visionAgreementCount: visionAlignmentEstimate?.agreementCount ?? 0
-        )
-      )
-    }
-
-    if isLikelyDuplicateBoundary(
-      frameDifference: frameDifference,
-      match: match,
-      expectedDeltaPixels: expectedDeltaPixels,
-      visionAlignmentEstimate: visionAlignmentEstimate
-    ) {
-      return currentUpdate(
-        outcome: .ignoredNoMovement,
-        includeMergedImage: renderMergedImage,
-        likelyReachedBoundary: true,
-        alignmentDebug: ScrollingCaptureAlignmentDebugInfo(
-          path: .duplicateBoundary,
-          usedVisionEstimate: visionAlignmentEstimate != nil,
-          confidence: match.map { matcherConfidence(for: $0) } ?? 1,
-          pixelScore: match?.pixelScore,
-          totalScore: match?.totalScore,
-          appendDeltaY: nil,
-          visionAgreementCount: visionAlignmentEstimate?.agreementCount ?? 0
-        )
-      )
-    }
-
-    guard let match else {
-      matchNotFoundCount += 1
-      return currentUpdate(
-        outcome: .ignoredAlignmentFailed,
-        includeMergedImage: renderMergedImage,
-        alignmentDebug: ScrollingCaptureAlignmentDebugInfo(
-          path: .alignmentFailed,
-          usedVisionEstimate: visionAlignmentEstimate != nil,
-          confidence: 0,
-          pixelScore: nil,
-          totalScore: nil,
-          appendDeltaY: nil,
-          visionAgreementCount: visionAlignmentEstimate?.agreementCount ?? 0
-        )
-      )
-    }
-
-    if mergeDirection == .unresolved {
-      mergeDirection = match.direction
-      headerHeight = inferredHeaderHeight
-      footerHeight = inferredFooterHeight
-      leadingStaticWidth = inferredLeadingStaticWidth
-      trailingStaticWidth = inferredTrailingStaticWidth
-      bootstrapContentSlices(with: lastRaster)
-    }
-
-    let remainingHeight = maxOutputHeight - outputHeight
-    guard remainingHeight > 0 else {
-      return currentUpdate(
-        outcome: .reachedHeightLimit,
-        includeMergedImage: renderMergedImage,
-        alignmentDebug: makeAlignmentDebugInfo(
-          for: match,
-          path: .heightLimit,
-          usedVisionEstimate: visionAlignmentEstimate != nil,
-          visionAlignmentEstimate: visionAlignmentEstimate
-        )
-      )
-    }
-
-    let acceptedDelta = min(match.deltaY, remainingHeight)
-    guard let sliceStart = sliceStartRow(for: match.direction, in: raster, deltaY: acceptedDelta) else {
-      matchNotFoundCount += 1
-      return currentUpdate(
-        outcome: .ignoredAlignmentFailed,
-        includeMergedImage: renderMergedImage,
-        alignmentDebug: ScrollingCaptureAlignmentDebugInfo(
-          path: .alignmentFailed,
-          usedVisionEstimate: visionAlignmentEstimate != nil,
-          confidence: 0,
-          pixelScore: match.pixelScore,
-          totalScore: match.totalScore,
-          appendDeltaY: nil,
-          visionAgreementCount: visionAlignmentEstimate?.agreementCount ?? 0
-        )
-      )
-    }
-
-    appendRows(from: raster, startRow: sliceStart, rowCount: acceptedDelta)
-    self.lastRaster = raster
-    self.lastMatch = Match(
-      direction: match.direction,
-      deltaY: acceptedDelta,
-      pixelScore: match.pixelScore,
-      totalScore: match.totalScore,
-      strongBandCount: match.strongBandCount,
-      bandCount: match.bandCount,
-      worstBandScore: match.worstBandScore,
-      bandVariance: match.bandVariance
-    )
-    self.matchNotFoundCount = 0
-    acceptedFrameCount += 1
-    cachedMergedImage = nil
-
-    let outcome: ScrollingCaptureStitchOutcome = acceptedDelta < match.deltaY
-      ? .reachedHeightLimit
-      : .appended(deltaY: acceptedDelta)
-
-    return currentUpdate(
-      outcome: outcome,
-      includeMergedImage: renderMergedImage,
-      alignmentDebug: makeAlignmentDebugInfo(
-        for: match,
-        path: acceptedDelta < match.deltaY ? .heightLimit : alignmentPath,
-        usedVisionEstimate: visionAlignmentEstimate != nil,
-        visionAlignmentEstimate: visionAlignmentEstimate,
-        appendDeltaY: acceptedDelta
-      )
-    )
-  }
-
-  func mergedImage() -> CGImage? {
-    if let cachedMergedImage {
-      return cachedMergedImage
-    }
-
-    guard imageWidth > 0 else { return nil }
-    let width = imageWidth
-    let height = outputHeight
-    guard height > 0 else { return nil }
-    let snapshot = StripSnapshot(strips: contentSlices, bytesPerRow: width * 4)
-    let retained = Unmanaged.passRetained(snapshot)
-    var callbacks = CGDataProviderDirectCallbacks(version: 0,
-      getBytePointer: nil, releaseBytePointer: nil,
-      getBytesAtPosition: { info, buffer, position, count in
-        guard let info else { return 0 }
-        return Unmanaged<StripSnapshot>.fromOpaque(info).takeUnretainedValue()
-          .read(into: buffer, position: Int(position), count: count)
-      },
-      releaseInfo: { info in
-        if let info { Unmanaged<StripSnapshot>.fromOpaque(info).release() }
-      })
-    guard let provider = CGDataProvider(directInfo: retained.toOpaque(), size: off_t(snapshot.byteCount),
-      callbacks: &callbacks) else {
-      retained.release()
-      return nil
-    }
-    cachedMergedImage = CGImage(width: width, height: height, bitsPerComponent: 8,
-      bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-      bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
-      provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
-    return cachedMergedImage
-  }
-
-  func previewImage(maxPixelWidth: Int, maxPixelHeight: Int) -> CGImage? {
-    guard imageWidth > 0 else { return nil }
-    let safeMaxPixelWidth = max(1, maxPixelWidth)
-    let safeMaxPixelHeight = max(1, maxPixelHeight)
-    let targetScale = min(
-      1,
-      Double(safeMaxPixelWidth) / Double(imageWidth),
-      Double(safeMaxPixelHeight) / Double(max(outputHeight, 1))
-    )
-
-    let targetWidth = max(1, Int((Double(imageWidth) * targetScale).rounded()))
-    let targetHeight = max(1, Int((Double(outputHeight) * targetScale).rounded()))
-    let bytesPerRow = targetWidth * 4
-    let colorSpace = CGColorSpaceCreateDeviceRGB()
-    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-
-    guard
-      let context = CGContext(
-        data: nil,
-        width: targetWidth,
-        height: targetHeight,
-        bitsPerComponent: 8,
-        bytesPerRow: bytesPerRow,
-        space: colorSpace,
-        bitmapInfo: bitmapInfo
-      )
-    else {
-      return nil
-    }
-
-    context.interpolationQuality = .medium
-
-    var destinationRow = 0
-    for slice in contentSlices {
-      guard let rows = slice.decoded(),
-        let sliceImage = RasterImage.makeCGImage(width: imageWidth, height: slice.rowCount,
-          bytesPerRow: imageWidth * 4, pixels: Array(rows)) else { return nil }
-
-      let sourceTop = CGFloat(destinationRow) / CGFloat(max(outputHeight, 1))
-      let sourceBottom = CGFloat(destinationRow + slice.rowCount) / CGFloat(max(outputHeight, 1))
-      let destinationTop = CGFloat(targetHeight) * (1 - sourceTop)
-      let destinationBottom = CGFloat(targetHeight) * (1 - sourceBottom)
-      let destinationRect = CGRect(
-        x: 0,
-        y: destinationBottom,
-        width: CGFloat(targetWidth),
-        height: max(1, destinationTop - destinationBottom)
-      )
-      context.draw(sliceImage, in: destinationRect)
-      destinationRow += slice.rowCount
-    }
-
-    return context.makeImage()
-  }
-
-  private func currentUpdate(
-    outcome: ScrollingCaptureStitchOutcome,
-    includeMergedImage: Bool = true,
-    likelyReachedBoundary: Bool = false,
-    safety: ScrollingCaptureStitchSafety? = nil,
-    alignmentDebug: ScrollingCaptureAlignmentDebugInfo? = nil
-  ) -> ScrollingCaptureStitchUpdate {
-    ScrollingCaptureStitchUpdate(
-      outcome: outcome,
-      mergedImage: includeMergedImage ? mergedImage() : cachedMergedImage,
-      acceptedFrameCount: acceptedFrameCount,
-      outputHeight: outputHeight,
-      matchFailureCount: matchNotFoundCount,
-      mergeDirection: mergeDirection,
-      likelyReachedBoundary: likelyReachedBoundary,
-      safety: safety ?? defaultSafety(for: outcome),
-      alignmentDebug: alignmentDebug
-    )
-  }
-
-  private func defaultSafety(for outcome: ScrollingCaptureStitchOutcome) -> ScrollingCaptureStitchSafety {
-    switch outcome {
-    case .initialized, .appended, .ignoredNoMovement, .reachedHeightLimit:
-      return .confirmed
-    case .ignoredAlignmentFailed:
-      return .unsafe(reason: "alignment-failed")
-    }
-  }
-
-  private func makeAlignmentDebugInfo(
-    for match: Match,
-    path: ScrollingCaptureAlignmentPath,
-    usedVisionEstimate: Bool,
-    visionAlignmentEstimate: VisionAlignmentEstimate?,
-    appendDeltaY: Int? = nil
-  ) -> ScrollingCaptureAlignmentDebugInfo {
-    ScrollingCaptureAlignmentDebugInfo(
-      path: path,
-      usedVisionEstimate: usedVisionEstimate,
-      confidence: matcherConfidence(for: match),
-      pixelScore: match.pixelScore,
-      totalScore: match.totalScore,
-      appendDeltaY: appendDeltaY,
-      visionAgreementCount: visionAlignmentEstimate?.agreementCount ?? 0
-    )
-  }
-
-  private func bootstrapContentSlices(with baseRaster: RasterImage) {
-    let contentStart = headerHeight
-    let contentHeight = max(1, baseRaster.height - headerHeight - footerHeight)
-    contentSlices = []
-    appendRows(from: baseRaster, startRow: contentStart, rowCount: contentHeight)
-  }
-
-  /// Delivers top-to-bottom lossless strips; only the final strip may be short.
-  /// Callers can encode/render incrementally without materializing a full bitmap.
-  func forEachStrip(_ body: (CGImage) throws -> Void) throws {
-    for strip in contentSlices {
-      try autoreleasepool {
-        // Compression is produced in memory by this instance; no external payloads.
-        guard let rows = strip.decoded(),
-          let image = RasterImage.makeCGImage(width: imageWidth, height: strip.rowCount,
-            bytesPerRow: imageWidth * 4, pixels: Array(rows)) else {
-          throw StitchingFailure.imageUnavailable
-        }
-        try body(image)
-      }
-    }
-  }
-
-  private func appendRows(from raster: RasterImage, startRow: Int, rowCount: Int) {
-    let bytesPerRow = raster.bytesPerRow
-    var sourceRow = startRow
-    let endRow = startRow + rowCount
-    var pending = Data()
-    if let last = contentSlices.last, last.rowCount < 256 {
-      pending = last.decoded()!
-      contentSlices.removeLast()
-    }
-    while sourceRow < endRow {
-      let count = min(256 - pending.count / bytesPerRow, endRow - sourceRow)
-      pending.append(contentsOf: raster.pixels[sourceRow * bytesPerRow..<(sourceRow + count) * bytesPerRow])
-      sourceRow += count
-      if pending.count == 256 * bytesPerRow {
-        contentSlices.append(ContentStrip(rows: pending, rowCount: 256))
-        pending = Data()
-      }
-    }
-    if !pending.isEmpty {
-      contentSlices.append(ContentStrip(rows: pending, rowCount: pending.count / bytesPerRow))
-    }
-  }
-
-  private func sliceStartRow(
-    for direction: ScrollingCaptureMergeDirection,
-    in raster: RasterImage,
-    deltaY: Int
-  ) -> Int? {
-    switch direction {
-    case .appendFromBottom:
-      let contentBottom = raster.height - footerHeight
-      let startRow = contentBottom - deltaY
-      return startRow >= headerHeight ? startRow : nil
-    case .appendFromTop:
-      let startRow = headerHeight
-      let contentBottom = raster.height - footerHeight
-      return startRow + deltaY <= contentBottom ? startRow : nil
-    case .unresolved:
-      return nil
-    }
-  }
-
-  private func detectStaticBandHeight(
-    previous: RasterImage,
-    current: RasterImage,
-    fromTop: Bool
-  ) -> Int {
-    let maxBandHeight = min(previous.height / 5, 160)
-    let xInset = max(20, previous.width / 18)
-    let xStart = xInset
-    let xEnd = previous.width - xInset
-    let columnStride = max(2, (xEnd - xStart) / 44)
-    var bandHeight = 0
-
-    for offset in 0..<maxBandHeight {
-      let row = fromTop ? offset : previous.height - 1 - offset
-      let difference = previous.rowDifference(
-        comparedTo: current,
-        row: row,
-        otherRow: row,
-        xStart: xStart,
-        xEnd: xEnd,
-        columnStride: columnStride
-      )
-
-      if difference < 5.0 {
-        bandHeight = offset + 1
-      } else {
-        break
-      }
-    }
-
-    return min(max(0, bandHeight), maxBandHeight)
-  }
-
-  private func contentDifference(
-    previous: RasterImage,
-    current: RasterImage,
-    headerHeight: Int,
-    footerHeight: Int,
-    leadingStaticWidth: Int,
-    trailingStaticWidth: Int
-  ) -> Double {
-    let contentHeight = previous.height - headerHeight - footerHeight
-    guard contentHeight > 24 else { return 255 }
-
-    guard let (xStart, xEnd) = matchingColumnBounds(
-      width: previous.width,
-      leadingStaticWidth: leadingStaticWidth,
-      trailingStaticWidth: trailingStaticWidth
-    ) else {
-      return 255
-    }
-
-    let columnStride = max(2, (xEnd - xStart) / 72)
-    let bandHeight = max(12, min(24, contentHeight / 8))
-    let bandCount = 8
-    var total = 0.0
-    var count = 0
-
-    for index in 0..<bandCount {
-      let ratio = Double(index + 1) / Double(bandCount + 1)
-      let row = headerHeight + min(
-        max(0, contentHeight - bandHeight),
-        Int(Double(max(0, contentHeight - bandHeight)) * ratio)
-      )
-
-      total += previous.blockDifference(
-        comparedTo: current,
-        startRow: row,
-        otherStartRow: row,
-        rowCount: bandHeight,
-        xStart: xStart,
-        xEnd: xEnd,
-        columnStride: columnStride,
-        rowStride: 2
-      )
-      count += 1
-    }
-
-    return count > 0 ? total / Double(count) : 255
-  }
-
-  private func bestMatch(
-    previous: RasterImage,
-    current: RasterImage,
-    headerHeight: Int,
-    footerHeight: Int,
-    leadingStaticWidth: Int,
-    trailingStaticWidth: Int,
-    expectedSignedDeltaPixels: Int?,
-    visionAlignmentEstimate: VisionAlignmentEstimate?,
-    searchMode: MatchSearchMode
-  ) -> Match? {
-    let contentHeight = previous.height - headerHeight - footerHeight
-    let expectedDeltaPixels = expectedSignedDeltaPixels.map(abs)
-    guard let broadRange = broadDeltaRange(
-      for: contentHeight,
-      expectedDeltaPixels: expectedDeltaPixels,
-      visionAlignmentEstimate: visionAlignmentEstimate,
-      searchMode: searchMode
-    ) else { return nil }
-
-    let directions: [ScrollingCaptureMergeDirection]
-    if mergeDirection == .unresolved {
-      directions = [.appendFromBottom]
-    } else {
-      directions = [mergeDirection]
-    }
-
-    let focusedRange = focusedDeltaRange(
-      inside: broadRange,
-      expectedDeltaPixels: expectedDeltaPixels,
-      visionAlignmentEstimate: visionAlignmentEstimate,
-      searchMode: searchMode
-    )
-
-    var searchResult = searchBestMatch(
-      previous: previous,
-      current: current,
-      headerHeight: headerHeight,
-      footerHeight: footerHeight,
-      leadingStaticWidth: leadingStaticWidth,
-      trailingStaticWidth: trailingStaticWidth,
-      directions: directions,
-      deltaRange: focusedRange ?? broadRange,
-      expectedDeltaPixels: expectedDeltaPixels,
-      visionAlignmentEstimate: visionAlignmentEstimate,
-      searchMode: searchMode
-    )
-
-    if !isAcceptable(
-      searchResult?.best,
-      expectedDeltaPixels: expectedDeltaPixels,
-      visionAlignmentEstimate: visionAlignmentEstimate,
-      searchMode: searchMode
-    )
-      || isAmbiguous(searchResult, expectedDeltaPixels: expectedDeltaPixels)
-    {
-      guard focusedRange != nil else { return nil }
-
-      let broaderResult = searchBestMatch(
-        previous: previous,
-        current: current,
-        headerHeight: headerHeight,
-        footerHeight: footerHeight,
-        leadingStaticWidth: leadingStaticWidth,
-        trailingStaticWidth: trailingStaticWidth,
-        directions: directions,
-        deltaRange: broadRange,
-        expectedDeltaPixels: expectedDeltaPixels,
-        visionAlignmentEstimate: visionAlignmentEstimate,
-        searchMode: searchMode
-      )
-
-      if broaderResult?.best.totalScore ?? .greatestFiniteMagnitude
-        < searchResult?.best.totalScore ?? .greatestFiniteMagnitude
-      {
-        searchResult = broaderResult
-      }
-    }
-
-    guard
-      let searchResult,
-      isAcceptable(
-        searchResult.best,
-        expectedDeltaPixels: expectedDeltaPixels,
-        visionAlignmentEstimate: visionAlignmentEstimate,
-        searchMode: searchMode
-      ),
-      !isAmbiguous(searchResult, expectedDeltaPixels: expectedDeltaPixels)
-    else {
-      return nil
-    }
-
-    return searchResult.best
-  }
-
-  private func broadDeltaRange(
-    for contentHeight: Int,
-    expectedDeltaPixels: Int?,
-    visionAlignmentEstimate: VisionAlignmentEstimate?,
-    searchMode: MatchSearchMode
-  ) -> ClosedRange<Int>? {
-    let defaultMinOverlap = max(160, Int(Double(contentHeight) * 0.26))
-    let aggressiveMinOverlap = max(96, Int(Double(contentHeight) * 0.16))
-    let defaultMinDelta = max(14, min(120, contentHeight / 28))
-    let signalMinDelta: Int
-    let signalMinOverlap: Int
-
-    if searchMode == .guided, let expectedDeltaPixels, expectedDeltaPixels > 0 {
-      signalMinDelta = max(12, expectedDeltaPixels / 2)
-      signalMinOverlap = contentHeight - expectedDeltaPixels
-    } else if searchMode == .guided, let lastMatch {
-      signalMinDelta = max(12, lastMatch.deltaY / 2)
-      signalMinOverlap = contentHeight - lastMatch.deltaY
-    } else {
-      signalMinDelta = defaultMinDelta
-      signalMinOverlap = defaultMinOverlap
-    }
-
-    var minimumOverlapFloor = aggressiveMinOverlap
-    var preferredMinimumOverlap = signalMinOverlap
-
-    if let visionAlignmentEstimate, visionAlignmentEstimate.deltaY > 0 {
-      let visionOverlapFloor = visionAlignmentEstimate.agreementCount >= 2
-        ? max(56, Int(Double(contentHeight) * 0.08))
-        : aggressiveMinOverlap
-      minimumOverlapFloor = min(minimumOverlapFloor, visionOverlapFloor)
-      preferredMinimumOverlap = min(
-        preferredMinimumOverlap,
-        max(visionOverlapFloor, contentHeight - visionAlignmentEstimate.deltaY)
-      )
-    }
-
-    let minDelta = min(defaultMinDelta, signalMinDelta)
-    let minOverlap = max(minimumOverlapFloor, min(defaultMinOverlap, preferredMinimumOverlap))
-    let maxDelta = max(minDelta, contentHeight - minOverlap)
-    return maxDelta > minDelta ? minDelta...maxDelta : nil
-  }
-
-  private func focusedDeltaRange(
-    inside broadRange: ClosedRange<Int>,
-    expectedDeltaPixels: Int?,
-    visionAlignmentEstimate: VisionAlignmentEstimate?,
-    searchMode: MatchSearchMode
-  ) -> ClosedRange<Int>? {
-    guard searchMode == .guided || visionAlignmentEstimate != nil else { return nil }
-
-    var centers: [Int] = []
-
-    if let expectedDeltaPixels, expectedDeltaPixels > 0 {
-      centers.append(clamp(expectedDeltaPixels, to: broadRange))
-    }
-
-    if let lastMatch, lastMatchAgreesWithExpected(
-      lastMatchDelta: lastMatch.deltaY,
-      expectedDeltaPixels: expectedDeltaPixels
-    ) {
-      centers.append(clamp(lastMatch.deltaY, to: broadRange))
-    }
-
-    if let visionAlignmentEstimate, visionAlignmentEstimate.deltaY > 0 {
-      let clampedVisionDelta = clamp(visionAlignmentEstimate.deltaY, to: broadRange)
-      let repeatCount = max(2, visionAlignmentEstimate.agreementCount + 1)
-      for _ in 0..<repeatCount {
-        centers.append(clampedVisionDelta)
-      }
-    }
-
-    guard !centers.isEmpty else { return nil }
-
-    let center = Int(round(Double(centers.reduce(0, +)) / Double(centers.count)))
-    let spread = max(28, min(96, center / 2 + 12))
-    let lower = max(broadRange.lowerBound, center - spread)
-    let upper = min(broadRange.upperBound, center + spread)
-    return lower < upper ? lower...upper : nil
-  }
-
-  private func searchBestMatch(
-    previous: RasterImage,
-    current: RasterImage,
-    headerHeight: Int,
-    footerHeight: Int,
-    leadingStaticWidth: Int,
-    trailingStaticWidth: Int,
-    directions: [ScrollingCaptureMergeDirection],
-    deltaRange: ClosedRange<Int>,
-    expectedDeltaPixels: Int?,
-    visionAlignmentEstimate: VisionAlignmentEstimate?,
-    searchMode: MatchSearchMode
-  ) -> MatchSearchResult? {
-    let contentHeight = previous.height - headerHeight - footerHeight
-    let coarseStep = max(2, min(10, contentHeight / 160))
-    var coarseCandidates: [Match] = []
-
-    for direction in directions {
-      for delta in stride(from: deltaRange.lowerBound, through: deltaRange.upperBound, by: coarseStep) {
-        guard let metrics = overlapMetrics(
-          previous: previous,
-          current: current,
-          direction: direction,
-          deltaY: delta,
-          headerHeight: headerHeight,
-          footerHeight: footerHeight,
-          leadingStaticWidth: leadingStaticWidth,
-          trailingStaticWidth: trailingStaticWidth
-        ) else {
-          continue
+    private final class StripReader {
+        let strips: [Strip]
+        let bytesPerRow: Int
+        let byteCount: Int
+        private let lock = NSLock()
+        private var cached = -1
+        private var cachedRows = Data()
+
+        init(strips: [Strip], bytesPerRow: Int) {
+            self.strips = strips
+            self.bytesPerRow = bytesPerRow
+            byteCount = strips.reduce(0) { $0 + $1.rowCount * bytesPerRow }
         }
 
-        let totalScore = metrics.averageDifference
-          + consistencyPenalty(for: metrics, searchMode: searchMode)
-          + priorPenalty(
-          deltaY: delta,
-          expectedDeltaPixels: expectedDeltaPixels,
-          visionAlignmentEstimate: visionAlignmentEstimate,
-          direction: direction,
-          searchMode: searchMode
-        )
-
-        let candidate = Match(
-          direction: direction,
-          deltaY: delta,
-          pixelScore: metrics.averageDifference,
-          totalScore: totalScore,
-          strongBandCount: metrics.strongBandCount,
-          bandCount: metrics.bandCount,
-          worstBandScore: metrics.worstDifference,
-          bandVariance: metrics.variance
-        )
-
-        coarseCandidates.append(candidate)
-      }
+        func read(into buffer: UnsafeMutableRawPointer, position: Int, count: Int) -> Int {
+            guard position >= 0, count > 0, position < byteCount else { return 0 }
+            let available = min(count, byteCount - position)
+            var copied = 0
+            lock.lock()
+            defer { lock.unlock() }
+            while copied < available {
+                var origin = 0
+                var index = 0
+                while index < strips.count {
+                    let size = strips[index].rowCount * bytesPerRow
+                    if position + copied < origin + size { break }
+                    origin += size
+                    index += 1
+                }
+                guard index < strips.count else { break }
+                if cached != index {
+                    guard let rows = strips[index].rows() else { return copied }
+                    cachedRows = rows
+                    cached = index
+                }
+                let local = position + copied - origin
+                let piece = min(available - copied, cachedRows.count - local)
+                cachedRows.withUnsafeBytes { raw in
+                    guard let base = raw.baseAddress else { return }
+                    buffer.advanced(by: copied).copyMemory(from: base.advanced(by: local), byteCount: piece)
+                }
+                copied += piece
+            }
+            return copied
+        }
     }
 
-    guard
-      let coarseBest = coarseCandidates.min(by: { $0.totalScore < $1.totalScore })
-    else {
-      return nil
+    private var width = 0
+    private var viewport: [UInt8] = []
+    private var viewportHeight = 0
+    private var strips: [Strip] = []
+    private var headerRows = 0
+    private var footerRows = 0
+    private var trimmedBands = false
+    private var direction: ScrollingCaptureMergeDirection = .unresolved
+    private var cachedPage: CGImage?
+    private var failures = 0
+    private(set) var acceptedFrameCount = 0
+
+    var outputHeight: Int { strips.reduce(0) { $0 + $1.rowCount } }
+    var pixelWidth: Int { width }
+    var retainedByteCount: Int { strips.reduce(0) { $0 + $1.payload.count } + viewport.count }
+
+    func start(with image: CGImage) -> ScrollingCaptureStitchUpdate? {
+        guard let pixels = copiedPixels(image), image.width > 0, image.height > 0 else { return nil }
+        width = image.width
+        viewport = pixels
+        viewportHeight = image.height
+        strips = []
+        headerRows = 0
+        footerRows = 0
+        trimmedBands = false
+        direction = .unresolved
+        cachedPage = nil
+        failures = 0
+        acceptedFrameCount = 1
+        store(pixels, rows: image.height)
+        return update(outcome: .initialized, path: .initialFrame, confidence: 1, includePage: true)
     }
 
-    let refineRadius = max(8, coarseStep * 2)
-    let refineStart = max(deltaRange.lowerBound, coarseBest.deltaY - refineRadius)
-    let refineEnd = min(deltaRange.upperBound, coarseBest.deltaY + refineRadius)
-    var refinedBest = coarseBest
-
-    for delta in refineStart...refineEnd {
-      guard let metrics = overlapMetrics(
-        previous: previous,
-        current: current,
-        direction: coarseBest.direction,
-        deltaY: delta,
-        headerHeight: headerHeight,
-        footerHeight: footerHeight,
-        leadingStaticWidth: leadingStaticWidth,
-        trailingStaticWidth: trailingStaticWidth
-      ) else {
-        continue
-      }
-
-      let totalScore = metrics.averageDifference
-        + consistencyPenalty(for: metrics, searchMode: searchMode)
-        + priorPenalty(
-        deltaY: delta,
-        expectedDeltaPixels: expectedDeltaPixels,
-        visionAlignmentEstimate: visionAlignmentEstimate,
-        direction: coarseBest.direction,
-        searchMode: searchMode
-      )
-
-      if totalScore < refinedBest.totalScore {
-        refinedBest = Match(
-          direction: coarseBest.direction,
-          deltaY: delta,
-          pixelScore: metrics.averageDifference,
-          totalScore: totalScore,
-          strongBandCount: metrics.strongBandCount,
-          bandCount: metrics.bandCount,
-          worstBandScore: metrics.worstDifference,
-          bandVariance: metrics.variance
-        )
-      }
+    func append(
+        _ image: CGImage,
+        maxOutputHeight: Int,
+        expectedSignedDeltaPixels: Int? = nil,
+        renderMergedImage: Bool = true,
+        allowsSettledPartialStep: Bool = false
+    ) -> ScrollingCaptureStitchUpdate? {
+        guard !viewport.isEmpty else { return start(with: image) }
+        guard image.width == width, image.height == viewportHeight, let next = copiedPixels(image) else {
+            failures += 1
+            return update(outcome: .ignoredAlignmentFailed, path: .alignmentFailed, confidence: 0,
+                          safety: .unsafe(reason: "dimensions"), includePage: renderMergedImage)
+        }
+        if next == viewport {
+            return update(outcome: .ignoredNoMovement, path: .noMovement, confidence: 1,
+                          boundary: true, includePage: renderMergedImage)
+        }
+        let header = matchingRun(previous: viewport, current: next, fromTop: true)
+        let footer = matchingRun(previous: viewport, current: next, fromTop: false)
+        let content = viewportHeight - header - footer
+        guard content > 1 else {
+            failures += 1
+            return update(outcome: .ignoredAlignmentFailed, path: .alignmentFailed, confidence: 0,
+                          includePage: renderMergedImage)
+        }
+        let delta: Int
+        let score: Int
+        if let expectedSignedDeltaPixels {
+            let proposed = abs(expectedSignedDeltaPixels)
+            let measured = overlapDistance(previous: viewport, current: next, delta: proposed, header: header, footer: footer)
+            if proposed > 0, proposed < content, measured <= 2 {
+                delta = proposed
+                score = measured
+            } else if allowsSettledPartialStep, let found = searchDelta(previous: viewport, current: next, header: header, footer: footer) {
+                delta = found.delta
+                score = found.score
+            } else {
+                failures += 1
+                return update(outcome: .ignoredAlignmentFailed, path: .alignmentFailed, confidence: 0,
+                              score: Double(measured), includePage: renderMergedImage)
+            }
+        } else if let found = searchDelta(previous: viewport, current: next, header: header, footer: footer) {
+            delta = found.delta
+            score = found.score
+        } else {
+            failures += 1
+            return update(outcome: .ignoredAlignmentFailed, path: .alignmentFailed, confidence: 0,
+                          includePage: renderMergedImage)
+        }
+        let room = maxOutputHeight - outputHeight
+        if room <= 0 {
+            return update(outcome: .reachedHeightLimit, path: .heightLimit, confidence: 1,
+                          delta: delta, includePage: renderMergedImage)
+        }
+        let take = min(delta, room)
+        if !trimmedBands && (header > 0 || footer > 0) {
+            cropStoredBands(header: header, footer: footer)
+            trimmedBands = true
+        }
+        headerRows = header
+        footerRows = footer
+        let start = header + (content - delta)
+        let fresh = Data(next[(start * width * 4)..<((start + take) * width * 4)])
+        store(fresh, rows: take)
+        viewport = next
+        direction = .appendFromBottom
+        cachedPage = nil
+        acceptedFrameCount += 1
+        if take < delta {
+            return update(outcome: .reachedHeightLimit, path: .heightLimit, confidence: 1,
+                          score: Double(score), delta: take, includePage: renderMergedImage)
+        }
+        return update(outcome: .appended(deltaY: delta), path: .fastGuided, confidence: score == 0 ? 1 : 0.5,
+                      score: Double(score), delta: delta, includePage: renderMergedImage)
     }
 
-    let ambiguityWindow = max(24, coarseStep * 3)
-    let runnerUp = coarseCandidates
-      .filter { candidate in
-        candidate.direction != refinedBest.direction || abs(candidate.deltaY - refinedBest.deltaY) > ambiguityWindow
-      }
-      .min(by: { $0.totalScore < $1.totalScore })
-
-    return MatchSearchResult(best: refinedBest, runnerUp: runnerUp)
-  }
-
-  private func overlapMetrics(
-    previous: RasterImage,
-    current: RasterImage,
-    direction: ScrollingCaptureMergeDirection,
-    deltaY: Int,
-    headerHeight: Int,
-    footerHeight: Int,
-    leadingStaticWidth: Int,
-    trailingStaticWidth: Int
-  ) -> OverlapMetrics? {
-    let contentHeight = previous.height - headerHeight - footerHeight
-    let overlapHeight = contentHeight - deltaY
-    guard overlapHeight > 24 else { return nil }
-
-    guard let (xStart, xEnd) = matchingColumnBounds(
-      width: previous.width,
-      leadingStaticWidth: leadingStaticWidth,
-      trailingStaticWidth: trailingStaticWidth
-    ) else {
-      return nil
+    func mergedImage() -> CGImage? {
+        if let cachedPage { return cachedPage }
+        guard width > 0, outputHeight > 0 else { return nil }
+        let reader = StripReader(strips: strips, bytesPerRow: width * 4)
+        let retained = Unmanaged.passRetained(reader)
+        var callbacks = CGDataProviderDirectCallbacks(
+            version: 0, getBytePointer: nil, releaseBytePointer: nil,
+            getBytesAtPosition: { info, buffer, position, count in
+                guard let info else { return 0 }
+                return Unmanaged<StripReader>.fromOpaque(info).takeUnretainedValue()
+                    .read(into: buffer, position: Int(position), count: count)
+            },
+            releaseInfo: { info in
+                if let info { Unmanaged<StripReader>.fromOpaque(info).release() }
+            })
+        guard let provider = CGDataProvider(directInfo: retained.toOpaque(), size: off_t(reader.byteCount), callbacks: &callbacks) else {
+            retained.release()
+            return nil
+        }
+        cachedPage = CGImage(width: width, height: outputHeight, bitsPerComponent: 8, bitsPerPixel: 32,
+                             bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+                             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        return cachedPage
     }
 
-    let columnStride = max(2, (xEnd - xStart) / 72)
-    let bandCount = min(10, max(6, overlapHeight / 80))
-    let bandHeight = max(12, min(28, overlapHeight / max(3, bandCount + 1)))
-    var differences: [Double] = []
-    differences.reserveCapacity(bandCount)
-
-    for index in 0..<bandCount {
-      let ratio = Double(index + 1) / Double(bandCount + 1)
-      let rowOffset = min(
-        max(0, overlapHeight - bandHeight),
-        Int(Double(max(0, overlapHeight - bandHeight)) * ratio)
-      )
-
-      let previousRow: Int
-      let currentRow: Int
-
-      switch direction {
-      case .appendFromBottom:
-        previousRow = headerHeight + deltaY + rowOffset
-        currentRow = headerHeight + rowOffset
-      case .appendFromTop:
-        previousRow = headerHeight + rowOffset
-        currentRow = headerHeight + deltaY + rowOffset
-      case .unresolved:
-        return nil
-      }
-
-      let difference = previous.blockDifference(
-        comparedTo: current,
-        startRow: previousRow,
-        otherStartRow: currentRow,
-        rowCount: bandHeight,
-        xStart: xStart,
-        xEnd: xEnd,
-        columnStride: columnStride,
-        rowStride: 2
-      )
-      differences.append(difference)
+    func previewImage(maxPixelWidth: Int, maxPixelHeight: Int) -> CGImage? {
+        guard width > 0, outputHeight > 0 else { return nil }
+        let scale = min(1, Double(max(1, maxPixelWidth)) / Double(width), Double(max(1, maxPixelHeight)) / Double(outputHeight))
+        let targetWidth = max(1, Int((Double(width) * scale).rounded()))
+        let targetHeight = max(1, Int((Double(outputHeight) * scale).rounded()))
+        guard let page = joinedRows() else { return nil }
+        var preview = [UInt8](repeating: 0, count: targetWidth * targetHeight * 4)
+        for y in 0..<targetHeight {
+            let sourceY = min(outputHeight - 1, y * outputHeight / targetHeight)
+            for x in 0..<targetWidth {
+                let sourceX = min(width - 1, x * width / targetWidth)
+                let from = (sourceY * width + sourceX) * 4
+                let to = (y * targetWidth + x) * 4
+                preview[to] = page[from]
+                preview[to + 1] = page[from + 1]
+                preview[to + 2] = page[from + 2]
+                preview[to + 3] = page[from + 3]
+            }
+        }
+        return image(width: targetWidth, rows: Data(preview))
     }
 
-    guard !differences.isEmpty else { return nil }
-
-    let averageDifference = differences.reduce(0.0, +) / Double(differences.count)
-    let strongThreshold = max(8.2, min(10.5, averageDifference * 0.92))
-    let strongBandCount = differences.filter { $0 <= strongThreshold }.count
-    let worstDifference = differences.max() ?? averageDifference
-    let variance = differences.reduce(0.0) { partialResult, difference in
-      let delta = difference - averageDifference
-      return partialResult + delta * delta
-    } / Double(differences.count)
-
-    return OverlapMetrics(
-      averageDifference: averageDifference,
-      strongBandCount: strongBandCount,
-      bandCount: differences.count,
-      worstDifference: worstDifference,
-      variance: variance
-    )
-  }
-
-  private func consistencyPenalty(
-    for metrics: OverlapMetrics,
-    searchMode: MatchSearchMode
-  ) -> Double {
-    guard metrics.bandCount > 0 else { return 255 }
-
-    let strongRatio = Double(metrics.strongBandCount) / Double(metrics.bandCount)
-    let weakBandCount = max(0, metrics.bandCount - metrics.strongBandCount)
-    var penalty = Double(weakBandCount) * (searchMode == .guided ? 1.1 : 0.9)
-
-    if strongRatio < 0.5 {
-      penalty += (0.5 - strongRatio) * (searchMode == .guided ? 9 : 7)
+    func forEachStrip(_ body: (CGImage) throws -> Void) throws {
+        for strip in strips {
+            guard let rows = strip.rows(), let image = image(width: width, rows: rows) else {
+                throw StitchingFailure.imageUnavailable
+            }
+            try body(image)
+        }
     }
 
-    if metrics.worstDifference > 18 {
-      penalty += min(6, (metrics.worstDifference - 18) * 0.4)
+    private func store(_ rows: Data, rows rowCount: Int) {
+        var pending = Data()
+        var pendingRows = 0
+        if let last = strips.last, last.rowCount < 256, let existing = last.rows() {
+            pending = existing
+            pendingRows = last.rowCount
+            strips.removeLast()
+        }
+        var offset = 0
+        let bytesPerRow = width * 4
+        var remaining = rowCount
+        while remaining > 0 {
+            let take = min(256 - pendingRows, remaining)
+            let byteCount = take * bytesPerRow
+            pending.append(rows[rows.startIndex + offset..<rows.startIndex + offset + byteCount])
+            pendingRows += take
+            offset += byteCount
+            remaining -= take
+            if pendingRows == 256 {
+                strips.append(Strip(rows: pending, rowCount: 256))
+                pending = Data()
+                pendingRows = 0
+            }
+        }
+        if pendingRows > 0 { strips.append(Strip(rows: pending, rowCount: pendingRows)) }
     }
 
-    if metrics.variance > 14 {
-      penalty += min(5, (metrics.variance - 14) * 0.3)
+    private func store(_ pixels: [UInt8], rows: Int) {
+        store(Data(pixels), rows: rows)
     }
 
-    return penalty
-  }
-
-  private func priorPenalty(
-    deltaY: Int,
-    expectedDeltaPixels: Int?,
-    visionAlignmentEstimate: VisionAlignmentEstimate?,
-    direction: ScrollingCaptureMergeDirection,
-    searchMode: MatchSearchMode
-  ) -> Double {
-    var penalty = 0.0
-
-    if searchMode == .guided, let expectedDeltaPixels, expectedDeltaPixels > 0 {
-      penalty += deviationPenalty(candidate: deltaY, expected: expectedDeltaPixels, weight: 22)
-
-      let largeLeapThreshold = max(expectedDeltaPixels * 2, expectedDeltaPixels + 180)
-      if deltaY > largeLeapThreshold {
-        penalty += 14
-      }
+    private func cropStoredBands(header: Int, footer: Int) {
+        guard let all = joinedRows() else { return }
+        let rows = all.count / (width * 4)
+        let end = rows - footer
+        guard header < end else { return }
+        let kept = all.subdata(in: header * width * 4..<end * width * 4)
+        strips = []
+        cachedPage = nil
+        store(kept, rows: end - header)
     }
 
-    if searchMode == .guided, let lastMatch, lastMatchAgreesWithExpected(
-      lastMatchDelta: lastMatch.deltaY,
-      expectedDeltaPixels: expectedDeltaPixels
-    ) {
-      penalty += deviationPenalty(candidate: deltaY, expected: lastMatch.deltaY, weight: 18)
-
-      let largeLeapThreshold = max(lastMatch.deltaY * 2, lastMatch.deltaY + 160)
-      if deltaY > largeLeapThreshold {
-        penalty += 10
-      }
+    private func joinedRows() -> Data? {
+        var all = Data()
+        for strip in strips {
+            guard let rows = strip.rows() else { return nil }
+            all.append(rows)
+        }
+        return all
     }
 
-    if let visionAlignmentEstimate, visionAlignmentEstimate.deltaY > 0 {
-      let agreementBonus = Double(max(0, visionAlignmentEstimate.agreementCount - 1)) * 6.0
-      let spreadDiscount = Double(min(visionAlignmentEstimate.deltaSpread, 12)) * 0.4
-      let weight = (searchMode == .guided ? 24.0 : 30.0) + agreementBonus - spreadDiscount
-      penalty += deviationPenalty(candidate: deltaY, expected: visionAlignmentEstimate.deltaY, weight: weight)
-
-      let largeLeapThreshold = max(
-        visionAlignmentEstimate.deltaY * 2,
-        visionAlignmentEstimate.deltaY + max(96, 148 - visionAlignmentEstimate.agreementCount * 18)
-      )
-      if deltaY > largeLeapThreshold {
-        penalty += searchMode == .guided ? 8 : 12
-      }
+    private func matchingRun(previous: [UInt8], current: [UInt8], fromTop: Bool) -> Int {
+        let limit = viewportHeight / 3
+        var count = 0
+        while count < limit {
+            let row = fromTop ? count : viewportHeight - 1 - count
+            if rowDistance(previous, current, row, row) > 0 { break }
+            count += 1
+        }
+        return count
     }
 
-    if mergeDirection != .unresolved && direction != mergeDirection {
-      penalty += 1_000
+    private func overlapDistance(previous: [UInt8], current: [UInt8], delta: Int, header: Int, footer: Int) -> Int {
+        let content = viewportHeight - header - footer
+        let overlap = content - delta
+        guard overlap > 0 else { return Int.max }
+        var total = 0
+        var samples = 0
+        var row = 0
+        let stride = max(1, overlap / 24)
+        while row < overlap {
+            total += rowDistance(previous, current, header + delta + row, header + row)
+            samples += 1
+            row += stride
+        }
+        return total / max(samples, 1)
     }
 
-    return penalty
-  }
-
-  private func deviationPenalty(candidate: Int, expected: Int, weight: Double) -> Double {
-    let baseline = max(1, expected)
-    let deviation = Double(abs(candidate - expected)) / Double(baseline)
-    return deviation * weight
-  }
-
-  private func lastMatchAgreesWithExpected(
-    lastMatchDelta: Int,
-    expectedDeltaPixels: Int?
-  ) -> Bool {
-    guard let expectedDeltaPixels, expectedDeltaPixels > 0 else { return true }
-    let tolerance = max(28, expectedDeltaPixels / 2)
-    return abs(lastMatchDelta - expectedDeltaPixels) <= tolerance
-  }
-
-  /// A deliberately strict fallback: identical frames and ambiguous periodic
-  /// overlaps are not movement evidence. Keep the matcher's 12-row minimum and
-  /// at least 96 overlapping rows; noisy/changed pixels still fail closed.
-  private func exactSettledPartialDelta(
-    previous: RasterImage,
-    current: RasterImage,
-    headerHeight: Int,
-    footerHeight: Int,
-    expectedDelta: Int?
-  ) -> Int? {
-    guard let expectedDelta, expectedDelta > 12,
-          previous.pixels != current.pixels else { return nil }
-    let contentHeight = previous.height - headerHeight - footerHeight
-    let maximumDelta = min(expectedDelta - 1, contentHeight - 96)
-    guard maximumDelta >= 12 else { return nil }
-    var verified: Int?
-    for delta in 12...maximumDelta {
-      let previousRow = headerHeight + (mergeDirection == .appendFromTop ? 0 : delta)
-      let currentRow = headerHeight + (mergeDirection == .appendFromTop ? delta : 0)
-      let length = (contentHeight - delta) * previous.bytesPerRow
-      let previousStart = previousRow * previous.bytesPerRow
-      let currentStart = currentRow * current.bytesPerRow
-      if previous.pixels[previousStart..<(previousStart + length)].elementsEqual(
-        current.pixels[currentStart..<(currentStart + length)]
-      ) {
-        guard verified == nil else { return nil }
-        verified = delta
-      }
-    }
-    return verified
-  }
-
-  private func isVerifiedSettledPartialMatch(
-    _ match: Match,
-    expectedDeltaPixels: Int,
-    visionAlignmentEstimate: VisionAlignmentEstimate?,
-    allowed: Bool
-  ) -> Bool {
-    guard allowed, match.deltaY < expectedDeltaPixels,
-          let estimate = visionAlignmentEstimate, estimate.agreementCount >= 2 else { return false }
-    return abs(estimate.deltaY - match.deltaY) <= 2
-      && match.pixelScore < 2
-      && match.bandVariance < 2
-      && matcherConfidence(for: match) >= 0.9
-  }
-
-  private func stronglyContradictsKnownStep(
-    _ match: Match,
-    expectedDeltaPixels: Int,
-    visionAlignmentEstimate: VisionAlignmentEstimate?
-  ) -> Bool {
-    let error = abs(match.deltaY - expectedDeltaPixels)
-    let tooLarge = error > max(48, Int(Double(expectedDeltaPixels) * 1.35))
-    let tooSmall = match.deltaY < max(18, expectedDeltaPixels / 2)
-    guard tooLarge || tooSmall else { return false }
-
-    let confidence = matcherConfidence(for: match)
-    let visionDelta = visionAlignmentEstimate?.deltaY ?? 0
-    let independentlyStrong =
-      confidence >= 0.88
-      && match.pixelScore < 6.5
-      && (visionAlignmentEstimate?.agreementCount ?? 0) >= 2
-      && visionDelta > 0
-      && abs(visionDelta - match.deltaY) <= max(24, expectedDeltaPixels / 4)
-      && error <= max(56, Int(Double(expectedDeltaPixels) * 0.65))
-
-    return !independentlyStrong
-  }
-
-  private func isAcceptable(
-    _ match: Match?,
-    expectedDeltaPixels: Int?,
-    visionAlignmentEstimate: VisionAlignmentEstimate?,
-    searchMode: MatchSearchMode
-  ) -> Bool {
-    guard let match else { return false }
-
-    switch searchMode {
-    case .guided:
-      guard match.pixelScore < 18 && match.totalScore < 28 else { return false }
-    case .recovery:
-      guard match.pixelScore < 20.5 && match.totalScore < 31 else { return false }
+    private func searchDelta(previous: [UInt8], current: [UInt8], header: Int, footer: Int) -> (delta: Int, score: Int)? {
+        let content = viewportHeight - header - footer
+        var bestDelta = 0
+        var best = Int.max
+        var delta = 1
+        while delta < content {
+            let score = overlapDistance(previous: previous, current: current, delta: delta, header: header, footer: footer)
+            if score < best {
+                best = score
+                bestDelta = delta
+                if score == 0 { break }
+            }
+            delta += 1
+        }
+        guard best <= 2, bestDelta > 0 else { return nil }
+        return (bestDelta, best)
     }
 
-    let requiredStrongBands = searchMode == .guided
-      ? max(3, match.bandCount / 2)
-      : max(3, match.bandCount / 3)
-    let bandCredit = max(0, (visionAlignmentEstimate?.agreementCount ?? 0) - 1)
-    if match.strongBandCount + bandCredit < requiredStrongBands && match.pixelScore > 8.8 {
-      return false
+    private func rowDistance(_ left: [UInt8], _ right: [UInt8], _ leftRow: Int, _ rightRow: Int) -> Int {
+        let step = max(1, width / 24)
+        var total = 0
+        var samples = 0
+        var x = 0
+        while x < width {
+            let a = (leftRow * width + x) * 4
+            let b = (rightRow * width + x) * 4
+            total += abs(Int(left[a]) - Int(right[b]))
+            total += abs(Int(left[a + 1]) - Int(right[b + 1]))
+            total += abs(Int(left[a + 2]) - Int(right[b + 2]))
+            samples += 3
+            x += step
+        }
+        return total / max(samples, 1)
     }
 
-    if match.worstBandScore > (searchMode == .guided ? 26 : 29), match.bandVariance > 18 {
-      return false
+    private func update(
+        outcome: ScrollingCaptureStitchOutcome,
+        path: ScrollingCaptureAlignmentPath,
+        confidence: Double,
+        score: Double? = nil,
+        delta: Int? = nil,
+        boundary: Bool = false,
+        safety: ScrollingCaptureStitchSafety = .confirmed,
+        includePage: Bool
+    ) -> ScrollingCaptureStitchUpdate {
+        ScrollingCaptureStitchUpdate(
+            outcome: outcome,
+            mergedImage: includePage ? mergedImage() : nil,
+            acceptedFrameCount: acceptedFrameCount,
+            outputHeight: outputHeight,
+            matchFailureCount: failures,
+            mergeDirection: direction,
+            likelyReachedBoundary: boundary,
+            safety: safety,
+            alignmentDebug: ScrollingCaptureAlignmentDebugInfo(
+                path: path, usedVisionEstimate: false, confidence: confidence,
+                pixelScore: score, totalScore: score, appendDeltaY: delta, visionAgreementCount: 0))
     }
 
-    if let expectedDeltaPixels, expectedDeltaPixels > 0 {
-      let tolerance = max(28, expectedDeltaPixels)
-      if abs(match.deltaY - expectedDeltaPixels) > tolerance && match.pixelScore > 9.5 {
-        return false
-      }
+    private func copiedPixels(_ image: CGImage) -> [UInt8]? {
+        let count = image.width * image.height * 4
+        guard image.bitsPerPixel == 32, image.bytesPerRow == image.width * 4,
+              let data = image.dataProvider?.data as Data?, data.count == count else { return nil }
+        return [UInt8](data)
     }
 
-    if let visionAlignmentEstimate, visionAlignmentEstimate.deltaY > 0 {
-      let tolerance = searchMode == .guided
-        ? max(20, visionAlignmentEstimate.deltaY / max(2, visionAlignmentEstimate.agreementCount))
-        : max(32, Int(Double(visionAlignmentEstimate.deltaY) * 0.65))
-      if abs(match.deltaY - visionAlignmentEstimate.deltaY) > tolerance && match.pixelScore > 10.5 {
-        return false
-      }
+    private func image(width: Int, rows: Data) -> CGImage? {
+        let height = rows.count / (width * 4)
+        guard height > 0, let provider = CGDataProvider(data: rows as CFData) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
-
-    return true
-  }
-
-  private func isAmbiguous(
-    _ searchResult: MatchSearchResult?,
-    expectedDeltaPixels: Int?
-  ) -> Bool {
-    guard
-      let searchResult,
-      let runnerUp = searchResult.runnerUp
-    else {
-      return false
-    }
-
-    let best = searchResult.best
-    let scoreGap = runnerUp.totalScore - best.totalScore
-    let pixelGap = runnerUp.pixelScore - best.pixelScore
-    let deltaGap = abs(runnerUp.deltaY - best.deltaY)
-    let directionConflict = runnerUp.direction != best.direction
-
-    if directionConflict && scoreGap < 2.4 {
-      return true
-    }
-
-    if deltaGap >= max(40, best.deltaY / 3) && scoreGap < 1.3 {
-      return true
-    }
-
-    if deltaGap >= max(28, best.deltaY / 4) && pixelGap < 0.9 && best.pixelScore > 8.5 {
-      return true
-    }
-
-    if best.pixelScore > 14 && scoreGap < 2.0 {
-      return true
-    }
-
-    if let expectedDeltaPixels, expectedDeltaPixels > 0 {
-      let tolerance = max(56, expectedDeltaPixels / 2)
-      if abs(best.deltaY - expectedDeltaPixels) > tolerance && scoreGap < 3.2 {
-        return true
-      }
-    }
-
-    return false
-  }
-
-  private func matcherConfidence(for match: Match) -> Double {
-    let pixelComponent = max(0, 1 - match.pixelScore / 20)
-    let totalComponent = max(0, 1 - match.totalScore / 32)
-    let strongBandComponent = Double(match.strongBandCount) / Double(max(1, match.bandCount))
-    let variancePenalty = min(1, match.bandVariance / 30)
-
-    let confidence =
-      pixelComponent * 0.4 +
-      totalComponent * 0.3 +
-      strongBandComponent * 0.2 +
-      (1 - variancePenalty) * 0.1
-
-    return min(1, max(0, confidence))
-  }
-
-  private func shouldValidateFastGuidedMatch(
-    _ match: Match?,
-    visionAlignmentEstimate: VisionAlignmentEstimate?
-  ) -> Bool {
-    guard let match else { return true }
-    guard let visionAlignmentEstimate, visionAlignmentEstimate.deltaY > 0 else { return false }
-
-    return matcherConfidence(for: match) < 0.82
-      || fastGuidedMatchDisagreesWithVision(match, visionAlignmentEstimate: visionAlignmentEstimate)
-  }
-
-  private func fastGuidedMatchDisagreesWithVision(
-    _ match: Match?,
-    visionAlignmentEstimate: VisionAlignmentEstimate?
-  ) -> Bool {
-    guard let match, let visionAlignmentEstimate, visionAlignmentEstimate.deltaY > 0 else { return false }
-
-    let tolerance: Int
-    if visionAlignmentEstimate.agreementCount >= 2 {
-      tolerance = max(18, visionAlignmentEstimate.deltaY / 3)
-    } else {
-      tolerance = max(32, visionAlignmentEstimate.deltaY / 2)
-    }
-
-    return abs(match.deltaY - visionAlignmentEstimate.deltaY) > tolerance
-  }
-
-  private func hasStrongVisionMovement(_ visionAlignmentEstimate: VisionAlignmentEstimate?) -> Bool {
-    guard let visionAlignmentEstimate else { return false }
-    return visionAlignmentEstimate.agreementCount >= 2 && visionAlignmentEstimate.deltaY >= 10
-  }
-
-  private func isLikelyDuplicateBoundary(
-    frameDifference: Double,
-    match: Match?,
-    expectedDeltaPixels: Int?,
-    visionAlignmentEstimate: VisionAlignmentEstimate?
-  ) -> Bool {
-    guard frameDifference < 8.5 else { return false }
-    guard !hasStrongVisionMovement(visionAlignmentEstimate) else { return false }
-    guard let match else { return true }
-
-    let priorDelta = lastMatch?.deltaY ?? 0
-    let baselineDelta = max(priorDelta, expectedDeltaPixels ?? 0)
-    let suspiciousDeltaCeiling = max(18, min(36, max(baselineDelta / 2, priorDelta / 3)))
-    let suspiciousExpectedMismatch = baselineDelta > 0 && match.deltaY < max(18, baselineDelta / 2)
-    let lowConfidence = matcherConfidence(for: match) < 0.84
-
-    return lowConfidence || suspiciousExpectedMismatch || match.deltaY <= suspiciousDeltaCeiling
-  }
-
-  private func clamp(_ value: Int, to range: ClosedRange<Int>) -> Int {
-    min(range.upperBound, max(range.lowerBound, value))
-  }
-
-  private func estimateVisionAlignment(
-    previous: RasterImage,
-    current: RasterImage,
-    headerHeight: Int,
-    footerHeight: Int,
-    leadingStaticWidth: Int,
-    trailingStaticWidth: Int
-  ) -> VisionAlignmentEstimate? {
-    guard let (xStart, xEnd) = matchingColumnBounds(
-      width: previous.width,
-      leadingStaticWidth: leadingStaticWidth,
-      trailingStaticWidth: trailingStaticWidth
-    ) else {
-      return nil
-    }
-
-    let contentHeight = previous.height - headerHeight - footerHeight
-    guard contentHeight > 80 else { return nil }
-
-    let verticalTrim = min(24, max(6, contentHeight / 24))
-    let startRow = headerHeight + verticalTrim
-    let rowCount = contentHeight - verticalTrim * 2
-    guard rowCount > 64 else { return nil }
-
-    var regions: [(xStart: Int, xEnd: Int, startRow: Int, rowCount: Int)] = [
-      (xStart, xEnd, startRow, rowCount)
-    ]
-
-    let contentWidth = xEnd - xStart
-    if contentWidth > 220 {
-      let horizontalTrim = max(14, min(36, contentWidth / 8))
-      regions.append((
-        xStart + horizontalTrim,
-        xEnd - horizontalTrim,
-        startRow,
-        rowCount
-      ))
-    }
-
-    if rowCount > 170 {
-      let centeredRowCount = max(96, Int(Double(rowCount) * 0.72))
-      let centeredStartRow = startRow + (rowCount - centeredRowCount) / 2
-      regions.append((xStart, xEnd, centeredStartRow, centeredRowCount))
-    }
-
-    var samples: [Int] = []
-
-    for region in regions {
-      if let delta = estimateVisionTranslation(
-        previous: previous,
-        current: current,
-        xStart: region.xStart,
-        xEnd: region.xEnd,
-        startRow: region.startRow,
-        rowCount: region.rowCount
-      ) {
-        samples.append(delta)
-      }
-    }
-
-    guard !samples.isEmpty else { return nil }
-
-    let sortedSamples = samples.sorted()
-    var bestCluster: [Int] = []
-
-    for sample in sortedSamples {
-      let tolerance = max(6, sample / 10)
-      let cluster = sortedSamples.filter { abs($0 - sample) <= tolerance }
-      if cluster.count > bestCluster.count {
-        bestCluster = cluster
-      }
-    }
-
-    let chosenSamples = bestCluster.isEmpty ? sortedSamples : bestCluster
-    let medianIndex = chosenSamples.count / 2
-    let deltaY = chosenSamples[medianIndex]
-    let deltaSpread = max(0, (chosenSamples.last ?? deltaY) - (chosenSamples.first ?? deltaY))
-
-    return VisionAlignmentEstimate(
-      deltaY: deltaY,
-      agreementCount: chosenSamples.count,
-      observedCount: samples.count,
-      deltaSpread: deltaSpread
-    )
-  }
-
-  private func estimateVisionTranslation(
-    previous: RasterImage,
-    current: RasterImage,
-    xStart: Int,
-    xEnd: Int,
-    startRow: Int,
-    rowCount: Int
-  ) -> Int? {
-    guard
-      let previousImage = previous.makeCroppedCGImage(
-        xStart: xStart,
-        xEnd: xEnd,
-        startRow: startRow,
-        rowCount: rowCount
-      ),
-      let currentImage = current.makeCroppedCGImage(
-        xStart: xStart,
-        xEnd: xEnd,
-        startRow: startRow,
-        rowCount: rowCount
-      )
-    else {
-      return nil
-    }
-
-    let request = VNTranslationalImageRegistrationRequest(
-      targetedCGImage: currentImage,
-      options: [:],
-      completionHandler: nil
-    )
-    let handler = VNSequenceRequestHandler()
-
-    do {
-      try handler.perform([request], on: previousImage)
-    } catch {
-      return nil
-    }
-
-    guard let observation = request.results?.first as? VNImageTranslationAlignmentObservation else {
-      return nil
-    }
-
-    let transform = observation.alignmentTransform
-    let horizontalShift = abs(transform.tx)
-    let verticalShift = abs(transform.ty)
-
-    guard horizontalShift.isFinite, verticalShift.isFinite else { return nil }
-    guard verticalShift >= 6 else { return nil }
-    guard horizontalShift <= max(10, CGFloat(previousImage.width) * 0.03) else { return nil }
-
-    let deltaY = Int(round(verticalShift))
-    let maxUsefulDelta = max(18, rowCount - max(72, Int(Double(rowCount) * 0.12)))
-    guard deltaY <= maxUsefulDelta else { return nil }
-
-    return deltaY
-  }
-
-  private func detectStaticSideBandWidth(
-    previous: RasterImage,
-    current: RasterImage,
-    fromLeading: Bool
-  ) -> Int {
-    let maxBandWidth = min(previous.width / 6, 120)
-    let step = max(2, min(8, previous.width / 220))
-    let yInset = max(24, previous.height / 16)
-    let yStart = yInset
-    let yEnd = previous.height - yInset
-    let rowCount = yEnd - yStart
-    guard rowCount > 24 else { return 0 }
-
-    var bandWidth = 0
-
-    for width in stride(from: step, through: maxBandWidth, by: step) {
-      let xStart = fromLeading ? 0 : previous.width - width
-      let xEnd = fromLeading ? width : previous.width
-
-      let difference = previous.blockDifference(
-        comparedTo: current,
-        startRow: yStart,
-        otherStartRow: yStart,
-        rowCount: rowCount,
-        xStart: xStart,
-        xEnd: xEnd,
-        columnStride: 2,
-        rowStride: 3
-      )
-
-      if difference < 5.0 {
-        bandWidth = width
-      } else if width >= step * 3 {
-        break
-      }
-    }
-
-    return min(max(0, bandWidth), maxBandWidth)
-  }
-
-  private func matchingColumnBounds(
-    width: Int,
-    leadingStaticWidth: Int,
-    trailingStaticWidth: Int
-  ) -> (Int, Int)? {
-    let safetyInset = max(10, width / 48)
-    let xStart = max(leadingStaticWidth, leadingStaticWidth + safetyInset)
-    let xEnd = min(width, width - trailingStaticWidth - safetyInset)
-    guard xEnd - xStart >= max(48, width / 5) else {
-      let fallbackStart = min(max(0, leadingStaticWidth), max(0, width - 2))
-      let fallbackEnd = max(fallbackStart + 1, width - trailingStaticWidth)
-      return fallbackEnd - fallbackStart >= max(40, width / 6)
-        ? (fallbackStart, fallbackEnd)
-        : nil
-    }
-
-    return (xStart, xEnd)
-  }
 }

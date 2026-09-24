@@ -119,10 +119,9 @@ root `.build/` output is not attributed as source.
 Manifest evaluation uses `xcrun swift`, honoring the caller's `DEVELOPER_DIR`
 (and defaulting to pinned Xcode). Only the root Frisket manifest remains.
 
-`docs/ported-files.json` contains the core stitcher and two ported test files.
-Their `originalSHA256` values retain upstream evidence; `adaptedSHA256` records
-current bytes and is checked for registered entries that declare it. Change
-notes describe both the trial adaptations and product adoption. A tampered-hash
+`docs/ported-files.json` is an empty list. The scrolling stitcher is Frisket's
+own code, so it has no upstream provenance entry. `adaptedSHA256` is still
+checked for any entry that declares it. A tampered-hash
 fixture fails even when the licence header is unchanged.
 When an approved ticket ports a file, retain its original header verbatim and
 record the retained licence preamble as `licenseHeader`, alongside `path`, `upstreamURL`, `revision`, and

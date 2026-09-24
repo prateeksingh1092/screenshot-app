@@ -287,21 +287,22 @@ private actor FlakyHistory: CaptureHistory {
 }
 
 extension EditorRedactionCommandsTests {
-    @Test func doneCannotGrowThePendingImagePastTheSessionBudget() async throws {
+    @Test func compressedDoneFitsTheBudgetThatHeldTheOriginal() async throws {
         let png = try encodeSRGB(Array(repeating: [UInt8(48), 80, 112, 255], count: 256).flatMap { $0 }, width: 16, height: 16)
         let codec = PNGBitmapCodec()
         let redaction = try #require(SolidRedaction(x: 3, y: 4, width: 5, height: 7))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
-        let base = try #require(codec.decode(png))
-        let rendered = try #require(codec.encode(DocumentRenderer.render(EditorDocument(base: base, edits: edits))))
-        try #require(rendered.count > png.count)
+        let strip = try #require(codec.encode(png, edits: edits))
+        #expect(strip.count < png.count)
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
             clipboard: RecordingClipboard(), pendingByteLimit: png.count, codec: codec)
         let id = CaptureID(), revision = CaptureRevision(captureID: CaptureID(), number: 1)
         let original = CaptureRevision(captureID: id, number: 1)
+        let edited = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: png.count))
-        #expect(await commands.execute(.done(original, edits)) == .rejected(.pendingByteBudgetExceeded))
-        #expect(await commands.image(for: original)?.pngData == png)
+        #expect(await commands.execute(.done(original, edits)) ==
+            .edited(edited, .notCommitted(.historyUnavailable)))
+        #expect(await commands.image(for: edited)?.pngData == strip)
         _ = await commands.execute(.discard(id))
         #expect(await commands.execute(.capture(revision.captureID, maximumBytes: png.count)) == .pending(revision))
     }

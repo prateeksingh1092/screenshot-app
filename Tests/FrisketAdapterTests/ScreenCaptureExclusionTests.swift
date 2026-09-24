@@ -39,11 +39,6 @@ import Testing
             context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
             return try #require(context.makeImage())
         }
-
-        func prepareMagnifier(on screen: NSScreen, excluding bundleIdentifier: String,
-                              additionalExclusions: Set<String>) async throws -> SelectionMagnifier {
-            throw CaptureSourceFailure.unavailable
-        }
     }
 }
 

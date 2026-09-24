@@ -101,14 +101,25 @@ public enum DocumentRenderer {
     private static func fillRedactions(_ redactions: [SolidRedaction], on output: inout Bitmap, scale: Double,
                                        originX: Double, originY: Double, fill: RGBAPixel,
                                        rowShift: Int, fullWidth: Int, fullHeight: Int) {
-        for redaction in redactions {
-            guard let bounds = snapped(x: redaction.x, y: redaction.y, width: redaction.width, height: redaction.height,
-                                       scale: scale, originX: originX, originY: originY, rowShift: rowShift,
-                                       fullWidth: fullWidth, fullHeight: fullHeight, in: output) else { continue }
-            for y in bounds.minY..<bounds.maxY {
-                for x in bounds.minX..<bounds.maxX {
-                    let index = (y * output.width + x) * 4
-                    output.bytes.replaceSubrange(index..<index + 4, with: [fill.red, fill.green, fill.blue, fill.alpha])
+        let boxes = redactions.compactMap { redaction in
+            snapped(x: redaction.x, y: redaction.y, width: redaction.width, height: redaction.height,
+                    scale: scale, originX: originX, originY: originY, rowShift: rowShift,
+                    fullWidth: fullWidth, fullHeight: fullHeight, in: output)
+        }
+        let rowWidth = output.width
+        output.bytes.withUnsafeMutableBytes { raw in
+            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            for bounds in boxes {
+                let span = bounds.maxX - bounds.minX
+                for y in bounds.minY..<bounds.maxY {
+                    var index = (y * rowWidth + bounds.minX) * 4
+                    for _ in 0..<span {
+                        pixels[index] = fill.red
+                        pixels[index + 1] = fill.green
+                        pixels[index + 2] = fill.blue
+                        pixels[index + 3] = fill.alpha
+                        index += 4
+                    }
                 }
             }
         }
@@ -124,44 +135,100 @@ public enum DocumentRenderer {
         guard let bounds = snapped(x: rectangle.x, y: rectangle.y, width: rectangle.width, height: rectangle.height,
                                    scale: scale, originX: originX, originY: originY, rowShift: rowShift,
                                    fullWidth: fullWidth, fullHeight: fullHeight, in: output) else { return }
-        var next = output
         switch effect.kind {
         case .blur:
             // Six passes of the same 3×3 average. Samples stay inside the box, so a
             // solid redaction that fills the box cannot pick up colour from outside it.
-            for _ in 0..<6 {
-                var pass = next
-                for y in bounds.minY..<bounds.maxY {
-                    for x in bounds.minX..<bounds.maxX {
-                        var red = 0, green = 0, blue = 0, alpha = 0
-                        for dy in -1...1 {
-                            for dx in -1...1 {
-                                let sampleX = min(max(x + dx, bounds.minX), bounds.maxX - 1)
-                                let sampleY = min(max(y + dy, bounds.minY), bounds.maxY - 1)
-                                let pixel = next.pixel(x: sampleX, y: sampleY)!
-                                red += Int(pixel.red)
-                                green += Int(pixel.green)
-                                blue += Int(pixel.blue)
-                                alpha += Int(pixel.alpha)
-                            }
-                        }
-                        write(RGBAPixel(red: UInt8(red / 9), green: UInt8(green / 9),
-                                        blue: UInt8(blue / 9), alpha: UInt8(alpha / 9)),
-                              x: x, y: y, on: &pass)
-                    }
-                }
-                next = pass
-            }
+            blurBox(bounds, on: &output)
         case .magnify:
-            for y in bounds.minY..<bounds.maxY {
-                for x in bounds.minX..<bounds.maxX {
-                    let sampleX = bounds.minX + (x - bounds.minX) / 2
-                    let sampleY = bounds.minY + (y - bounds.minY) / 2
-                    write(output.pixel(x: sampleX, y: sampleY)!, x: x, y: y, on: &next)
+            magnifyBox(bounds, on: &output)
+        }
+    }
+
+    private static func blurBox(_ bounds: (minX: Int, minY: Int, maxX: Int, maxY: Int), on output: inout Bitmap) {
+        let boxWidth = bounds.maxX - bounds.minX
+        let boxHeight = bounds.maxY - bounds.minY
+        guard boxWidth > 0, boxHeight > 0 else { return }
+        let count = boxWidth * boxHeight * 4
+        var source = [UInt8](repeating: 0, count: count)
+        var destination = [UInt8](repeating: 0, count: count)
+        output.bytes.withUnsafeBytes { raw in
+            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            for row in 0..<boxHeight {
+                let from = ((bounds.minY + row) * output.width + bounds.minX) * 4
+                _ = source.withUnsafeMutableBytes { box in
+                    memcpy(box.baseAddress! + row * boxWidth * 4, pixels + from, boxWidth * 4)
                 }
             }
         }
-        output = next
+        for _ in 0..<6 {
+            source.withUnsafeBytes { sourceRaw in
+                destination.withUnsafeMutableBytes { destinationRaw in
+                    guard let src = sourceRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                          let dst = destinationRaw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+                    for y in 0..<boxHeight {
+                        for x in 0..<boxWidth {
+                            var red = 0, green = 0, blue = 0, alpha = 0
+                            for dy in -1...1 {
+                                let sampleY = min(max(y + dy, 0), boxHeight - 1)
+                                for dx in -1...1 {
+                                    let sampleX = min(max(x + dx, 0), boxWidth - 1)
+                                    let index = (sampleY * boxWidth + sampleX) * 4
+                                    red += Int(src[index])
+                                    green += Int(src[index + 1])
+                                    blue += Int(src[index + 2])
+                                    alpha += Int(src[index + 3])
+                                }
+                            }
+                            let index = (y * boxWidth + x) * 4
+                            dst[index] = UInt8(red / 9)
+                            dst[index + 1] = UInt8(green / 9)
+                            dst[index + 2] = UInt8(blue / 9)
+                            dst[index + 3] = UInt8(alpha / 9)
+                        }
+                    }
+                }
+            }
+            swap(&source, &destination)
+        }
+        output.bytes.withUnsafeMutableBytes { raw in
+            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            for row in 0..<boxHeight {
+                let to = ((bounds.minY + row) * output.width + bounds.minX) * 4
+                _ = source.withUnsafeBytes { box in
+                    memcpy(pixels + to, box.baseAddress! + row * boxWidth * 4, boxWidth * 4)
+                }
+            }
+        }
+    }
+
+    private static func magnifyBox(_ bounds: (minX: Int, minY: Int, maxX: Int, maxY: Int), on output: inout Bitmap) {
+        let boxWidth = bounds.maxX - bounds.minX
+        let boxHeight = bounds.maxY - bounds.minY
+        guard boxWidth > 0, boxHeight > 0 else { return }
+        var magnified = [UInt8](repeating: 0, count: boxWidth * boxHeight * 4)
+        output.bytes.withUnsafeBytes { raw in
+            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            for y in 0..<boxHeight {
+                for x in 0..<boxWidth {
+                    let from = ((bounds.minY + y / 2) * output.width + bounds.minX + x / 2) * 4
+                    let to = (y * boxWidth + x) * 4
+                    magnified[to] = pixels[from]
+                    magnified[to + 1] = pixels[from + 1]
+                    magnified[to + 2] = pixels[from + 2]
+                    magnified[to + 3] = pixels[from + 3]
+                }
+            }
+        }
+        output.bytes.withUnsafeMutableBytes { raw in
+            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            for row in 0..<boxHeight {
+                let to = ((bounds.minY + row) * output.width + bounds.minX) * 4
+                _ = magnified.withUnsafeBytes { box in
+                    memcpy(pixels + to, box.baseAddress! + row * boxWidth * 4, boxWidth * 4)
+                }
+            }
+        }
     }
 
     private static func snapped(x: Double, y: Double, width: Double, height: Double, scale: Double,
@@ -181,7 +248,13 @@ public enum DocumentRenderer {
 
     private static func write(_ pixel: RGBAPixel, x: Int, y: Int, on output: inout Bitmap) {
         let index = (y * output.width + x) * 4
-        output.bytes.replaceSubrange(index..<index + 4, with: [pixel.red, pixel.green, pixel.blue, pixel.alpha])
+        output.bytes.withUnsafeMutableBytes { raw in
+            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            pixels[index] = pixel.red
+            pixels[index + 1] = pixel.green
+            pixels[index + 2] = pixel.blue
+            pixels[index + 3] = pixel.alpha
+        }
     }
 
     private static func draw(_ annotation: DocumentAnnotation, on output: inout Bitmap, scale: Double,
@@ -197,8 +270,7 @@ public enum DocumentRenderer {
                     let px = x - half + dx
                     let py = y - half + dy
                     guard (0..<output.width).contains(px), (0..<output.height).contains(py) else { continue }
-                    let index = (py * output.width + px) * 4
-                    output.bytes.replaceSubrange(index..<index + 4, with: [stroke.red, stroke.green, stroke.blue, stroke.alpha])
+                    write(stroke, x: px, y: py, on: &output)
                 }
             }
         }

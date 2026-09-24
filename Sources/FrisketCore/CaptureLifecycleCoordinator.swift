@@ -106,6 +106,10 @@ actor CaptureLifecycleCoordinator {
         }
     }
 
+    func historyThumbnail(_ id: CaptureID) async -> Data? {
+        await history?.thumbnailPNG(id)
+    }
+
     func historyImage(_ id: CaptureID) async -> CaptureImage? {
         guard case let .success((_, pngData)) = await history?.finalizedImage(id) else { return nil }
         return CaptureImage(pngData: pngData)

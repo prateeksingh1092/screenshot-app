@@ -169,6 +169,10 @@ public struct CaptureCommandLayer: Sendable {
         await coordinator.historyItems()
     }
 
+    public func historyThumbnail(_ id: CaptureID) async -> Data? {
+        await coordinator.historyThumbnail(id)
+    }
+
     public func historyImage(_ id: CaptureID) async -> CaptureImage? {
         await coordinator.historyImage(id)
     }

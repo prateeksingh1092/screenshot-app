@@ -58,6 +58,11 @@ public protocol CaptureHistory: Sendable {
     func entries() async -> Result<[HistoryEntry], HistoryFailure>
     func delete(_ id: CaptureID) async -> Result<Void, HistoryFailure>
     func finalizedImage(_ id: CaptureID) async -> Result<(revision: UInt64, pngData: Data), HistoryFailure>
+    func thumbnailPNG(_ id: CaptureID) async -> Data?
+}
+
+extension CaptureHistory {
+    public func thumbnailPNG(_ id: CaptureID) async -> Data? { nil }
 }
 
 /// Recovery/fault-injection contract. Each point means the named operation has

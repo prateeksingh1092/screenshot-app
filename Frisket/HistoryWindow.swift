@@ -28,13 +28,19 @@ import FrisketCore
         switch await commands.historyItems() {
         case let .success(items):
             var next: [Row] = []
-            for item in items {
-                let preview = await commands.historyImage(item.captureID).flatMap {
-                    ThumbnailImage.make(from: $0.pngData, maximumPixelSize: 160)
-                }.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
-                next.append(Row(item: item, preview: preview))
-            }
             rows = next
+            for item in items {
+                let preview: NSImage?
+                if let thumbnail = await commands.historyThumbnail(item.captureID) {
+                    preview = NSImage(data: thumbnail)
+                } else {
+                    preview = await commands.historyImage(item.captureID).flatMap {
+                        ThumbnailImage.make(from: $0.pngData, maximumPixelSize: 160)
+                    }.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
+                }
+                next.append(Row(item: item, preview: preview))
+                rows = next
+            }
             if selected == nil { selected = rows.first?.id }
             else if !rows.contains(where: { $0.id == selected }) { selected = rows.first?.id }
             if clearingMessage { message = nil }
@@ -212,10 +218,10 @@ final class HistoryDragView: NSImageView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        onDrag?(self, event)
+        DragStart.track(from: self, event: event) { [weak self] drag in
+            guard let self else { return }
+            self.onDrag?(self, drag)
+        }
     }
 }
 
@@ -244,9 +250,16 @@ final class HistoryDragView: NSImageView {
         })
     }
 
+    var isVisible: Bool { window.isVisible }
+
     func show() {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         Task { await model.reload() }
+    }
+
+    func reloadIfVisible() async {
+        guard window.isVisible else { return }
+        await model.reload()
     }
 }

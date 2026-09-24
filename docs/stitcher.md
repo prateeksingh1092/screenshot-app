@@ -100,16 +100,12 @@ The release test compiles in a separate process before measurement. No baseline
 is subtracted. This synthetic result is not a production pixel cap or a bound
 for arbitrary entropy, concurrent Pending captures, or downstream encoding.
 
-## Trial retirement and attribution
+## Ownership
 
-`Trials/StitcherTrial/` was removed in ticket 34: its evaluation is complete,
-and a second package would duplicate implementation, tests and provenance.
-Core now owns all execution. The [historical trial record](stitcher-trial-history.md)
-and ticket 04/05 reports preserve the earlier findings and red/green evidence.
-The unchanged upstream licence is at [licenses/Snapzy-LICENSE](licenses/Snapzy-LICENSE).
-Headers, original hashes, adapted hashes and change notes are registered in
-[ported-files.json](ported-files.json). Snapzy is listed as a product component
-in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+The scrolling stitcher in `Sources/FrisketCore/Stitcher/` is Frisket's own
+matcher. It stores the page as 256-row strips and joins same-size viewports by
+vertical overlap. `docs/ported-files.json` is empty. No upstream scrolling
+implementation is shipped.
 
 ## Recorded sequence acceptance
 

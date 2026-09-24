@@ -21,7 +21,6 @@ extension NSScreen {
     fileprivate var session: DisplaySelectionSession?
 
     func select(displays: [SelectionDisplay], pointer: CGPoint,
-                magnifiers: [UInt32: SelectionMagnifier],
                 spaceGeneration: @escaping () -> UInt64) async -> AreaSelection? {
         guard completion == nil, !displays.isEmpty else { return nil }
         self.spaceGeneration = spaceGeneration
@@ -45,7 +44,7 @@ extension NSScreen {
                 panel.animationBehavior = .none
                 panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications,
                                             .stationary, .ignoresCycle]
-                let view = SelectionView(display: display, magnifier: magnifiers[display.id], overlay: self)
+                let view = SelectionView(display: display, overlay: self)
                 panel.contentView = view
                 panels[display.id] = panel
                 panel.orderFrontRegardless()
@@ -58,7 +57,7 @@ extension NSScreen {
     func hide() { finish(accept: false) }
 
     fileprivate func redraw() {
-        for panel in panels.values { panel.contentView?.needsDisplay = true }
+        for panel in panels.values { (panel.contentView as? SelectionView)?.invalidateChangedSelection() }
     }
 
     fileprivate func focusOrigin() {
@@ -113,21 +112,20 @@ extension NSScreen {
     private let displayID: UInt32
     private let displayFrame: CGRect
     private let scale: CGFloat
-    private var magnifier: SelectionMagnifier?
     private var pointer: CGPoint
     private var dragging = false
     private var spaceHeld = false
     private var modifiers: SelectionGeometry.Modifiers = []
+    private var paintedSelection: NSRect = .null
     override var acceptsFirstResponder: Bool { true }
     override var needsPanelToBecomeKey: Bool { true }
 
-    init(display: SelectionDisplay, magnifier: SelectionMagnifier?, overlay: SelectionOverlay) {
+    init(display: SelectionDisplay, overlay: SelectionOverlay) {
         self.overlay = overlay
         displayID = display.id
         displayFrame = display.frame
         scale = display.scale
         pointer = NSEvent.mouseLocation
-        self.magnifier = magnifier
         super.init(frame: CGRect(origin: .zero, size: display.frame.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -145,7 +143,7 @@ extension NSScreen {
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.withAlphaComponent(0.24).setFill()
-        bounds.fill()
+        dirtyRect.fill()
         guard overlay.session?.originDisplay?.id == displayID, let rect = overlay.session?.rect else {
             "Selection stays on its starting display · Esc cancels".draw(at: CGPoint(x: 24, y: 24),
                 withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
@@ -162,19 +160,28 @@ extension NSScreen {
                       above: selection, in: bounds)
         let message = "Shift locks axis · Option centres · Space moves · Arrows nudge · Shift-arrows resize · Return captures · Esc cancels"
         message.draw(at: CGPoint(x: 24, y: 24), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
-        if let magnifier {
-            magnifier.draw(at: CGPoint(x: pointer.x - displayFrame.minX, y: pointer.y - displayFrame.minY), in: bounds)
-        } else {
-            "Magnifier unavailable".draw(at: CGPoint(x: 24, y: 46),
-                withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
-        }
+    }
+
+    func invalidateChangedSelection() {
+        let selection = currentSelectionRect()
+        let previous = paintedSelection
+        paintedSelection = selection
+        var dirty = selection.isNull ? NSRect.null : selection.insetBy(dx: -8, dy: -56)
+        if !previous.isNull { dirty = dirty.union(previous.insetBy(dx: -8, dy: -56)) }
+        dirty = dirty.union(NSRect(x: 0, y: 0, width: bounds.width, height: 48))
+        setNeedsDisplay(dirty)
+    }
+
+    private func currentSelectionRect() -> NSRect {
+        guard overlay.session?.originDisplay?.id == displayID, let rect = overlay.session?.rect else { return .null }
+        return rect.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
     }
 
     func spaceChanged() {
-        magnifier = nil
         dragging = false
         spaceHeld = false
         modifiers = []
+        paintedSelection = .null
         needsDisplay = true
     }
 
@@ -190,11 +197,10 @@ extension NSScreen {
     }
     private func updateGeometry() {
         if dragging { overlay.session?.update(to: pointer, modifiers: modifiers) }
-        needsDisplay = true
+        invalidateChangedSelection()
     }
     override func mouseMoved(with event: NSEvent) {
         pointer = point(event)
-        needsDisplay = true
     }
     override func mouseDown(with event: NSEvent) {
         pointer = point(event)

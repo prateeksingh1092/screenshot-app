@@ -134,6 +134,7 @@ import FrisketCore
     var currentEdits: DocumentEdits { edits }
     var dragPreview: NSImage? { canvas.rendered }
     private var finishing = false
+    private var renderedEdits: DocumentEdits?
     /// Close only after the command accepts the edits (or the unchanged close).
     private var finish: ((EditorLeave) async -> Bool)?
     private var promptOpen = false
@@ -294,13 +295,18 @@ import FrisketCore
     }
 
     private func refresh() {
-        documentSize = currentDocumentSize
-        canvas.documentSize = documentSize
-        canvas.rendered = nil
-        guard let displayEdits = DocumentEdits(scale: displayScale, crop: edits.crop, redactions: edits.redactions,
-                                               annotations: edits.annotations, effects: edits.effects) else { return }
-        let rendered = DocumentRenderer.render(EditorDocument(base: base, edits: displayEdits))
-        canvas.rendered = PNGBitmapCodec.image(rendered).map { NSImage(cgImage: $0, size: documentSize) }
+        let size = currentDocumentSize
+        if documentSize != size { documentSize = size }
+        if canvas.documentSize != size { canvas.documentSize = size }
+        if let displayEdits = DocumentEdits(scale: displayScale, crop: edits.crop, redactions: edits.redactions,
+                                            annotations: edits.annotations, effects: edits.effects),
+           displayEdits != renderedEdits {
+            let rendered = DocumentRenderer.render(EditorDocument(base: base, edits: displayEdits))
+            if let image = PNGBitmapCodec.image(rendered) {
+                canvas.rendered = NSImage(cgImage: image, size: size)
+                renderedEdits = displayEdits
+            }
+        }
         for button in toolButtons {
             button.state = button.tag == activeTool ? .on : .off
             button.isEnabled = !finishing

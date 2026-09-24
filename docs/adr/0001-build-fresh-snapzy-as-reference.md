@@ -14,7 +14,7 @@ Snapzy (BSD-3-Clause) is the closest open-source match for this app, so a reader
 
 ## Consequences
 
-The scrolling stitcher is the one exception under consideration, because it is pure image processing and its alignment tuning is empirical work Snapzy has already done. It is ported only if a trial shows it compiles alone, passes its tests on the Intel development Mac, fits the 2 GB scrolling budget after moving to strip storage, and costs less than a fresh implementation. Any ported file keeps its BSD-3 header and a provenance entry.
+The scrolling stitcher that was briefly adapted from that project has been removed. Frisket's stitcher is its own code. Nothing from that project is shipped.
 
 ## Stitcher trial outcome (decision 48)
 

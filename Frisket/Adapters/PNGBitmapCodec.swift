@@ -36,7 +36,7 @@ struct PNGBitmapCodec: BitmapCodec {
     }
 
     func encode(_ pngData: Data, edits: DocumentEdits) -> Data? {
-        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
         guard let source = CGImageSourceCreateWithData(pngData as CFData, options),
               CGImageSourceGetType(source) as String? == "public.png",
               let image = CGImageSourceCreateImageAtIndex(source, 0, options) else { return nil }
@@ -86,6 +86,9 @@ struct PNGBitmapCodec: BitmapCodec {
             minX = column((crop.x * scale).rounded(.down))
             minY = row((crop.y * scale).rounded(.down))
         }
+        let strip = CGRect(x: minX, y: minY + startRow, width: bounds.width, height: rowCount)
+        guard let cropped = image.cropping(to: strip),
+              cropped.width == bounds.width, cropped.height == rowCount else { return nil }
         var bytes = [UInt8](repeating: 0, count: bounds.width * rowCount * 4)
         let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
             guard let context = CGContext(data: buffer.baseAddress, width: bounds.width, height: rowCount,
@@ -93,8 +96,7 @@ struct PNGBitmapCodec: BitmapCodec {
                                           bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
             context.setBlendMode(.copy)
             context.interpolationQuality = .none
-            context.draw(image, in: CGRect(x: -minX, y: -(minY + startRow),
-                                           width: image.width, height: image.height))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: bounds.width, height: rowCount))
             return true
         }
         return drawn ? Bitmap(width: bounds.width, height: rowCount, bytes: bytes) : nil

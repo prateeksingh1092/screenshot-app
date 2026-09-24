@@ -338,6 +338,12 @@ public actor HistoryStore: CaptureHistory {
         catch { return .failure(.unavailable) }
     }
 
+    public func thumbnailPNG(_ id: CaptureID) async -> Data? {
+        guard case let .success(entries) = await entries(),
+              let location = entries.first(where: { $0.captureID == id })?.thumbnailLocation else { return nil }
+        return try? Data(contentsOf: root.appendingPathComponent(location))
+    }
+
     public func finalizedImage(_ id: CaptureID) async -> Result<(revision: UInt64, pngData: Data), HistoryFailure> {
         await ensureLaunchRecovery()
         do {
