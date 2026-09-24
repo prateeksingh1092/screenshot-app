@@ -62,6 +62,7 @@ private struct ExportSettingsView: View {
     @ObservedObject var shortcuts: ShortcutSettings
 
     var body: some View {
+        ScrollView {
         Form {
             ShortcutSettingsView(settings: shortcuts)
             ThumbnailSettingsSection(settings: thumbnails)
@@ -90,8 +91,9 @@ private struct ExportSettingsView: View {
             CaptureExclusionSettingsView(exclusions: exclusions)
         }
         .formStyle(.grouped)
-        .padding()
-        .frame(width: 680, height: 680)
+        }
+        .padding(8)
+        .frame(minWidth: 720, minHeight: 640)
     }
 }
 
@@ -103,7 +105,9 @@ private struct ExportSettingsView: View {
         window = NSWindow(contentViewController: NSHostingController(rootView: ExportSettingsView(
             settings: settings, history: history, thumbnails: thumbnails, exclusions: exclusions, shortcuts: shortcuts)))
         window.title = "Frisket Settings"
-        window.styleMask = [.titled, .closable]
+        window.styleMask = [.titled, .closable, .resizable]
+        window.setContentSize(NSSize(width: 760, height: 820))
+        window.minSize = NSSize(width: 640, height: 480)
         window.isReleasedWhenClosed = false
         window.isRestorable = false
         window.setAccessibilityLabel("Frisket Settings")

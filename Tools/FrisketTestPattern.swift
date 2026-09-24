@@ -28,7 +28,7 @@ import ImageIO
         }
         NSColor.black.setFill()
         CGRect(x: region.minX + 8, y: region.minY + 8, width: 8, height: 8).fill()
-        let caption = "Frisket synthetic pattern — move pointer here; ⌃⌥⌘4, Return. Escape closes this pattern."
+        let caption = "Frisket synthetic pattern — move pointer here; Command-Shift-4, Return. Escape closes this pattern."
         caption.draw(at: CGPoint(x: 32, y: bounds.height - 70),
                      withAttributes: [.font: NSFont.systemFont(ofSize: 18), .foregroundColor: NSColor.white])
     }

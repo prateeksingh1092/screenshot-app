@@ -1,21 +1,44 @@
 public enum ShortcutAction: String, CaseIterable, Codable, Sendable {
-    case captureArea, captureFullScreen, focusThumbnails
+    case showHistory
+    case focusThumbnails
+    case captureFullScreen
+    case captureArea
+    case captureWindow
+    case captureScrolling
 
     public var title: String {
         switch self {
-        case .captureArea: "Capture Area"
-        case .captureFullScreen: "Capture Full Screen"
+        case .showHistory: "History"
         case .focusThumbnails: "Focus Latest Thumbnail"
+        case .captureFullScreen: "Capture Full Screen"
+        case .captureArea: "Capture Area"
+        case .captureWindow: "Capture Window"
+        case .captureScrolling: "Capture Scrolling Page"
         }
     }
 
+    /// Command–Shift and a number, matching the macOS screenshot row and CleanShot.
+    /// 1 History, 2 thumbnails, 3 full screen, 4 area, 5 window, 6 scrolling.
     public var defaultBinding: ShortcutBinding {
         let code: UInt32 = switch self {
-        case .captureArea: 21
+        case .showHistory: 18
+        case .focusThumbnails: 19
         case .captureFullScreen: 20
-        case .focusThumbnails: 17
+        case .captureArea: 21
+        case .captureWindow: 23
+        case .captureScrolling: 22
         }
-        return ShortcutBinding(keyCode: code, modifiers: 6400) // Control–Option–Command
+        return ShortcutBinding(keyCode: code, modifiers: 768) // Command–Shift
+    }
+
+    /// Control–Option–Command defaults from before the number row. An unchanged saved copy migrates.
+    public var legacyDefaultBinding: ShortcutBinding? {
+        switch self {
+        case .captureArea: ShortcutBinding(keyCode: 21, modifiers: 6400)
+        case .captureFullScreen: ShortcutBinding(keyCode: 20, modifiers: 6400)
+        case .focusThumbnails: ShortcutBinding(keyCode: 17, modifiers: 6400)
+        case .showHistory, .captureWindow, .captureScrolling: nil
+        }
     }
 }
 
@@ -42,12 +65,51 @@ public enum ShortcutFailure: Error, Equatable {
     case systemCollision, cannotVerify, duplicate, invalidBinding, registrationFailed
 }
 
+/// macOS screenshot symbolic hotkeys. Frisket uses this same number row.
+public enum SystemScreenshotHotkeys {
+    /// com.apple.symbolichotkeys identifiers for ⇧⌘3/4/5/6 and the Control variants of 3/4/6.
+    public static let familyIdentifiers = ["28", "29", "30", "31", "181", "182", "184"]
+
+    public static func isFamily(_ binding: ShortcutBinding) -> Bool {
+        let numberRow: Set<UInt32> = [20, 21, 22, 23]
+        let commandShift: Set<UInt32> = [768, 4864] // ⇧⌘ and ⌃⇧⌘
+        return numberRow.contains(binding.keyCode) && commandShift.contains(binding.modifiers)
+    }
+
+    public static func collisions(desired: [ShortcutBinding], systemEnabled: [ShortcutBinding]) -> [ShortcutBinding] {
+        desired.filter { isFamily($0) && systemEnabled.contains($0) }
+    }
+
+    /// Turns the screenshot family off. Identifiers outside the family are unchanged.
+    public static func turnedOff(byDisablingFamily enabled: [String: Bool]) -> (enabled: [String: Bool], changed: [String]) {
+        var next = enabled
+        var changed: [String] = []
+        for identifier in familyIdentifiers where enabled[identifier] == true {
+            next[identifier] = false
+            changed.append(identifier)
+        }
+        return (next, changed)
+    }
+}
+
 @MainActor public final class ShortcutCommands {
     public private(set) var active: [ShortcutAction: ShortcutBinding] = [:]
     public private(set) var failures: [ShortcutAction: ShortcutFailure] = [:]
     private let system: any ShortcutSystem
+    /// Family bindings Frisket just turned off in macOS. Dispatch still allows them if the system list is stale.
+    private var claimedSystemShortcuts: [ShortcutBinding] = []
 
     public init(system: any ShortcutSystem) { self.system = system }
+
+    /// Saved shortcuts, with an unchanged Control–Option–Command default replaced by the number-row default.
+    public static func resolved(saved: [ShortcutAction: ShortcutBinding]) -> [ShortcutAction: ShortcutBinding] {
+        var resolved: [ShortcutAction: ShortcutBinding] = [:]
+        for action in ShortcutAction.allCases {
+            let stored = saved[action] ?? action.defaultBinding
+            resolved[action] = stored == action.legacyDefaultBinding ? action.defaultBinding : stored
+        }
+        return resolved
+    }
 
     public func remap(_ action: ShortcutAction, to binding: ShortcutBinding) throws {
         try validate(binding, for: action)
@@ -61,7 +123,7 @@ public enum ShortcutFailure: Error, Equatable {
     }
 
     private func validate(_ binding: ShortcutBinding, for action: ShortcutAction) throws {
-        // Carbon command, shift, option, control bits. Require a non-typing modifier.
+        // Carbon command, shift, option, control bits. Require Command, Control, or Option.
         guard binding.keyCode < 128, binding.modifiers & ~UInt32(6912) == 0,
               binding.modifiers & 6400 != 0 else { throw ShortcutFailure.invalidBinding }
         if active.contains(where: { $0.key != action && $0.value == binding }) {
@@ -70,7 +132,9 @@ public enum ShortcutFailure: Error, Equatable {
         let enabled: [ShortcutBinding]
         do { enabled = try system.enabledShortcuts() }
         catch { throw ShortcutFailure.cannotVerify }
-        if enabled.contains(binding) { throw ShortcutFailure.systemCollision }
+        if enabled.contains(binding), !claimedSystemShortcuts.contains(binding) {
+            throw ShortcutFailure.systemCollision
+        }
     }
 
     public func permits(_ action: ShortcutAction) -> Bool {
@@ -90,12 +154,13 @@ public enum ShortcutFailure: Error, Equatable {
         active = [:]
     }
 
-    public func start() {
+    public func start(claimingSystemShortcuts: [ShortcutBinding] = []) {
         stop()
         failures = [:]
-        let saved = system.load()
+        claimedSystemShortcuts = claimingSystemShortcuts
+        let resolved = Self.resolved(saved: system.load())
         for action in ShortcutAction.allCases {
-            let binding = saved[action] ?? action.defaultBinding
+            let binding = resolved[action] ?? action.defaultBinding
             do {
                 try validate(binding, for: action)
                 try system.replace(action, with: binding)

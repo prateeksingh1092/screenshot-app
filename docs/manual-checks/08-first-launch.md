@@ -32,21 +32,21 @@ permissions or change the signing identity between runs.
    plus a black marker. It never captures or accesses the pasteboard. Leave
    private content off the other display; move the pointer over the pattern.
 
-4. Press **⌃⌥⌘4**. On a first run, choose **Request Screen Recording** in
+4. Press **⌘⇧4**. On a first run, choose **Request Screen Recording** in
    Frisket's recovery panel, then approve Frisket's Screen Recording request
    in System Settings → Privacy & Security → Screen & System Audio Recording.
    No selection should appear before permission is granted. If macOS asks for
    relaunch, use **Quit & Reopen** to reopen **the fixed installed path**.
-   Retry ⌃⌥⌘4. Denial must show permission recovery,
+   Retry ⌘⇧4. Denial must show permission recovery,
    never an image; do not interpret the first blank attempt as success.
 
-5. With permission granted, press ⌃⌥⌘4 and **Return without moving the
+5. With permission granted, press ⌘⇧4 and **Return without moving the
    selection**. Its default centered 320×180-point rectangle matches the
    helper exactly. Confirm no dimmer/border/cursor appears in the thumbnail.
    Separately drag an area, drag across the display edge (it must stay on the
    original display), and cancel with Esc without activating Frisket. Delete
-   those extra captures explicitly. Check that macOS ⇧⌘3/4/5/6 still belong to
-   macOS; do not take real-content screenshots to test them.
+   those extra captures explicitly. ⌘⇧3/4/5/6 belong to Frisket, not the macOS
+   screenshot tool. Do not take real-content screenshots to test them.
 
 6. Use Frisket's **Focus Latest Thumbnail** menu item. **Copy** must immediately
    have keyboard focus and a visible outline, without first pressing Tab.

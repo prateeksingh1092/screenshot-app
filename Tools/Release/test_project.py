@@ -30,12 +30,12 @@ def configurations():
 
 
 class ReleaseProjectTests(unittest.TestCase):
-    def test_development_stays_native_x86_64(self):
+    def test_development_follows_the_build_machine(self):
         rows = configurations()["Development"]
         self.assertTrue(rows)
         for settings in rows:
             if "ARCHS" in settings:
-                self.assertEqual(settings["ARCHS"], "x86_64")
+                self.assertEqual(settings["ARCHS"], "$(NATIVE_ARCH_64_BIT)")
                 self.assertEqual(settings["ONLY_ACTIVE_ARCH"], "YES")
             if "PRODUCT_BUNDLE_IDENTIFIER" in settings:
                 self.assertEqual(settings["PRODUCT_BUNDLE_IDENTIFIER"], DEBUG_ID)

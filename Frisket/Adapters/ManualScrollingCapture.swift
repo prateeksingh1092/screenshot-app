@@ -5,6 +5,8 @@ import FrisketCore
 /// The existing ScreenCaptureKit region path. Scrolling capture samples it; it does not add a capture API.
 @MainActor protocol ScrollingRegionCapturing: AnyObject {
     func prefetchShareableContent() async throws
+    /// Same preparation area capture uses. Selection refuses to appear without it.
+    func prepareSelection() async
     func selectArea() async -> AreaSelection?
     func hideSelection()
     func finishCapture()
@@ -46,6 +48,7 @@ import FrisketCore
             do { try await platform.prefetchShareableContent() }
             catch let failure as CaptureSourceFailure { return .failed(failure) }
             catch { return .failed(.unavailable) }
+            await platform.prepareSelection()
             let selection = await platform.selectArea()
             platform.hideSelection()
             guard let selection, let request = regionRequest(for: selection) else { return .cancel }

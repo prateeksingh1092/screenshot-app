@@ -148,8 +148,8 @@ private struct HistoryWindowView: View {
                 Spacer()
             }
         }
-        .padding()
-        .frame(width: 520, height: 560)
+        .padding(20)
+        .frame(minWidth: 560, minHeight: 520)
         .onMoveCommand { direction in
             switch direction {
             case .up: model.moveSelection(-1)
@@ -202,7 +202,10 @@ final class HistoryDragView: NSImageView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         imageScaling = .scaleProportionallyUpOrDown
-        setFrameSize(NSSize(width: 80, height: 50))
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
+        setFrameSize(NSSize(width: 96, height: 60))
     }
 
     required init?(coder: NSCoder) { nil }
@@ -224,7 +227,9 @@ final class HistoryDragView: NSImageView {
     init() {
         window = NSWindow(contentViewController: NSHostingController(rootView: Color.clear))
         window.title = "Frisket History"
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 640, height: 640))
+        window.minSize = NSSize(width: 480, height: 360)
         window.isReleasedWhenClosed = false
         window.isRestorable = false
         window.setAccessibilityLabel("Frisket History")

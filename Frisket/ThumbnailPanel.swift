@@ -34,15 +34,21 @@ private struct ThumbnailCard: View {
     let startDrag: (NSView, NSEvent) -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             ThumbnailDragWell(image: image, enabled: !model.busy && !model.keptInHistory, start: startDrag)
-                .frame(maxWidth: 240, maxHeight: 120).accessibilityLabel("Pending capture preview")
+                .frame(maxWidth: 248, maxHeight: 132)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.12), lineWidth: 1))
+                .accessibilityLabel("Pending capture preview")
             if !model.keptInHistory {
                 ThumbnailCardControls(model: model, actions: actions)
             }
             Text(status)
-                .font(.caption).fixedSize(horizontal: false, vertical: true)
-        }.padding(14).frame(width: 260)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(width: 288)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.regularMaterial))
     }
 
     private var status: String {
@@ -78,6 +84,7 @@ private struct ThumbnailCardControls: View {
         VStack(spacing: 8) {
             HStack {
                 Button(model.copiedWhilePending ? "Copied" : model.copyFailed ? "Retry Copy" : "Copy", action: actions.copy)
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut("c", modifiers: [])
                     .focused($copyFocused)
                     .overlay {
@@ -113,7 +120,9 @@ private struct ThumbnailCardControls: View {
                     .keyboardShortcut("w", modifiers: .command)
                     .accessibilityLabel("Close thumbnail and keep capture in History")
             }
-        }.disabled(model.busy)
+        }
+        .buttonStyle(.bordered)
+        .disabled(model.busy)
             .onChange(of: model.copyFocusRequest) { _, _ in
                 copyFocused = true
             }
@@ -208,7 +217,7 @@ private final class ThumbnailCardPanel: NSPanel {
          startDrag: @escaping (NSView, NSEvent) -> Void) {
         self.revision = revision
         self.displayID = displayID
-        panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 320),
+        panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 320, height: 360),
                                    styleMask: [.borderless], backing: .buffered, defer: false)
         panel.closeAction = actions.close
         panel.swipe = actions.swipe
@@ -243,10 +252,14 @@ private final class ThumbnailCardPanel: NSPanel {
         panel.level = .floating
         // Every Space, including full-screen ones, and unaffected by Mission Control.
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.backgroundColor = .windowBackgroundColor
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
         panel.hasShadow = true
         let image = NSImage(cgImage: preview, size: NSSize(width: preview.width, height: preview.height))
-        panel.contentView = NSHostingView(rootView: ThumbnailCard(image: image, model: model, actions: actions, startDrag: startDrag))
+        let hosting = NSHostingView(rootView: ThumbnailCard(image: image, model: model, actions: actions, startDrag: startDrag))
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView = hosting
         panel.setAccessibilityRole(.window)
         panel.setAccessibilityTitle("Pending capture")
         panel.setAccessibilityLabel("Pending capture")

@@ -149,6 +149,8 @@ import FrisketCore
             let outline = NSBezierPath(rect: rect.insetBy(dx: 1, dy: 1))
             outline.lineWidth = 2
             outline.stroke()
+            let title = "\(Int(highlight.width.rounded())) × \(Int(highlight.height.rounded()))"
+            drawSizeBadge(title, above: rect, in: bounds)
         }
         "Click a window · Arrows/Tab select · Return captures · Esc cancels".draw(
             at: CGPoint(x: 24, y: 24), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])

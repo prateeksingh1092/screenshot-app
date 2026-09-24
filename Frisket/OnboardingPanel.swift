@@ -49,6 +49,7 @@ private struct OnboardingView: View {
             statement(content.history)
             statement(content.save)
             statement(content.privacy)
+            statement(content.shortcuts)
             HStack {
                 Button(content.laterTitle, action: later)
                     .keyboardShortcut(.cancelAction)

@@ -158,6 +158,8 @@ extension NSScreen {
         let outline = NSBezierPath(rect: selection.insetBy(dx: 0.5 / scale, dy: 0.5 / scale))
         outline.lineWidth = 1 / scale
         outline.stroke()
+        drawSizeBadge("\(Int(selection.width.rounded())) × \(Int(selection.height.rounded()))",
+                      above: selection, in: bounds)
         let message = "Shift locks axis · Option centres · Space moves · Arrows nudge · Shift-arrows resize · Return captures · Esc cancels"
         message.draw(at: CGPoint(x: 24, y: 24), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
         if let magnifier {

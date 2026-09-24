@@ -37,7 +37,7 @@ Frisket is a native macOS menu-bar app that captures an area, a window, the full
 
 ### Shortcuts and permissions
 
-19. As a user, I want default shortcuts that don't clash with the macOS screenshot shortcuts (including the Touch Bar one on this Mac), so that each key does exactly one thing.
+19. As a user, I want Command–Shift and a number to capture — ⌘⇧3 full screen, ⌘⇧4 area, ⌘⇧5 window, ⌘⇧6 scrolling — the same keys as the macOS screenshot tool, so that each key does exactly one thing.
 20. As a user, I want to remap every shortcut, and be told when a mapping collides with an enabled system shortcut, so that I can set my own layout safely.
 21. As a new user, I want onboarding to explain the Screen Recording permission, what History keeps and for how long, and that Save keeps a permanent copy, so that I know what Frisket stores.
 22. As a user, I want Frisket to check permission before showing any overlay, so that I never draw a selection that can't be captured.
@@ -147,7 +147,7 @@ Frisket is a native macOS menu-bar app that captures an area, a window, the full
 - **Migrations:** never erase the database in any configuration. Created with incremental auto-vacuum and secure delete. Shipped migrations are never edited; a database with unknown migrations is refused without writes. If the database can't open or migrate, History is disabled with a visible notice and a recovery option, and capture and delivery keep working.
 - **Delivery adapters:** Clipboard writes image data only, restricted to this Mac and marked concealed for clipboard managers; it records the change count and replaces its own copy with the redacted result on finalization if unchanged; it never reads the general clipboard. File export writes PNG to `~/Pictures/Frisket` by default, copies and never moves, and Settings refuses an export folder inside the app-owned root and flags iCloud-synced folders. Drag uses file promises of the rendered revision with a copy-only operation; each staging file stays until the promise's write completion has returned and the drag session has ended, then is deleted and swept at launch.
 - **Text recognition:** Vision runs only on the rendered revision; stale results are dropped. The notification says only "Copied N characters".
-- **Shortcuts:** Carbon hot keys only; no event taps and no global mouse monitors while idle. Defaults avoid every enabled system screenshot shortcut, including the Touch Bar screenshot shortcut; remapping validates against the system list and fails closed when it can't verify.
+- **Shortcuts:** Carbon hot keys only; no event taps and no global mouse monitors while idle. Defaults are Command–Shift and a number (decision 55). When one of those bindings is still an enabled macOS screenshot shortcut, Frisket turns that symbolic hotkey off and remembers it for restore. Remapping validates against the system list and fails closed when it can't verify.
 - **Settings and onboarding:** SwiftUI. Retention days and size limit, shortcuts, auto-dismiss, export folder, Capture exclusion list, eviction history line, third-party notices. Onboarding covers permission, what History keeps, and that Save keeps a permanent copy.
 - **Diagnostics:** a logging interface that accepts only an event from a closed set, an error domain and code, and fields from a fixed allowed set; no free-text strings. System-log and assertion messages are static text. Local only, 7-day retention.
 - **Signing and build:** a stable signing identity from Prateek's Xcode Personal Team (created when the first build needs it), hardened runtime, minimal entitlements written fresh, no debugging entitlement on the installed build, one fixed install path, and one signing path. No update feed or key. Packaging steps are documented; a packaging script is written only when a delivery need exists. Before the first commit: no project licence while the repository stays private (decision 43), third-party notices (GRDB, copied skills, and Snapzy if the stitcher is ported), extended ignore rules, a staged-diff secret review.
@@ -175,7 +175,7 @@ Frisket is a native macOS menu-bar app that captures an area, a window, the full
 - Re-editing History items, and "export all history".
 - Persisting OCR text or searching History by text.
 - URL schemes, App Intents, Shortcuts actions, and plug-ins (the command layer keeps the door open).
-- Taking over the macOS screenshot shortcuts.
+- Taking over every macOS shortcut. Decision 55 takes over only the screenshot number row (⇧⌘3/4/5/6 and their Control variants).
 - Capturing windows on other Spaces or minimized windows; selections spanning displays.
 - Blur or pixelation as a redaction method.
 - Localization beyond English.

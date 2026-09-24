@@ -1,8 +1,8 @@
 # Third-party notices
 
 These licences cover only the third-party material identified below. They do
-not license Frisket itself. The repository remains private with no project
-licence, per decision 43.
+not license Frisket itself. Frisket is MIT, in the repository `LICENSE`, per
+decision 56.
 
 ## GRDB.swift — MIT
 

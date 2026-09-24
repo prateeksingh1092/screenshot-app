@@ -14,6 +14,7 @@ import Testing
         }
         let request = try #require(platform.requests.first)
         #expect(platform.requests.count == 1)
+        #expect(platform.didPrepareSelection)
         #expect(platform.didHideSelection)
         #expect(request.excludingBundleIdentifier == "io.github.prateeksingh1092.frisket.debug")
         #expect(request.displayID == 7)
@@ -27,9 +28,11 @@ import Testing
 @MainActor private final class RecordingScrollingRegion: ScrollingRegionCapturing {
     private(set) var requests: [AreaCaptureRequest] = []
     private(set) var didHideSelection = false
+    private(set) var didPrepareSelection = false
     var beforeCapture: (() async throws -> Void)?
 
     func prefetchShareableContent() async throws {}
+    func prepareSelection() async { didPrepareSelection = true }
     func selectArea() async -> AreaSelection? {
         AreaSelection(displayID: 7, displayFrame: CGRect(x: 0, y: 0, width: 80, height: 40),
                       rect: CGRect(x: 0, y: 0, width: 4, height: 2), scale: 1, spaceGeneration: 0)

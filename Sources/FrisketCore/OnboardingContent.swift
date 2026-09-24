@@ -11,6 +11,7 @@ public struct OnboardingContent: Equatable, Sendable {
     public var history: Statement
     public var save: Statement
     public var privacy: Statement
+    public var shortcuts: Statement
     public var continueTitle: String
     public var continueAccessibilityLabel: String
     public var laterTitle: String
@@ -33,6 +34,10 @@ public struct OnboardingContent: Equatable, Sendable {
         privacy: Statement(
             accessibilityLabel: "Privacy limits",
             text: "Frisket can remove captures only from itself, not from apps, devices, or backups it already delivered to. FileVault is recommended."
+        ),
+        shortcuts: Statement(
+            accessibilityLabel: "Capture shortcuts",
+            text: "Command–Shift–4 captures an area, Command–Shift–3 the full screen, Command–Shift–5 a window, and Command–Shift–6 a scrolling page. Command–Shift–2 focuses the latest thumbnail, and Command–Shift–1 opens History."
         ),
         continueTitle: "Continue",
         continueAccessibilityLabel: "Continue to the Screen Recording permission request",

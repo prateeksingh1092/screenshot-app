@@ -1,7 +1,7 @@
 # Ticket 08 development app
 
 `Frisket.xcodeproj` is authored directly, with one shared `Frisket` scheme,
-a native `Development` configuration (`ARCHS = x86_64`), and a universal
+a native `Development` configuration (`ARCHS = $(NATIVE_ARCH_64_BIT)`, so x86_64 on this Intel Mac and arm64 on Apple silicon), and a universal
 `Release` configuration (`x86_64` + `arm64`, production bundle
 `io.github.prateeksingh1092.frisket`). No project generator or added dependency is
 needed. The app target uses a synchronized `Frisket/` folder: adding or removing
@@ -112,8 +112,10 @@ separate root and TCC identity.
 
 ## Scope and operator checks
 
-The only global hot key is **Control–Option–Command–4 (⌃⌥⌘4)**, registered with
-Carbon. It avoids all specified system screenshot shortcuts. A registration
+Global shortcuts are **Command–Shift and a number** (decision 55): ⌘⇧4 area,
+⌘⇧3 full screen, ⌘⇧5 window, ⌘⇧6 scrolling, ⌘⇧2 latest thumbnail, ⌘⇧1 History.
+They are registered with Carbon. If macOS still has the screenshot number row
+enabled, Frisket turns those symbolic hotkeys off. A registration
 failure displays a notice; the menu still works. Remapping and the richer
 selection/thumbnail stack are later tickets. This slice provides drag plus
 arrows/Shift-arrows/Return/Escape selection, a non-activating thumbnail on the

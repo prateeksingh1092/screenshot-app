@@ -11,8 +11,12 @@ import FrisketCore
 
     init(system: any ShortcutSystem) { commands = ShortcutCommands(system: system) }
 
-    func start() {
-        commands.start()
+    var onClaimSystemScreenshots: () -> Void = {}
+    var onRestoreSystemScreenshots: () -> Void = {}
+    @Published var canRestoreSystemScreenshots = false
+
+    func start(claimingSystemShortcuts: [ShortcutBinding] = []) {
+        commands.start(claimingSystemShortcuts: claimingSystemShortcuts)
         bindings = commands.active
         messages = commands.failures.mapValues(Self.message)
         changed?()
@@ -54,26 +58,45 @@ extension ShortcutBinding {
     }
 
     private static func keyName(_ code: UInt32) -> String {
-        let special: [UInt32: String] = [36: "Return", 48: "Tab", 49: "Space", 51: "Delete", 53: "Esc",
-            123: "←", 124: "→", 125: "↓", 126: "↑", 115: "Home", 119: "End", 116: "Page Up", 121: "Page Down",
-            117: "Forward Delete", 122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6",
-            98: "F7", 100: "F8", 101: "F9", 109: "F10", 103: "F11", 111: "F12"]
-        if let name = special[code] { return name }
+        if let name = specialNames[code] { return name }
+        return layoutCharacter(code)?.uppercased() ?? "Key \(code)"
+    }
+
+    /// A single printable character for a menu key equivalent, without the Shift glyph doubled.
+    var menuKeyEquivalent: (character: String, modifiers: NSEvent.ModifierFlags)? {
+        guard ShortcutBinding.specialNames[keyCode] == nil, let raw = ShortcutBinding.layoutCharacter(keyCode),
+              raw.count == 1, raw.unicodeScalars.allSatisfy({ $0.value < 128 }) else { return nil }
+        return (raw.lowercased(), ShortcutBinding.eventModifiers(modifiers))
+    }
+
+    private static let specialNames: [UInt32: String] = [36: "Return", 48: "Tab", 49: "Space", 51: "Delete", 53: "Esc",
+        123: "←", 124: "→", 125: "↓", 126: "↑", 115: "Home", 119: "End", 116: "Page Up", 121: "Page Down",
+        117: "Forward Delete", 122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6",
+        98: "F7", 100: "F8", 101: "F9", 109: "F10", 103: "F11", 111: "F12"]
+
+    private static func layoutCharacter(_ code: UInt32) -> String? {
         let source = TISCopyCurrentKeyboardLayoutInputSource().takeRetainedValue()
-        if let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) {
-            let data = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue()
-            if let bytes = CFDataGetBytePtr(data) {
-                let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
-                var deadKey: UInt32 = 0
-                var length = 0
-                var characters = [UniChar](repeating: 0, count: 8)
-                let status = UCKeyTranslate(layout, UInt16(code), UInt16(kUCKeyActionDisplay), 0,
-                    UInt32(LMGetKbdType()), OptionBits(1 << kUCKeyTranslateNoDeadKeysBit), &deadKey,
-                    characters.count, &length, &characters)
-                if status == noErr, length > 0 { return String(utf16CodeUnits: characters, count: length).uppercased() }
-            }
-        }
-        return "Key \(code)"
+        guard let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+        let data = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue()
+        guard let bytes = CFDataGetBytePtr(data) else { return nil }
+        let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
+        var deadKey: UInt32 = 0
+        var length = 0
+        var characters = [UniChar](repeating: 0, count: 8)
+        let status = UCKeyTranslate(layout, UInt16(code), UInt16(kUCKeyActionDisplay), 0,
+            UInt32(LMGetKbdType()), OptionBits(1 << kUCKeyTranslateNoDeadKeysBit), &deadKey,
+            characters.count, &length, &characters)
+        guard status == noErr, length > 0 else { return nil }
+        return String(utf16CodeUnits: characters, count: length)
+    }
+
+    fileprivate static func eventModifiers(_ carbon: UInt32) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if carbon & UInt32(cmdKey) != 0 { flags.insert(.command) }
+        if carbon & UInt32(shiftKey) != 0 { flags.insert(.shift) }
+        if carbon & UInt32(optionKey) != 0 { flags.insert(.option) }
+        if carbon & UInt32(controlKey) != 0 { flags.insert(.control) }
+        return flags
     }
 }
 
@@ -82,10 +105,19 @@ struct ShortcutSettingsView: View {
 
     var body: some View {
         Section("Global shortcuts") {
-            Text("Choose a key and modifiers, then Apply. Include Command, Control, or Option.")
+            Text("Command–Shift and a number. ⌘⇧4 captures an area, ⌘⇧3 the full screen, ⌘⇧5 a window, and ⌘⇧6 a scrolling page. ⌘⇧2 focuses the latest thumbnail. ⌘⇧1 opens History.")
+            Text("Click Change and press the keys. Include Command, Control, or Option.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
             ForEach(ShortcutAction.allCases, id: \.self) { action in
                 ShortcutRow(settings: settings, action: action)
                     .id("\(action.rawValue)-\(settings.bindings[action]?.displayName ?? "inactive")")
+            }
+            Button("Turn off macOS screenshot shortcuts") { settings.onClaimSystemScreenshots() }
+                .accessibilityLabel("Turn off the macOS screenshot shortcuts so Frisket can use Command-Shift and a number")
+            if settings.canRestoreSystemScreenshots {
+                Button("Restore macOS screenshot shortcuts") { settings.onRestoreSystemScreenshots() }
+                    .accessibilityLabel("Restore the macOS screenshot shortcuts Frisket turned off")
             }
         }
     }
@@ -94,55 +126,77 @@ struct ShortcutSettingsView: View {
 private struct ShortcutRow: View {
     @ObservedObject var settings: ShortcutSettings
     let action: ShortcutAction
-    @State private var keyCode: UInt32
-    @State private var modifiers: UInt32
-
-    init(settings: ShortcutSettings, action: ShortcutAction) {
-        self.settings = settings
-        self.action = action
-        let binding = settings.bindings[action] ?? action.defaultBinding
-        _keyCode = State(initialValue: binding.keyCode)
-        _modifiers = State(initialValue: binding.modifiers)
-    }
-
-    // Character keys plus navigation/function keys. Labels follow the current layout.
-    private var keyCodes: [UInt32] {
-        Array(UInt32(0)...50) + [51, 53, 96, 97, 98, 99, 100, 101, 103, 109, 111,
-                                  115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126]
-    }
-
-    private func modifier(_ flag: Int) -> Binding<Bool> {
-        Binding(get: { modifiers & UInt32(flag) != 0 }, set: { enabled in
-            if enabled { modifiers |= UInt32(flag) } else { modifiers &= ~UInt32(flag) }
-        })
-    }
+    @State private var recording = false
 
     var body: some View {
-        VStack(alignment: .leading) {
-            Text(action.title).font(.headline)
-            Text(settings.bindings[action]?.displayName ?? "Inactive")
-            HStack {
-                Picker("Key", selection: $keyCode) {
-                    ForEach(keyCodes, id: \.self) { code in
-                        Text(ShortcutBinding(keyCode: code, modifiers: 0).displayName).tag(code)
-                    }
-                }.frame(width: 160).accessibilityLabel("\(action.title) key")
-                Toggle("⌃", isOn: modifier(controlKey)).accessibilityLabel("\(action.title) Control")
-                Toggle("⌥", isOn: modifier(optionKey)).accessibilityLabel("\(action.title) Option")
-                Toggle("⇧", isOn: modifier(shiftKey)).accessibilityLabel("\(action.title) Shift")
-                Toggle("⌘", isOn: modifier(cmdKey)).accessibilityLabel("\(action.title) Command")
-                Button("Apply") { settings.apply(action, binding: ShortcutBinding(keyCode: keyCode, modifiers: modifiers)) }
-                    .accessibilityLabel("Apply \(action.title) shortcut")
-                Button("Default") {
-                    settings.apply(action, binding: action.defaultBinding)
-                    if settings.bindings[action] == action.defaultBinding {
-                        keyCode = action.defaultBinding.keyCode
-                        modifiers = action.defaultBinding.modifiers
-                    }
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(action.title).font(.headline)
+                    Text(settings.bindings[action]?.displayName ?? "Inactive")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("\(action.title) shortcut \(settings.bindings[action]?.displayName ?? "inactive")")
                 }
+                Spacer(minLength: 12)
+                Button(recording ? "Press shortcut" : "Change") { recording = true }
+                    .accessibilityLabel(recording ? "Press the new \(action.title) shortcut" : "Change \(action.title) shortcut")
+                Button("Default") { settings.apply(action, binding: action.defaultBinding) }
                     .accessibilityLabel("Restore default \(action.title) shortcut")
             }
-            if let message = settings.messages[action] { Text(message).foregroundStyle(.red) }
+            if let message = settings.messages[action] {
+                Text(message).font(.caption).foregroundStyle(.red).accessibilityLabel(message)
+            }
         }
+        .background {
+            if recording {
+                ShortcutKeyCatcher(onCancel: { recording = false }) { code, modifiers in
+                    recording = false
+                    settings.apply(action, binding: ShortcutBinding(keyCode: code, modifiers: modifiers))
+                }
+            }
+        }
+    }
+}
+
+private struct ShortcutKeyCatcher: NSViewRepresentable {
+    var onCancel: () -> Void
+    var onKey: (UInt32, UInt32) -> Void
+
+    func makeNSView(context: Context) -> ShortcutKeyCatcherView {
+        let view = ShortcutKeyCatcherView()
+        view.onCancel = onCancel
+        view.onKey = onKey
+        return view
+    }
+
+    func updateNSView(_ view: ShortcutKeyCatcherView, context: Context) {
+        view.onCancel = onCancel
+        view.onKey = onKey
+        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
+    }
+}
+
+private final class ShortcutKeyCatcherView: NSView {
+    var onCancel: (() -> Void)?
+    var onKey: ((UInt32, UInt32) -> Void)?
+    override var acceptsFirstResponder: Bool { true }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.makeFirstResponder(self)
+    }
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { onCancel?(); return }
+        onKey?(UInt32(event.keyCode), Self.carbon(event.modifierFlags))
+    }
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
+
+    private static func carbon(_ flags: NSEvent.ModifierFlags) -> UInt32 {
+        var value: UInt32 = 0
+        if flags.contains(.command) { value |= UInt32(cmdKey) }
+        if flags.contains(.shift) { value |= UInt32(shiftKey) }
+        if flags.contains(.option) { value |= UInt32(optionKey) }
+        if flags.contains(.control) { value |= UInt32(controlKey) }
+        return value
     }
 }

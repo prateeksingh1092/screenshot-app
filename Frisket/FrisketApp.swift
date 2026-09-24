@@ -102,8 +102,13 @@ import FrisketCore
             name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(workspaceWillPowerOff),
             name: NSWorkspace.willPowerOffNotification, object: nil)
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Frisket"
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Frisket") {
+            image.isTemplate = true
+            item.button?.image = image
+        } else {
+            item.button?.title = "Frisket"
+        }
         item.button?.setAccessibilityLabel("Frisket capture menu")
         let menu = NSMenu()
         menu.delegate = self
@@ -111,6 +116,7 @@ import FrisketCore
         add("Capture Window", action: #selector(captureWindow), to: menu)
         add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
         add("Capture Scrolling Page", action: #selector(captureScrolling), to: menu)
+        menu.addItem(.separator())
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
         add("Copy Latest Capture", action: #selector(copyLatest), to: menu)
         add("Delete Latest Capture", action: #selector(deleteLatest), to: menu)
@@ -135,16 +141,38 @@ import FrisketCore
         RunLoop.main.add(timer, forMode: .common)
         permissionTimer = timer
         shortcutSettings.changed = { [weak self] in self?.refreshShortcutTitles() }
+        shortcutSettings.onClaimSystemScreenshots = { [weak self] in self?.claimSystemScreenshotShortcuts() }
+        shortcutSettings.onRestoreSystemScreenshots = { [weak self] in
+            try? SystemScreenshotHotkeyStore.restore()
+            self?.shortcutSettings.canRestoreSystemScreenshots = false
+            self?.shortcutSettings.start()
+        }
         hotKey.action = { [weak self] action in
             guard let self, self.shortcutSettings.permits(action) else { return }
             switch action {
             case .captureArea: self.captureArea()
+            case .captureWindow: self.captureWindow()
             case .captureFullScreen: self.captureFullScreen()
+            case .captureScrolling: self.captureScrolling()
             case .focusThumbnails: self.focusThumbnail()
+            case .showHistory: self.showHistory()
             }
         }
-        shortcutSettings.start()
+        claimSystemScreenshotShortcuts()
         resumeLaunchSurfaces()
+    }
+
+    /// If macOS still owns ⌘⇧3/4/5/6, turn those symbolic hotkeys off and register Frisket's.
+    private func claimSystemScreenshotShortcuts() {
+        let desired = Array(ShortcutCommands.resolved(saved: hotKey.load()).values)
+        let enabled = (try? hotKey.enabledShortcuts()) ?? []
+        let hits = SystemScreenshotHotkeys.collisions(desired: desired, systemEnabled: enabled)
+        var claim: [ShortcutBinding] = []
+        if !hits.isEmpty, (try? SystemScreenshotHotkeyStore.disableFamilyIfNeeded()) != nil {
+            claim = hits
+        }
+        shortcutSettings.canRestoreSystemScreenshots = !SystemScreenshotHotkeyStore.turnedOffIdentifiers().isEmpty
+        shortcutSettings.start(claimingSystemShortcuts: claim)
     }
 
     private func installMainMenu() {
@@ -207,12 +235,26 @@ import FrisketCore
     }
 
     private func refreshShortcutTitles() {
-        let actions: [(ShortcutAction, Selector)] = [(.captureArea, #selector(captureArea)),
-            (.captureFullScreen, #selector(captureFullScreen)), (.focusThumbnails, #selector(focusThumbnail))]
+        let actions: [(ShortcutAction, Selector)] = [
+            (.captureArea, #selector(captureArea)),
+            (.captureWindow, #selector(captureWindow)),
+            (.captureFullScreen, #selector(captureFullScreen)),
+            (.captureScrolling, #selector(captureScrolling)),
+            (.focusThumbnails, #selector(focusThumbnail)),
+            (.showHistory, #selector(showHistory)),
+        ]
         for (action, selector) in actions {
             guard let item = statusItem?.menu?.items.first(where: { $0.action == selector }) else { continue }
-            let suffix = shortcutSettings.bindings[action].map { " (\($0.displayName))" } ?? " (shortcut inactive)"
-            item.title = action.title + suffix
+            if let binding = shortcutSettings.bindings[action], let equivalent = binding.menuKeyEquivalent {
+                item.title = action.title
+                item.keyEquivalent = equivalent.character
+                item.keyEquivalentModifierMask = equivalent.modifiers
+            } else {
+                item.keyEquivalent = ""
+                item.keyEquivalentModifierMask = []
+                let suffix = shortcutSettings.bindings[action].map { " (\($0.displayName))" } ?? " (shortcut inactive)"
+                item.title = action.title + suffix
+            }
         }
     }
 
