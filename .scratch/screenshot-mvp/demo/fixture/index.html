@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Northline</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --paper: #f4efe6;
+      --ink: #1c1915;
+      --muted: #6a6156;
+      --clay: #9d3d30;
+      --line: #e4dacb;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--paper); }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+    .wrap { width: min(920px, calc(100% - 72px)); margin: 36px auto 96px; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 40px;
+      align-items: start;
+    }
+    .hero img {
+      width: 100%;
+      height: 460px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: #ddd2c2;
+    }
+    .kicker {
+      margin: 6px 0 10px;
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    h1 {
+      margin: 0;
+      font-family: "Iowan Old Style", Palatino, Georgia, serif;
+      font-size: 76px;
+      font-weight: 500;
+      letter-spacing: -0.035em;
+      line-height: 0.88;
+    }
+    .price {
+      position: relative;
+      height: 28px;
+      margin: 22px 0 0;
+      font-size: 18px;
+      color: var(--muted);
+    }
+    .was { text-decoration: line-through; }
+    .now {
+      position: absolute;
+      left: 108px;
+      top: 54px;
+      color: var(--ink);
+      font-size: 36px;
+      font-weight: 650;
+      letter-spacing: -0.03em;
+    }
+    .token {
+      display: inline-block;
+      margin-top: 36px;
+      padding: 7px 9px 6px;
+      background: #f0d56a;
+      color: #2a2416;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 16px;
+      border-radius: 3px;
+    }
+    .broken {
+      display: block;
+      width: 126px;
+      height: 48px;
+      margin-top: 16px;
+      padding: 0 0 0 14px;
+      overflow: hidden;
+      border: 0;
+      background: linear-gradient(90deg, var(--clay) 0 78%, transparent 78%);
+      color: white;
+      font: 17px/48px "Helvetica Neue", Helvetica, Arial, sans-serif;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .broken span { display: inline-block; transform: translateX(26px); }
+    .lede {
+      max-width: 38rem;
+      margin: 48px 0 0;
+      font-size: 28px;
+      line-height: 1.35;
+      font-weight: 500;
+      letter-spacing: -0.015em;
+    }
+    section {
+      margin-top: 64px;
+      padding-top: 22px;
+      border-top: 1px solid var(--line);
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-family: "Iowan Old Style", Palatino, Georgia, serif;
+      font-size: 32px;
+      font-weight: 500;
+    }
+    section p {
+      max-width: 40rem;
+      margin: 0 0 12px;
+      font-size: 18px;
+      line-height: 1.5;
+      color: #3a342c;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="hero">
+      <img src="lamp.jpg" alt="A small stoneware desk lamp with a warm paper shade">
+      <div class="buy">
+        <p class="kicker">Desk lamp</p>
+        <h1>Northline</h1>
+        <p class="price"><span class="was">$128</span><span class="now" id="price">$48</span></p>
+        <div class="token" id="token">tok_demo_hide_me</div>
+        <button class="broken" id="bug" type="button"><span>Add to bag</span></button>
+      </div>
+    </div>
+    <p class="lede" id="lede">The shade tilts on one joint, and the base stays put on a crowded desk. It ships in a linen box, with a spare bulb in the lid.</p>
+    <section id="joint">
+      <h2>The joint</h2>
+      <p>One brass knuckle, tightened by hand. It holds the shade where you leave it, and it does not creep back overnight. There is no spring and no hidden hinge to work loose.</p>
+      <p>If you share a table, swing the shade toward yourself. The base does not travel with it.</p>
+    </section>
+    <section id="shade">
+      <h2>The shade</h2>
+      <p>Paper, over a wire ring, warm rather than white. At arm's length the glow stops at the edge of a book. It is not a room light, and it is not trying to be one.</p>
+      <p>The shade lifts off if you ever need to change the bulb. No clips, no tools.</p>
+    </section>
+    <section id="base">
+      <h2>The base</h2>
+      <p>Stoneware, low and heavy, with a foot that sits flat on a marked desk. The clay is matte. It will not mirror the window behind you.</p>
+      <p>The cord leaves from the back, so it does not cross the page you are reading.</p>
+    </section>
+    <section id="box">
+      <h2>In the box</h2>
+      <p>The lamp, wrapped in linen. A spare bulb in the lid. A short note on how tight the joint should feel: firm, not forced.</p>
+      <p>Nothing to assemble. Set it down, tilt the shade, and it is already on.</p>
+    </section>
+    <section id="care">
+      <h2>Care</h2>
+      <p>Dust the shade with a dry cloth. Wipe the base with a damp one and stop there. The clay does not want oil, and the paper does not want water.</p>
+      <p>If the joint ever loosens, a quarter turn brings it back. That is the whole service manual.</p>
+    </section>
+    <section id="cord">
+      <h2>The cord</h2>
+      <p>Cloth covered, two meters, the color of the shade's shadow. It runs to a small inline switch you can find without looking.</p>
+      <p>Coil the extra under the desk. The lamp itself stays where you put it.</p>
+    </section>
+  </main>
+</body>
+</html>
