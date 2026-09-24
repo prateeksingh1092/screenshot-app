@@ -186,9 +186,12 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         let base = try blank(24, 20)
         let annotation = try #require(DocumentAnnotation(.text(x: 0, y: 0, characters: "A")))
         let rendered = try render(base, annotations: [annotation])
-        // The top bar of A, and a hole in the counter, at the 2× bitmap cell.
+        // The top bar of A stays ink. The counter is the 1 px white plate, not the capture.
         #expect(rendered.pixel(x: 2, y: 0) == DocumentAnnotation.stroke)
-        #expect(rendered.pixel(x: 4, y: 4) == palette["."])
+        #expect(rendered.pixel(x: 4, y: 4) == DocumentRenderer.plate)
+        #expect(DocumentRenderer.outputCount(points: 18, scale: 2) == 36)
+        #expect(DocumentRenderer.outputCount(points: 18, scale: 2.0 * 182.0 / 5120.0) == 1)
+        #expect(DocumentRenderer.outputCount(points: 1, scale: 2.0 * 182.0 / 5120.0) == 0)
     }
 
     @Test func annotationsDrawAboveRedactionsWithoutClearingNeighbourFill() throws {

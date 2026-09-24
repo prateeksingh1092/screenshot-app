@@ -1,11 +1,26 @@
 import AppKit
 import FrisketCore
 
+/// Letter keys select tools unless the label field is editing.
+@MainActor final class EditorKeyWindow: NSWindow {
+    var toolKey: ((Character) -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        let blocked = event.modifierFlags.intersection([.command, .control, .option])
+        if blocked.isEmpty, !(firstResponder is NSTextView),
+           let letter = event.charactersIgnoringModifiers?.lowercased().first,
+           toolKey?(letter) == true {
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
 /// Shows the rendered document and hands each drag to the active tool. The canvas is one
 /// labelled element; its contents are exempt from VoiceOver and keyboard operation.
 @MainActor final class EditorCanvasView: NSView {
     enum DragGuide {
-        case box, line, crop, label(String)
+        case box, line, crop, label(String), conceal, soften
     }
 
     var rendered: NSImage? { didSet { needsDisplay = true } }
@@ -58,14 +73,17 @@ import FrisketCore
             let line = NSBezierPath()
             line.move(to: startView)
             line.line(to: currentView)
-            line.lineWidth = 3
-            NSColor.systemRed.setStroke()
+            line.lineWidth = 4
+            NSColor.white.setStroke()
+            line.stroke()
+            line.lineWidth = 2
+            NSColor(srgbRed: 1, green: 59 / 255, blue: 48 / 255, alpha: 1).setStroke()
             line.stroke()
         case .label(let text):
             let shown = text.isEmpty ? "Label" : text
             shown.draw(at: startView, withAttributes: [
                 .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
-                .foregroundColor: NSColor.systemRed
+                .foregroundColor: NSColor(srgbRed: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
             ])
         case .crop:
             let kept = CGRect(x: min(startView.x, currentView.x), y: min(startView.y, currentView.y),
@@ -79,12 +97,29 @@ import FrisketCore
             let border = NSBezierPath(rect: kept)
             border.lineWidth = 1
             border.stroke()
-        case .box:
+        case .box, .conceal, .soften:
             let outline = NSBezierPath(rect: CGRect(x: min(startView.x, currentView.x), y: min(startView.y, currentView.y),
                                                     width: abs(currentView.x - startView.x), height: abs(currentView.y - startView.y)))
-            outline.lineWidth = 2
-            NSColor.systemRed.setStroke()
-            outline.stroke()
+            switch guide {
+            case .conceal:
+                outline.lineWidth = 4
+                NSColor.white.setStroke()
+                outline.stroke()
+                outline.lineWidth = 2
+                NSColor.black.setStroke()
+                outline.stroke()
+            case .soften:
+                outline.lineWidth = 2
+                NSColor.labelColor.setStroke()
+                outline.stroke()
+            default:
+                outline.lineWidth = 4
+                NSColor.white.setStroke()
+                outline.stroke()
+                outline.lineWidth = 2
+                NSColor(srgbRed: 1, green: 59 / 255, blue: 48 / 255, alpha: 1).setStroke()
+                outline.stroke()
+            }
         }
     }
 
@@ -110,7 +145,7 @@ import FrisketCore
 /// window restoration, disk image cache or Live Text. The original exists only in memory
 /// here and is released when the window closes.
 @MainActor final class EditorWindow: NSObject, NSWindowDelegate {
-    private let window: NSWindow
+    private let window: EditorKeyWindow
     private let canvas: EditorCanvasView
     private let base: Bitmap
     private let pixelSize: CGSize
@@ -153,8 +188,8 @@ import FrisketCore
         canvas = EditorCanvasView(documentSize: documentSize)
         placementScreen = screen ?? NSScreen.main
         let visible = placementScreen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
-        window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 640, height: 480),
-                          styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = EditorKeyWindow(contentRect: CGRect(x: 0, y: 0, width: 640, height: 480),
+                                 styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init()
         window.title = "Edit Capture"
         window.isRestorable = false
@@ -162,54 +197,35 @@ import FrisketCore
         window.isReleasedWhenClosed = false
         window.delegate = self
 
-        let toolsRow = NSStackView()
-        toolsRow.orientation = .horizontal
-        toolsRow.alignment = .centerY
-        toolsRow.spacing = 4
-        let actionsRow = NSStackView()
-        actionsRow.orientation = .horizontal
-        actionsRow.alignment = .centerY
-        actionsRow.spacing = 4
-        for row in [toolsRow, actionsRow] {
-            row.setHuggingPriority(.defaultHigh, for: .horizontal)
-            row.setClippingResistancePriority(.defaultHigh, for: .horizontal)
-        }
-        let bar = NSStackView()
-        bar.orientation = .vertical
-        bar.alignment = .leading
-        bar.spacing = 4
-        bar.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
-        bar.setHuggingPriority(.defaultHigh, for: .horizontal)
-        bar.setClippingResistancePriority(.defaultHigh, for: .horizontal)
         for (index, tool) in tools.enumerated() {
-            if index > 0, tools[index - 1].role == .conceal { toolsRow.addArrangedSubview(Self.shelfSeparator()) }
-            if tool.title == "Blur" { toolsRow.addArrangedSubview(Self.shelfSeparator()) }
-            let button = NSButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
+            let button = NSButton(title: "", target: self, action: #selector(selectTool(_:)))
             button.setButtonType(.pushOnPushOff)
-            button.bezelStyle = tool.role == .conceal ? .rounded : .push
+            button.bezelStyle = .texturedRounded
             button.controlSize = .regular
             button.tag = index
-            button.keyEquivalent = tool.keyEquivalent
-            button.keyEquivalentModifierMask = []
+            button.keyEquivalent = ""
+            if let image = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title) {
+                image.isTemplate = true
+                button.image = image
+                button.imagePosition = .imageOnly
+            }
             button.setAccessibilityLabel(tool.accessibilityLabel)
             button.toolTip = "\(tool.title) (\(tool.keyEquivalent.uppercased()))"
-            button.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
             toolButtons.append(button)
-            toolsRow.addArrangedSubview(button)
         }
         labelField.placeholderString = "Label"
         labelField.stringValue = ""
         labelField.setAccessibilityLabel("Annotation label text")
         labelField.bezelStyle = .roundedBezel
-        labelField.controlSize = .regular
-        labelField.frame.size.width = 140
+        labelField.controlSize = .small
+        labelField.frame.size = NSSize(width: 140, height: 22)
         labelField.delegate = self
-        toolsRow.addArrangedSubview(labelField)
         textTool.text = { [weak labelField] in labelField?.stringValue ?? "" }
         hintField.textColor = .secondaryLabelColor
-        hintField.font = .systemFont(ofSize: 11)
-        hintField.lineBreakMode = .byTruncatingTail
-        hintField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        hintField.font = .systemFont(ofSize: 12)
+        hintField.lineBreakMode = .byWordWrapping
+        hintField.maximumNumberOfLines = 3
+        hintField.cell?.truncatesLastVisibleLine = false
         configure(undoButton, action: #selector(undo), key: "z", modifiers: .command,
                   label: "Undo last edit", tip: "Undo last edit (⌘Z)")
         configure(closeButton, action: #selector(closeWithoutChanges), key: "\u{1b}", modifiers: [],
@@ -220,54 +236,72 @@ import FrisketCore
                   label: "Save the edited capture", tip: "Save the edited result (⌘S)")
         configure(doneButton, action: #selector(done), key: "\r", modifiers: [],
                   label: "Keep this capture in History", tip: "Keep this capture in History (Return)")
+        for button in [undoButton, closeButton, copyButton, saveButton, doneButton] {
+            if let image = NSImage(systemSymbolName: Self.actionSymbol(button), accessibilityDescription: button.title) {
+                image.isTemplate = true
+                button.image = image
+                button.imagePosition = .imageOnly
+                button.title = ""
+            }
+        }
         dragWell.setAccessibilityLabel("Drag the edited capture")
         dragWell.toolTip = "Drag the edited result"
         dragWell.setFrameSize(NSSize(width: 56, height: 36))
+        dragWell.layer?.cornerRadius = 0
+        dragWell.layer?.masksToBounds = false
         dragWell.onDrag = { [weak self] view, event in
             guard let self, !self.finishing else { return }
             self.onFileDrag?(view, event)
         }
-        for button in [undoButton, closeButton, copyButton, saveButton, doneButton] { actionsRow.addArrangedSubview(button) }
-        actionsRow.addArrangedSubview(dragWell)
-        bar.addArrangedSubview(toolsRow)
-        bar.addArrangedSubview(hintField)
-        bar.addArrangedSubview(actionsRow)
-
-        let measured = bar.fittingSize
-        let toolbarHeight = measured.height >= 72 ? measured.height : 120
-        let shelfWidth = measured.width >= 520 ? measured.width : 760
+        let toolbar = NSToolbar(identifier: "frisket.editor")
+        toolbar.delegate = self
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.displayMode = .iconOnly
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
+        window.toolKey = { [weak self] letter in self?.selectTool(letter: letter) ?? false }
+        let probe = window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 800, height: 400))
+        let chromeAbove = probe.height - 400
+        let hintHeight: CGFloat = 44
         var size = EditorWindowLayout.contentSize(document: documentSize, visible: visible.size,
-            chrome: EditorWindowLayout.Chrome(toolbarHeight: toolbarHeight, titlebarHeight: 28))
-        size.width = max(size.width, min(shelfWidth, visible.width))
-        window.minSize = CGSize(width: min(shelfWidth, visible.width), height: min(toolbarHeight + 80, size.height))
+            chrome: EditorWindowLayout.Chrome(toolbarHeight: hintHeight, titlebarHeight: chromeAbove))
+        size.width = max(size.width, min(760, visible.width))
+        window.minSize = CGSize(width: min(560, visible.width), height: min(hintHeight + 80, size.height))
         window.maxSize = visible.size
         let content = NSView(frame: CGRect(origin: .zero, size: size))
-        canvas.frame = CGRect(x: 0, y: 0, width: size.width, height: max(1, size.height - toolbarHeight))
+        canvas.frame = CGRect(x: 0, y: 0, width: size.width, height: max(1, size.height - hintHeight))
         canvas.autoresizingMask = [.width, .height]
         canvas.onDrag = { [weak self] start, end in self?.applyDrag(from: start, to: end) }
-        bar.frame = CGRect(x: 0, y: size.height - toolbarHeight, width: size.width, height: toolbarHeight)
-        bar.autoresizingMask = [.width, .minYMargin]
-        let shelf = NSVisualEffectView(frame: bar.frame)
-        shelf.material = .menu
-        shelf.blendingMode = .withinWindow
-        shelf.state = .followsWindowActiveState
-        shelf.autoresizingMask = [.width, .minYMargin]
-        content.addSubview(shelf)
+        hintField.frame = CGRect(x: 12, y: size.height - hintHeight + 6, width: size.width - 80, height: hintHeight - 10)
+        hintField.autoresizingMask = [.width, .minYMargin]
+        dragWell.frame = CGRect(x: size.width - 68, y: size.height - hintHeight + 4, width: 56, height: 36)
+        dragWell.autoresizingMask = [.minXMargin, .minYMargin]
         content.addSubview(canvas)
-        content.addSubview(bar)
+        content.addSubview(hintField)
+        content.addSubview(dragWell)
         window.contentView = content
         window.setContentSize(size)
         window.initialFirstResponder = toolButtons.first
         refresh()
     }
 
-    private static func shelfSeparator() -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
-        box.translatesAutoresizingMaskIntoConstraints = false
-        box.widthAnchor.constraint(equalToConstant: 1).isActive = true
-        box.heightAnchor.constraint(equalToConstant: 22).isActive = true
-        return box
+    private static func actionSymbol(_ button: NSButton) -> String {
+        switch button.action {
+        case #selector(undo): return "arrow.uturn.backward"
+        case #selector(closeWithoutChanges): return "xmark"
+        case #selector(copyRendered): return "doc.on.doc"
+        case #selector(saveRendered): return "square.and.arrow.down"
+        case #selector(done): return "checkmark"
+        default: return "circle"
+        }
+    }
+
+    private func selectTool(letter: Character) -> Bool {
+        guard let index = tools.firstIndex(where: { $0.keyEquivalent == String(letter) }) else { return false }
+        activeTool = index
+        refresh()
+        return true
     }
 
     private func configure(_ button: NSButton, action: Selector, key: String, modifiers: NSEvent.ModifierFlags,
@@ -333,6 +367,7 @@ import FrisketCore
             button.state = button.tag == activeTool ? .on : .off
             button.isEnabled = !finishing
         }
+        labelField.isEnabled = !finishing && tools[activeTool] is TextTool
         undoButton.isEnabled = !finishing && !undoStack.isEmpty
         describeActiveTool()
         closeButton.isEnabled = !finishing && unchanged
@@ -346,7 +381,7 @@ import FrisketCore
     private func describeActiveTool() {
         switch tools[activeTool] {
         case is SolidRedactionTool:
-            canvas.guide = .box
+            canvas.guide = .conceal
             hintField.stringValue = "Drag a box. It is painted solid black and stays hidden under blur."
             canvas.setAccessibilityLabel("Capture canvas. Drag to hide pixels with a solid black redaction.")
         case is CropTool:
@@ -366,11 +401,11 @@ import FrisketCore
             hintField.stringValue = "Type letters or digits, then click where the label should start. Drawing does not hide pixels."
             canvas.setAccessibilityLabel("Capture canvas. Drag to draw. Drawing does not hide pixels.")
         case is BlurTool:
-            canvas.guide = .box
+            canvas.guide = .soften
             hintField.stringValue = "Drag a box to soften the pixels inside it. Blur does not hide pixels. Use Solid Redaction to conceal."
             canvas.setAccessibilityLabel("Capture canvas. Drag to blur. Blur does not hide pixels. Use Solid Redaction to conceal.")
         case is MagnifyTool:
-            canvas.guide = .box
+            canvas.guide = .soften
             hintField.stringValue = "Drag a box. Those pixels are doubled from its top-left corner. Magnify does not hide pixels. Use Solid Redaction to conceal."
             canvas.setAccessibilityLabel("Capture canvas. Drag to magnify. Magnify does not hide pixels. Use Solid Redaction to conceal.")
         default:
@@ -483,6 +518,39 @@ import FrisketCore
             }
         }
         return false
+    }
+}
+
+extension EditorWindow: NSToolbarDelegate {
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolButtons.enumerated().map { NSToolbarItem.Identifier("tool-\($0.offset)") }
+            + [.init("label"), .flexibleSpace, .init("undo"), .init("close"), .init("copy"), .init("save"), .init("done")]
+    }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        switch identifier.rawValue {
+        case "label":
+            item.view = labelField
+            item.label = "Label"
+        case "undo": item.view = undoButton; item.label = "Undo"
+        case "close": item.view = closeButton; item.label = "Close"
+        case "copy": item.view = copyButton; item.label = "Copy"
+        case "save": item.view = saveButton; item.label = "Save"
+        case "done": item.view = doneButton; item.label = "Done"
+        default:
+            guard identifier.rawValue.hasPrefix("tool-"),
+                  let index = Int(identifier.rawValue.dropFirst(5)),
+                  toolButtons.indices.contains(index) else { return nil }
+            item.view = toolButtons[index]
+            item.label = tools[index].title
+        }
+        return item
     }
 }
 

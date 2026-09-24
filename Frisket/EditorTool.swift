@@ -12,6 +12,7 @@ enum EditorToolRole: Equatable {
     var title: String { get }
     var accessibilityLabel: String { get }
     var keyEquivalent: String { get }
+    var symbolName: String { get }
     var role: EditorToolRole { get }
     /// Applies a drag from `start` to `end`; returns false when the drag changes nothing.
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool
@@ -21,6 +22,7 @@ enum EditorToolRole: Equatable {
     let title = "Solid Redaction"
     let accessibilityLabel = "Solid redaction. Hides pixels with opaque black."
     let keyEquivalent = "r"
+    let symbolName = "square.fill"
     let role = EditorToolRole.conceal
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
@@ -37,6 +39,7 @@ enum EditorToolRole: Equatable {
     let title = "Crop"
     let accessibilityLabel = "Crop tool"
     let keyEquivalent = "c"
+    let symbolName = "crop"
     let role = EditorToolRole.frame
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
@@ -53,6 +56,7 @@ enum EditorToolRole: Equatable {
     let title = "Shape"
     let accessibilityLabel = "Rectangle shape tool. Drawing does not hide pixels."
     let keyEquivalent = "s"
+    let symbolName = "rectangle"
     let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
@@ -69,6 +73,7 @@ enum EditorToolRole: Equatable {
     let title = "Arrow"
     let accessibilityLabel = "Arrow tool. Drawing does not hide pixels."
     let keyEquivalent = "a"
+    let symbolName = "arrow.up.right"
     let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
@@ -85,6 +90,7 @@ enum EditorToolRole: Equatable {
     let title = "Text"
     let accessibilityLabel = "Text label tool. Drawing does not hide pixels."
     let keyEquivalent = "t"
+    let symbolName = "textformat"
     let role = EditorToolRole.draw
     var text: () -> String = { "A" }
 
@@ -102,6 +108,7 @@ enum EditorToolRole: Equatable {
     let title = "Blur"
     let accessibilityLabel = "Blur. Softens pixels and does not hide them. Use Solid Redaction to conceal."
     let keyEquivalent = "b"
+    let symbolName = "circle.lefthalf.filled"
     let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
@@ -118,6 +125,7 @@ enum EditorToolRole: Equatable {
     let title = "Magnify"
     let accessibilityLabel = "Magnify. Doubles pixels and does not hide them. Use Solid Redaction to conceal."
     let keyEquivalent = "m"
+    let symbolName = "plus.magnifyingglass"
     let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {

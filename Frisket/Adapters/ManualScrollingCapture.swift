@@ -100,41 +100,77 @@ import FrisketCore
     }
 }
 
+@MainActor private final class ScrollingKeysView: NSView {
+    var onReturn: (() -> Void)?
+    var onEscape: (() -> Void)?
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 36, 76: onReturn?()
+        case 53: onEscape?()
+        default: super.keyDown(with: event)
+        }
+    }
+}
+
+@MainActor private final class ScrollingKeyPanel: NSPanel {
+    var onReturn: (() -> Void)?
+    var onEscape: (() -> Void)?
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 36, 76: onReturn?()
+        case 53: onEscape?()
+        default: super.keyDown(with: event)
+        }
+    }
+}
+
 @MainActor private final class ScrollingSessionPanel: NSObject {
-    private let panel: NSPanel
+    private let panel: ScrollingKeyPanel
     private let imageView = NSImageView()
     private let status: NSTextField
+    private let content = ScrollingKeysView(frame: NSRect(x: 0, y: 0, width: 280, height: 226))
     private let onDone: () -> Void
     private let onCancel: () -> Void
 
     init(done: @escaping () -> Void, cancel: @escaping () -> Void) {
         onDone = done
         onCancel = cancel
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 280, height: 250),
-                        styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel = ScrollingKeyPanel(contentRect: NSRect(x: 0, y: 0, width: 280, height: 226),
+                                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         status = NSTextField(wrappingLabelWithString: "Scroll the page yourself. Done keeps the image. Cancel discards it.")
         super.init()
-        panel.title = "Scrolling capture"
+        panel.onReturn = { [weak self] in self?.finish() }
+        panel.onEscape = { [weak self] in self?.abort() }
+        content.onReturn = { [weak self] in self?.finish() }
+        content.onEscape = { [weak self] in self?.abort() }
         panel.isReleasedWhenClosed = false
         panel.isRestorable = false
         panel.level = .floating
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.animationBehavior = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 250))
-        imageView.frame = NSRect(x: 20, y: 96, width: 240, height: 110)
+        imageView.frame = NSRect(x: 16, y: 112, width: 248, height: 98)
         imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.wantsLayer = true
+        imageView.layer?.backgroundColor = NSColor.underPageBackgroundColor.cgColor
         imageView.setAccessibilityLabel("Live scrolling preview")
-        status.frame = NSRect(x: 16, y: 56, width: 248, height: 36)
-        status.font = .systemFont(ofSize: 11)
+        status.frame = NSRect(x: 16, y: 52, width: 248, height: 54)
+        status.font = .systemFont(ofSize: 12)
+        status.maximumNumberOfLines = 3
         let doneButton = NSButton(title: "Done", target: self, action: #selector(finish))
-        doneButton.frame = NSRect(x: 16, y: 16, width: 120, height: 32)
-        doneButton.bezelStyle = .rounded
+        doneButton.frame = NSRect(x: 16, y: 12, width: 120, height: 32)
+        doneButton.bezelStyle = .push
         doneButton.setAccessibilityLabel("Done with scrolling capture")
         let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(abort))
-        cancelButton.frame = NSRect(x: 144, y: 16, width: 120, height: 32)
-        cancelButton.bezelStyle = .rounded
+        cancelButton.frame = NSRect(x: 144, y: 12, width: 120, height: 32)
+        cancelButton.bezelStyle = .push
         cancelButton.setAccessibilityLabel("Cancel scrolling capture")
         content.addSubview(imageView)
         content.addSubview(status)
@@ -148,8 +184,10 @@ import FrisketCore
         if let notice = preview.notice { status.stringValue = notice.message }
         guard let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame
-        panel.setFrameOrigin(NSPoint(x: visible.maxX - panel.frame.width - 24, y: visible.maxY - panel.frame.height - 24))
+        panel.setFrameOrigin(NSPoint(x: visible.maxX - panel.frame.width - 16, y: visible.maxY - panel.frame.height - 16))
         panel.orderFrontRegardless()
+        panel.makeKey()
+        panel.makeFirstResponder(content)
     }
 
     func close() { panel.close() }

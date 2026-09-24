@@ -211,11 +211,8 @@ final class ThumbnailDragWellView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let image, image.size.width > 0, image.size.height > 0 else { return }
-        let scale = min(bounds.width / image.size.width, bounds.height / image.size.height)
-        let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
-        let rect = NSRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2, width: size.width, height: size.height)
-        image.draw(in: rect)
+        guard let image, image.size.width > 0, image.size.height > 0, bounds.width > 0, bounds.height > 0 else { return }
+        image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1)
     }
 
     override func mouseDown(with event: NSEvent) {

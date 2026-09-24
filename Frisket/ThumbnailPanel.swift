@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import FrisketCore
 
@@ -28,27 +29,26 @@ struct ThumbnailCardActions {
 }
 
 private struct ThumbnailCard: View {
-    let image: NSImage
     @ObservedObject var model: ThumbnailModel
     let actions: ThumbnailCardActions
-    let startDrag: (NSView, NSEvent) -> Void
+    let announce: (String) -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
-            ThumbnailDragWell(image: image, enabled: !model.busy && !model.keptInHistory, start: startDrag)
-                .frame(maxWidth: 248, maxHeight: 132)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.12), lineWidth: 1))
-                .accessibilityLabel("Pending capture preview")
+        VStack(spacing: 8) {
             if !model.keptInHistory {
                 ThumbnailCardControls(model: model, actions: actions)
             }
-            Text(status)
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if !status.isEmpty {
+                Text(status)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .padding(16)
+        .padding(12)
         .frame(width: 288)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.regularMaterial))
+        .onChange(of: status) { _, new in
+            if !new.isEmpty { announce(new) }
+        }
     }
 
     private var status: String {
@@ -70,7 +70,7 @@ private struct ThumbnailCard: View {
                 ? "Kept in History. Copy failed. Retry Copy or Close."
                 : "Copy failed. Retry Copy or close to keep in History."
         }
-        return "Close, swipe, or press Esc to keep in History."
+        return ""
     }
 }
 
@@ -87,38 +87,22 @@ private struct ThumbnailCardControls: View {
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut("c", modifiers: [])
                     .focused($copyFocused)
-                    .overlay {
-                        if copyFocused {
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.accentColor, lineWidth: 2)
-                                .padding(-3)
-                                .allowsHitTesting(false)
-                                .accessibilityHidden(true)
-                        }
-                    }
                     .accessibilityLabel("Copy capture")
                     .disabled(model.copiedWhilePending)
-                Button(model.saveFailed ? "Retry Save" : "Save", action: actions.save)
-                    .keyboardShortcut("s", modifiers: [])
-                    .accessibilityLabel(model.saveFailed ? "Retry saving capture" : "Save capture")
+                symbolButton(model.saveFailed ? "arrow.clockwise" : "square.and.arrow.down",
+                             action: actions.save,
+                             shortcut: "s",
+                             label: model.saveFailed ? "Retry saving capture" : "Save capture")
                 if !model.historyCommitted && !model.editingUnavailable {
-                    Button("Edit", action: actions.edit)
-                        .keyboardShortcut("e", modifiers: [])
-                        .accessibilityLabel("Edit capture")
+                    symbolButton("pencil", action: actions.edit, shortcut: "e", label: "Edit capture")
                 }
-                Button("Copy Text", action: actions.copyText)
-                    .keyboardShortcut("t", modifiers: [])
-                    .accessibilityLabel("Copy recognized text")
+                symbolButton("text.viewfinder", action: actions.copyText, shortcut: "t", label: "Copy recognized text")
             }
-            HStack {
-                if !model.historyCommitted {
-                    Button("Delete Capture", action: actions.delete)
+            if !model.historyCommitted {
+                HStack {
+                    symbolButton("trash", action: actions.delete, shortcut: nil, label: "Delete pending capture")
                         .keyboardShortcut(.delete, modifiers: [])
-                        .accessibilityLabel("Delete pending capture")
                 }
-                Button("Close", action: actions.close)
-                    .keyboardShortcut("w", modifiers: .command)
-                    .accessibilityLabel("Close thumbnail and keep capture in History")
             }
         }
         .buttonStyle(.bordered)
@@ -126,6 +110,25 @@ private struct ThumbnailCardControls: View {
             .onChange(of: model.copyFocusRequest) { _, _ in
                 copyFocused = true
             }
+    }
+
+    private func symbolButton(_ name: String, action: @escaping () -> Void, shortcut: Character?, label: String) -> some View {
+        Button(action: action) {
+            Image(systemName: name)
+        }
+        .accessibilityLabel(label)
+        .modifier(OptionalKeyShortcut(shortcut: shortcut))
+    }
+}
+
+private struct OptionalKeyShortcut: ViewModifier {
+    let shortcut: Character?
+    func body(content: Content) -> some View {
+        if let shortcut {
+            content.keyboardShortcut(KeyEquivalent(shortcut), modifiers: [])
+        } else {
+            content
+        }
     }
 }
 
@@ -203,6 +206,10 @@ private final class ThumbnailCardPanel: NSPanel {
     let model = ThumbnailModel()
     private let panel: ThumbnailCardPanel
     private var shown = false
+    private var imageWell: ThumbnailDragWellView?
+    private var controlGlass: NSGlassEffectView?
+    private var controlHost: NSHostingView<ThumbnailCard>?
+    private var modelWatch: AnyCancellable?
 
     var onBecomeKey: (() -> Void)? {
         didSet { panel.onBecomeKey = onBecomeKey }
@@ -256,14 +263,64 @@ private final class ThumbnailCardPanel: NSPanel {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         let image = NSImage(cgImage: preview, size: NSSize(width: preview.width, height: preview.height))
-        let hosting = NSHostingView(rootView: ThumbnailCard(image: image, model: model, actions: actions, startDrag: startDrag))
-        hosting.wantsLayer = true
-        hosting.layer?.backgroundColor = NSColor.clear.cgColor
-        panel.contentView = hosting
+        let hosting = NSHostingView(rootView: ThumbnailCard(model: model, actions: actions, announce: { [weak panel] text in
+            guard let panel else { return }
+            NSAccessibility.post(element: panel, notification: .announcementRequested,
+                                 userInfo: [.announcement: text,
+                                            .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        }))
+        let glass = NSGlassEffectView()
+        glass.style = .regular
+        glass.cornerRadius = 12
+        glass.contentView = hosting
+        let well = ThumbnailDragWellView()
+        well.image = image
+        well.dragEnabled = true
+        well.onMouseDown = startDrag
+        well.wantsLayer = true
+        well.layer?.cornerRadius = 8
+        well.layer?.masksToBounds = true
+        well.setAccessibilityLabel("Pending capture preview")
+        let container = NSView()
+        container.addSubview(well)
+        container.addSubview(glass)
+        panel.contentView = container
+        self.imageWell = well
+        self.controlGlass = glass
+        self.controlHost = hosting
+        layoutChrome(image: image)
         panel.setAccessibilityRole(.window)
         panel.setAccessibilityTitle("Pending capture")
         panel.setAccessibilityLabel("Pending capture")
         panel.setAccessibilityElement(true)
+        modelWatch = model.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.syncChrome() }
+        }
+    }
+
+    private func layoutChrome(image: NSImage) {
+        let width: CGFloat = 288
+        let gap: CGFloat = 8
+        let maxImage = CGSize(width: 264, height: 148)
+        let aspect = max(image.size.width, 1) / max(image.size.height, 1)
+        var imageSize = CGSize(width: maxImage.width, height: maxImage.width / aspect)
+        if imageSize.height > maxImage.height {
+            imageSize.height = maxImage.height
+            imageSize.width = maxImage.height * aspect
+        }
+        controlHost?.layoutSubtreeIfNeeded()
+        let glassHeight = max(controlHost?.fittingSize.height ?? 0, 44)
+        let origin = panel.frame.origin
+        panel.setContentSize(NSSize(width: width, height: imageSize.height + gap + glassHeight))
+        if shown { panel.setFrameOrigin(origin) }
+        controlGlass?.frame = NSRect(x: 0, y: 0, width: width, height: glassHeight)
+        imageWell?.frame = NSRect(x: (width - imageSize.width) / 2, y: glassHeight + gap,
+                                  width: imageSize.width, height: imageSize.height)
+    }
+
+    private func syncChrome() {
+        imageWell?.dragEnabled = !model.busy && !model.keptInHistory
+        if let image = imageWell?.image { layoutChrome(image: image) }
     }
 
     var size: CGSize { panel.frame.size }
@@ -296,25 +353,4 @@ private final class ThumbnailCardPanel: NSPanel {
                                         .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
     func close() { panel.orderOut(nil); panel.contentView = nil }
-}
-
-private struct ThumbnailDragWell: NSViewRepresentable {
-    let image: NSImage
-    let enabled: Bool
-    let start: (NSView, NSEvent) -> Void
-
-    func makeNSView(context: Context) -> ThumbnailDragWellView {
-        let view = ThumbnailDragWellView()
-        view.image = image
-        view.dragEnabled = enabled
-        view.onMouseDown = start
-        return view
-    }
-
-    func updateNSView(_ view: ThumbnailDragWellView, context: Context) {
-        view.image = image
-        view.dragEnabled = enabled
-        view.onMouseDown = start
-        view.needsDisplay = true
-    }
 }

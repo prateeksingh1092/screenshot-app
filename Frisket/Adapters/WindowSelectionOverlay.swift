@@ -44,8 +44,10 @@ import FrisketCore
                 panel.acceptsMouseMovedEvents = true
                 panel.isReleasedWhenClosed = false
                 panel.isRestorable = false
+                panel.animationBehavior = .none
                 panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
                 let view = WindowSelectionView(screenFrame: screen.frame, primaryTop: primaryTop,
+                    scale: screen.backingScaleFactor,
                     hover: { [weak self] point in self?.hover(at: point) },
                     accept: { [weak self] in self?.accept() },
                     cycle: { [weak self] direction in self?.cycle(direction) },
@@ -106,6 +108,7 @@ import FrisketCore
 @MainActor private final class WindowSelectionView: NSView {
     private let screenFrame: CGRect
     private let primaryTop: CGFloat
+    private let scale: CGFloat
     private let hover: (CGPoint) -> Void
     private let accept: () -> Void
     private let cycle: (Int) -> Void
@@ -114,10 +117,11 @@ import FrisketCore
     override var acceptsFirstResponder: Bool { true }
     override var needsPanelToBecomeKey: Bool { true }
 
-    init(screenFrame: CGRect, primaryTop: CGFloat, hover: @escaping (CGPoint) -> Void,
+    init(screenFrame: CGRect, primaryTop: CGFloat, scale: CGFloat, hover: @escaping (CGPoint) -> Void,
          accept: @escaping () -> Void, cycle: @escaping (Int) -> Void, cancel: @escaping () -> Void) {
         self.screenFrame = screenFrame
         self.primaryTop = primaryTop
+        self.scale = scale
         self.hover = hover
         self.accept = accept
         self.cycle = cycle
@@ -125,7 +129,8 @@ import FrisketCore
         super.init(frame: CGRect(origin: .zero, size: screenFrame.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Select a window. Hover and click, or use arrows or Tab to select and Return to capture. Escape cancels.")
+        setAccessibilityLabel("Select a window")
+        setAccessibilityHelp("Hover and click, or use the arrow keys or Tab to select. Shift-Tab selects the previous window. Return or keypad Enter captures. Escape cancels.")
     }
     required init?(coder: NSCoder) { nil }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -137,23 +142,18 @@ import FrisketCore
                                       owner: self, userInfo: nil))
     }
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.black.withAlphaComponent(0.15).setFill()
+        NSColor.black.withAlphaComponent(0.40).setFill()
         bounds.fill()
         if let highlight {
             let rect = CGRect(x: highlight.minX - screenFrame.minX,
                 y: primaryTop - highlight.maxY - screenFrame.minY,
                 width: highlight.width, height: highlight.height)
-            NSColor.selectedControlColor.withAlphaComponent(0.22).setFill()
-            rect.fill()
-            NSColor.white.setStroke()
-            let outline = NSBezierPath(rect: rect.insetBy(dx: 1, dy: 1))
-            outline.lineWidth = 2
-            outline.stroke()
-            let title = "\(Int(highlight.width.rounded())) × \(Int(highlight.height.rounded()))"
-            drawSizeBadge(title, above: rect, in: bounds)
+            NSColor.clear.setFill()
+            rect.fill(using: .copy)
+            drawCutMarks(rect, scale: scale)
+            drawSizeBadge("\(Int(highlight.width.rounded())) × \(Int(highlight.height.rounded()))",
+                          above: rect, in: bounds)
         }
-        "Click a window · Arrows/Tab select · Return captures · Esc cancels".draw(
-            at: CGPoint(x: 24, y: 24), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
     }
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)

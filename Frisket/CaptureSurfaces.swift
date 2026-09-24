@@ -491,7 +491,7 @@ import FrisketCore
         for id in newestFirst {
             if let panel = panels[id] { stacks[panel.displayID, default: []].append(panel) }
         }
-        let margin: CGFloat = 20, gap: CGFloat = 10
+        let margin: CGFloat = 20, gap: CGFloat = 8
         for (displayID, stack) in stacks {
             guard let screen = NSScreen.screens.first(where: { self.displayID(of: $0) == displayID }),
                   let height = stack.first?.size.height else { continue }

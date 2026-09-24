@@ -129,7 +129,8 @@ extension NSScreen {
         super.init(frame: CGRect(origin: .zero, size: display.frame.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Select capture area. Drag; Shift locks an axis, Option grows from centre, Space moves, arrows nudge one pixel. Shift-arrow resizes one pixel: right/up grows, left/down shrinks. Return captures. Escape cancels.")
+        setAccessibilityLabel("Select capture area")
+        setAccessibilityHelp("Drag to select. Shift locks an axis. Option grows from the centre. Space moves the selection. Arrow keys nudge one pixel. Shift-arrow resizes one pixel: right and up grow, left and down shrink. Return or keypad Enter captures. Escape cancels.")
     }
     required init?(coder: NSCoder) { nil }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
@@ -142,31 +143,34 @@ extension NSScreen {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.black.withAlphaComponent(0.24).setFill()
+        NSColor.black.withAlphaComponent(0.40).setFill()
         dirtyRect.fill()
         guard overlay.session?.originDisplay?.id == displayID, let rect = overlay.session?.rect else {
-            "Selection stays on its starting display · Esc cancels".draw(at: CGPoint(x: 24, y: 24),
-                withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
+            drawSolidNotice("Selection stays on the display where it started. Esc cancels.", at: CGPoint(x: 16, y: 16), in: bounds)
             return
         }
         let selection = rect.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
         NSColor.clear.setFill()
         selection.fill(using: .copy)
-        NSColor.white.setStroke()
-        let outline = NSBezierPath(rect: selection.insetBy(dx: 0.5 / scale, dy: 0.5 / scale))
-        outline.lineWidth = 1 / scale
-        outline.stroke()
-        drawSizeBadge("\(Int(selection.width.rounded())) × \(Int(selection.height.rounded()))",
-                      above: selection, in: bounds)
-        let message = "Shift locks axis · Option centres · Space moves · Arrows nudge · Shift-arrows resize · Return captures · Esc cancels"
-        message.draw(at: CGPoint(x: 24, y: 24), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white])
+        drawCutMarks(selection, scale: scale)
+        var measurement = "\(Int(selection.width.rounded())) × \(Int(selection.height.rounded()))"
+        if let word = quietWord { measurement += "  \(word)" }
+        drawSizeBadge(measurement, above: selection, in: bounds)
+    }
+
+    /// One quiet word while a modifier changes the gesture. At rest the badge is only the measurement.
+    private var quietWord: String? {
+        if modifiers.contains(.space) { return "move" }
+        if modifiers.contains(.option) { return "from centre" }
+        if modifiers.contains(.shift) { return "locked" }
+        return nil
     }
 
     func invalidateChangedSelection() {
         let selection = currentSelectionRect()
         let previous = paintedSelection
         paintedSelection = selection
-        var dirty = selection.isNull ? NSRect.null : selection.insetBy(dx: -8, dy: -56)
+        var dirty = selection.isNull ? NSRect.null : selection.insetBy(dx: -16, dy: -72)
         if !previous.isNull { dirty = dirty.union(previous.insetBy(dx: -8, dy: -56)) }
         dirty = dirty.union(NSRect(x: 0, y: 0, width: bounds.width, height: 48))
         setNeedsDisplay(dirty)

@@ -352,8 +352,11 @@ import FrisketCore
         let missing = permission.refresh() != .granted
         if permissionMissing != missing || statusItem?.button?.image == nil {
             permissionMissing = missing
-            statusItem?.button?.image = NSImage(systemSymbolName: missing ? "exclamationmark.triangle.fill" : "camera",
+            let symbol = missing ? "exclamationmark.triangle" : "camera.viewfinder"
+            let image = NSImage(systemSymbolName: symbol,
                 accessibilityDescription: missing ? "Screen Recording permission required" : "Screen Recording available")
+            image?.isTemplate = true
+            statusItem?.button?.image = image
             statusItem?.button?.imagePosition = .imageLeading
             statusItem?.button?.setAccessibilityLabel(missing ? "Frisket capture menu, Screen Recording permission required" : "Frisket capture menu")
             statusItem?.button?.toolTip = missing ? "Screen Recording permission required" : "Capture with Frisket"

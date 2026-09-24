@@ -9,6 +9,13 @@ import Foundation
 /// again afterwards. Stroke annotations draw last.
 public enum DocumentRenderer {
     public static let stripHeight = 256
+    /// One output pixel of white around annotation ink. It is a constant, never a sample of the capture.
+    public static let plate = RGBAPixel(red: 255, green: 255, blue: 255, alpha: 255)
+
+    /// Document points to output pixels. No floor of 1: a fractional editor-proxy scale may round to 0.
+    public static func outputCount(points: Int, scale: Double) -> Int {
+        Int((Double(points) * scale).rounded())
+    }
 
     public static func render(_ document: EditorDocument) -> Bitmap {
         var output = croppedBase(document.base, crop: document.edits.crop, scale: document.edits.scale)
@@ -61,7 +68,7 @@ public enum DocumentRenderer {
     private static func renderWindow(edits: DocumentEdits, startRow: Int, rowCount: Int,
                                      full: (width: Int, height: Int),
                                      copyRows: (Int, Int) -> Bitmap?) -> Bitmap {
-        let halo = edits.effects.isEmpty ? 0 : 1
+        let halo = (edits.effects.isEmpty && edits.annotations.isEmpty) ? 0 : 1
         let paddedStart = max(0, startRow - halo)
         let paddedEnd = min(full.height, startRow + rowCount + halo)
         var window = copyRows(paddedStart, paddedEnd - paddedStart)
@@ -92,9 +99,14 @@ public enum DocumentRenderer {
         }
         fillRedactions(edits.redactions, on: &output, scale: scale, originX: originX, originY: originY,
                        fill: fill, rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
+        let covered = edits.redactions.compactMap { redaction in
+            snapped(x: redaction.x, y: redaction.y, width: redaction.width, height: redaction.height,
+                    scale: scale, originX: originX, originY: originY, rowShift: rowShift,
+                    fullWidth: fullWidth, fullHeight: fullHeight, in: output)
+        }
         for annotation in edits.annotations {
             draw(annotation, on: &output, scale: scale, originX: originX, originY: originY,
-                 rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
+                 rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight, covered: covered)
         }
     }
 
@@ -258,19 +270,20 @@ public enum DocumentRenderer {
     }
 
     private static func draw(_ annotation: DocumentAnnotation, on output: inout Bitmap, scale: Double,
-                             originX: Double, originY: Double, rowShift: Int, fullWidth: Int, fullHeight: Int) {
+                             originX: Double, originY: Double, rowShift: Int, fullWidth: Int, fullHeight: Int,
+                             covered: [(minX: Int, minY: Int, maxX: Int, maxY: Int)]) {
         func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullWidth))) }
         func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullHeight))) - rowShift }
         let pen = max(2, Int((2 * scale).rounded()))
+        var ink = Set<Int>()
         func plot(_ x: Int, _ y: Int) {
-            let stroke = DocumentAnnotation.stroke
             let half = pen / 2
             for dy in 0..<pen {
                 for dx in 0..<pen {
                     let px = x - half + dx
                     let py = y - half + dy
                     guard (0..<output.width).contains(px), (0..<output.height).contains(py) else { continue }
-                    write(stroke, x: px, y: py, on: &output)
+                    ink.insert(py * output.width + px)
                 }
             }
         }
@@ -315,6 +328,30 @@ public enum DocumentRenderer {
                 }
                 cursor += AnnotationFont.advance
             }
+        }
+        func redacted(_ x: Int, _ y: Int) -> Bool {
+            covered.contains { x >= $0.minX && x < $0.maxX && y >= $0.minY && y < $0.maxY }
+        }
+        var ring = Set<Int>()
+        for index in ink {
+            let x = index % output.width
+            let y = index / output.width
+            for oy in -1...1 {
+                for ox in -1...1 where ox != 0 || oy != 0 {
+                    let nx = x + ox
+                    let ny = y + oy
+                    guard (0..<output.width).contains(nx), (0..<output.height).contains(ny) else { continue }
+                    let neighbour = ny * output.width + nx
+                    if ink.contains(neighbour) || redacted(nx, ny) { continue }
+                    ring.insert(neighbour)
+                }
+            }
+        }
+        for index in ring {
+            write(plate, x: index % output.width, y: index / output.width, on: &output)
+        }
+        for index in ink {
+            write(DocumentAnnotation.stroke, x: index % output.width, y: index / output.width, on: &output)
         }
     }
 

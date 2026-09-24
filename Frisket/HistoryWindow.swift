@@ -117,8 +117,6 @@ private struct HistoryWindowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("History").font(.headline).accessibilityAddTraits(.isHeader)
-            Text("Finished captures. Copy, save, drag, or delete. There is no editor.")
             if let message = model.message {
                 Text(message).foregroundStyle(.red).accessibilityLabel(message)
             }
