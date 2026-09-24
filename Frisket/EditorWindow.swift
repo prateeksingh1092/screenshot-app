@@ -105,6 +105,8 @@ import FrisketCore
     /// Close only after the command accepts the edits (or the unchanged close).
     private var finish: ((EditorLeave) async -> Bool)?
     private var promptOpen = false
+    private let placementScreen: NSScreen?
+    private static let chrome = EditorWindowLayout.Chrome(toolbarHeight: 88, titlebarHeight: 28)
 
     init?(base: Bitmap, pixelSize: CGSize? = nil, scale: Double, screen: NSScreen?,
           finish: @escaping (EditorLeave) async -> Bool) {
@@ -117,10 +119,11 @@ import FrisketCore
         tools = [SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
         documentSize = CGSize(width: self.pixelSize.width / scale, height: self.pixelSize.height / scale)
         canvas = EditorCanvasView(documentSize: documentSize)
-        let visible = (screen ?? NSScreen.main)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
-        let barHeight: CGFloat = 56
-        let size = CGSize(width: min(max(documentSize.width, 840), visible.width * 0.85),
-                          height: min(max(documentSize.height, 320), visible.height * 0.85 - barHeight) + barHeight)
+        placementScreen = screen ?? NSScreen.main
+        let visible = placementScreen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
+        let chrome = Self.chrome
+        let size = EditorWindowLayout.contentSize(document: documentSize, visible: visible.size, chrome: chrome)
+        let barHeight = chrome.toolbarHeight
         window = NSWindow(contentRect: CGRect(origin: .zero, size: size),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init()
@@ -128,34 +131,53 @@ import FrisketCore
         window.isRestorable = false
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
-        window.minSize = CGSize(width: 840, height: 240)
+        window.minSize = CGSize(width: min(320, size.width), height: min(200, size.height))
+        window.maxSize = visible.size
         window.delegate = self
 
         let content = NSView(frame: CGRect(origin: .zero, size: size))
         canvas.frame = CGRect(x: 0, y: 0, width: size.width, height: size.height - barHeight)
         canvas.autoresizingMask = [.width, .height]
         canvas.onDrag = { [weak self] start, end in self?.applyDrag(from: start, to: end) }
+        let toolsRow = NSStackView()
+        toolsRow.orientation = .horizontal
+        toolsRow.alignment = .centerY
+        toolsRow.spacing = 4
+        let actionsRow = NSStackView()
+        actionsRow.orientation = .horizontal
+        actionsRow.alignment = .centerY
+        actionsRow.spacing = 4
+        for row in [toolsRow, actionsRow] {
+            row.setHuggingPriority(.fittingSizeCompression, for: .horizontal)
+            row.setClippingResistancePriority(.fittingSizeCompression, for: .horizontal)
+        }
         let bar = NSStackView(frame: CGRect(x: 0, y: size.height - barHeight, width: size.width, height: barHeight))
         bar.autoresizingMask = [.width, .minYMargin]
-        bar.orientation = .horizontal
-        bar.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        bar.orientation = .vertical
+        bar.alignment = .leading
+        bar.spacing = 4
+        bar.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+        bar.setHuggingPriority(.fittingSizeCompression, for: .horizontal)
+        bar.setClippingResistancePriority(.fittingSizeCompression, for: .horizontal)
         for (index, tool) in tools.enumerated() {
             let button = NSButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
             button.setButtonType(.pushOnPushOff)
             button.bezelStyle = .push
+            button.controlSize = .small
             button.tag = index
             button.keyEquivalent = tool.keyEquivalent
             button.keyEquivalentModifierMask = []
             button.setAccessibilityLabel(tool.accessibilityLabel)
             button.toolTip = "\(tool.title) (\(tool.keyEquivalent.uppercased()))"
             toolButtons.append(button)
-            bar.addView(button, in: .leading)
+            toolsRow.addArrangedSubview(button)
         }
         labelField.placeholderString = "Label"
         labelField.setAccessibilityLabel("Annotation label text")
         labelField.bezelStyle = .roundedBezel
+        labelField.controlSize = .small
         labelField.frame.size.width = 72
-        bar.addView(labelField, in: .leading)
+        toolsRow.addArrangedSubview(labelField)
         textTool.text = { [weak labelField] in labelField?.stringValue ?? "A" }
         configure(undoButton, action: #selector(undo), key: "z", modifiers: .command,
                   label: "Undo last edit", tip: "Undo last edit (⌘Z)")
@@ -174,11 +196,14 @@ import FrisketCore
             guard let self, !self.finishing else { return }
             self.onFileDrag?(view, event)
         }
-        for button in [undoButton, closeButton, copyButton, saveButton, doneButton] { bar.addView(button, in: .trailing) }
-        bar.addView(dragWell, in: .trailing)
+        for button in [undoButton, closeButton, copyButton, saveButton, doneButton] { actionsRow.addArrangedSubview(button) }
+        actionsRow.addArrangedSubview(dragWell)
+        bar.addArrangedSubview(toolsRow)
+        bar.addArrangedSubview(actionsRow)
         content.addSubview(canvas)
         content.addSubview(bar)
         window.contentView = content
+        window.setContentSize(size)
         window.initialFirstResponder = toolButtons.first
         refresh()
     }
@@ -188,6 +213,7 @@ import FrisketCore
         button.target = self
         button.action = action
         button.bezelStyle = .push
+        button.controlSize = .small
         button.keyEquivalent = key
         button.keyEquivalentModifierMask = modifiers
         button.setAccessibilityLabel(label)
@@ -195,7 +221,21 @@ import FrisketCore
     }
 
     func show() {
-        window.center()
+        if let screen = placementScreen ?? window.screen ?? NSScreen.main {
+            let visible = screen.visibleFrame
+            var frame = window.frame
+            frame.size.width = min(frame.width, visible.width)
+            frame.size.height = min(frame.height, visible.height)
+            frame.origin.x = visible.midX - frame.width / 2
+            frame.origin.y = visible.midY - frame.height / 2
+            if frame.maxX > visible.maxX { frame.origin.x = visible.maxX - frame.width }
+            if frame.maxY > visible.maxY { frame.origin.y = visible.maxY - frame.height }
+            if frame.minX < visible.minX { frame.origin.x = visible.minX }
+            if frame.minY < visible.minY { frame.origin.y = visible.minY }
+            window.setFrame(frame, display: true)
+        } else {
+            window.center()
+        }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
         NSAccessibility.post(element: window, notification: .announcementRequested,

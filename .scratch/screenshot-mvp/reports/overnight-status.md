@@ -1,6 +1,19 @@
 # Overnight status (running log for Prateek)
 
-Updated: 2026-09-23 02:40 CDT. The Cursor agent is the only coordinator and integrator. Since 02:22 the implementers come from three pools: Codex (GPT-6 Astra, high), Grok 4.7 High (`grok-4.7-high` via the Cursor CLI) and Claude Opus 5.5 High (`claude-opus-5-5-high` via the Cursor CLI). Every report and review names its model. Both Cursor CLI models passed a read-only smoke test at 02:24.
+Updated: 2026-09-23 20:42 CDT. This Cursor chat is the only implementer and
+coordinator. Codex is unused until 2026-09-29 11:57. Other Models (Grok/Opus
+CLI) unused until 2026-10-12. The 30-minute status loop is stopped.
+
+**Current:** `main` `16e8e3e`. Tickets 01–39 and 41 resolved. Ticket 40
+in-progress (C3 label done; not v1). Signed debug install is current `main`
+at `~/Applications/Frisket.app`. First-run header written; 4 isolated TCC
+cases blocked; 17 cases pending. Live performance not started. Codex
+assessment after 2026-09-29 11:57.
+
+---
+
+Earlier overnight log (2026-09-23 02:40 CDT) follows. The implementer-pool
+table below is historical; those slots are finished.
 
 ## Merged to `main`
 

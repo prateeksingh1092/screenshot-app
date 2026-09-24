@@ -44,3 +44,19 @@ the keychain. Status/checkboxes unchanged pending review.
   `arm64_executed: false`. Not launched, not copied to `~/Applications`,
   not distributed. Hardware first-run, ratified targets, and Codex
   assessment remain open.
+
+- **Coordinator continue (2026-09-23 20:42 CDT):** dirty 02:28 debug install
+  replaced with signed Development `16e8e3e` at `~/Applications/Frisket.app`.
+  RepositoryChecks, FirstRun, and Performance offline tests passed. Pixel-free
+  first-run header written; four isolated-account cases blocked; 17 cases
+  pending. `tmutil isexcluded` is Excluded on the debug History root. Live
+  performance not started (thermal state 1). Draft:
+  [40-verification-draft.md](../reports/40-verification-draft.md). Not v1.
+
+- **Coordinator continue (2026-09-23 21:17 CDT):** keychain approved; signed
+  Development rebuilt and installed (CDHash
+  `8414521e88861a8126204d42bea70f0c79b11cd4`). Own-process listing no longer
+  fails closed when the overlay-hidden LSUIElement app is absent from
+  `SCShareableContent`. Live synthetic area (built-in 2× and external 1×),
+  full-screen, Esc, Copy, and Focus+Copy all verified. First-run record:
+  10 pass / 4 blocked / 7 pending. Not v1.

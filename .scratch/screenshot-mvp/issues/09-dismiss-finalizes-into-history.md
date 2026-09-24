@@ -27,3 +27,6 @@
     - VoiceOver announcement;
     - Delete behaviour;
     - actual backup exclusion of the `.noindex` root, checked with `tmutil isexcluded`.
+  - 2026-09-23 20:42 CDT: `tmutil isexcluded` reports Excluded for
+    `~/Library/Application Support/io.github.prateeksingh1092.frisket.debug/History.noindex`.
+    Other ticket 09 manuals remain pending.

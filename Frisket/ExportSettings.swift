@@ -108,6 +108,7 @@ private struct ExportSettingsView: View {
         window.isRestorable = false
         window.setAccessibilityLabel("Frisket Settings")
         window.center()
+        window.orderOut(nil)
     }
 
     func show() {

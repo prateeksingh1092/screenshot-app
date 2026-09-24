@@ -209,7 +209,7 @@ private final class ThumbnailCardPanel: NSPanel {
         self.revision = revision
         self.displayID = displayID
         panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 288, height: 320),
-                                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+                                   styleMask: [.borderless], backing: .buffered, defer: false)
         panel.closeAction = actions.close
         panel.swipe = actions.swipe
         panel.keyCommand = { [weak self] command in
@@ -242,12 +242,15 @@ private final class ThumbnailCardPanel: NSPanel {
         panel.hidesOnDeactivate = false
         panel.level = .floating
         // Every Space, including full-screen ones, and unaffected by Mission Control.
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.backgroundColor = .windowBackgroundColor
         panel.hasShadow = true
         let image = NSImage(cgImage: preview, size: NSSize(width: preview.width, height: preview.height))
         panel.contentView = NSHostingView(rootView: ThumbnailCard(image: image, model: model, actions: actions, startDrag: startDrag))
+        panel.setAccessibilityRole(.window)
+        panel.setAccessibilityTitle("Pending capture")
         panel.setAccessibilityLabel("Pending capture")
+        panel.setAccessibilityElement(true)
     }
 
     var size: CGSize { panel.frame.size }

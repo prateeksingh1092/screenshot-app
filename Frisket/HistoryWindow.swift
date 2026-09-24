@@ -229,6 +229,7 @@ final class HistoryDragView: NSImageView {
         window.isRestorable = false
         window.setAccessibilityLabel("Frisket History")
         window.center()
+        window.orderOut(nil)
         installRoot()
     }
 

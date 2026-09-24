@@ -41,3 +41,14 @@ Justified fixes: capture `codesign` stderr, `lipo` the Mach-O, and read
   chat after Codex/Other Models limits. Hardware cases in
   [39-first-run.md](../../../docs/manual-checks/39-first-run.md) remain for
   Prateek (external 1× display, TCC states, VoiceOver, two rebuilds).
+
+- **Coordinator continue (2026-09-23 20:42 CDT):** new pixel-free header
+  against the `16e8e3e` install. External 1× 1920×1080 is attached. Isolated
+  TCC-account cases marked `blocked`. Grant, both-display captures, shortcuts,
+  and VoiceOver remain pending.
+
+- **Coordinator continue (2026-09-23 21:17 CDT):** live synthetic run on the
+  21:13 signed debug install recorded 10 first-run passes (grant, two
+  rebuilds, both displays, Esc, three default shortcuts, pattern verify).
+  Isolated TCC cases stay blocked. Negative coordinates, unplug, overlay
+  Space/fullscreen, Full Keyboard Access, and VoiceOver remain pending.

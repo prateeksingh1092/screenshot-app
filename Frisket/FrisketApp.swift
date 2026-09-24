@@ -112,6 +112,8 @@ import FrisketCore
         add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
         add("Capture Scrolling Page", action: #selector(captureScrolling), to: menu)
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
+        add("Copy Latest Capture", action: #selector(copyLatest), to: menu)
+        add("Delete Latest Capture", action: #selector(deleteLatest), to: menu)
         add("History", action: #selector(showHistory), to: menu)
         menu.addItem(.separator())
         let history = NSMenuItem(title: "Dismiss captures to keep in History", action: nil, keyEquivalent: "")
@@ -665,6 +667,16 @@ import FrisketCore
                 panels[revision.captureID]?.focus()
             }
         }
+    }
+
+    @objc private func copyLatest() {
+        guard let id = arrivalOrder.last else { return }
+        copy(id)
+    }
+
+    @objc private func deleteLatest() {
+        guard let id = arrivalOrder.last else { return }
+        discard(id)
     }
     @objc private func showAbout() { surfaces.presentAbout() }
     @objc private func quit() { NSApp.terminate(nil) }
