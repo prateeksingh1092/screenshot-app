@@ -31,3 +31,4 @@ editor-mark-keyboard	-	pass	Two Shapes: Tab selects the first, ⇧↓ twice move
 editor-curved-arrow	D31	pass	A Curved arrow whose middle handle is dragged below its ends: Copy has ink at the handle, none at the new arrow's bow, and the canvas lists one Curved arrow
 editor-label-typed	-	pass	A Box-style label typed on the image, then Return: the editor stays open (not Done), and Copy Text reads the typed string
 editor-style-bar	-	pass	The style bar shows the colour buttons for Solid Redaction, Arrow style for Arrow, Label size and style for Text; every toolbar item is on screen, none in the » overflow
+thumbnail-close	-	pass	With the pointer over a pending Thumbnail its × shows; pressing it closes the card and History gains the capture (decision 91)
