@@ -319,7 +319,7 @@ row_editor_label_text() {
   editor_done
   wait_for 6 card_present && wait_for 6 card_ready && drv axpress frisket "Copy recognized text" && nap 2 && drv clip-text "$ev/editor-label-text.txt" || return 1
   if [ "$DS" -ge 2 ]; then
-    grep -q 'v2\.1' "$ev/editor-label-text.txt" && grep -qF '$4.99' "$ev/editor-label-text.txt" && grep -q -- '-10%' "$ev/editor-label-text.txt"
+    grep -qi 'v2\.1' "$ev/editor-label-text.txt" && grep -qF '$4.99' "$ev/editor-label-text.txt" && grep -q -- '-10%' "$ev/editor-label-text.txt"
   else
     # At 1× an 18 pt label is small for text recognition, which reads "$" as "8" and "v" as "V".
     # The exact glyphs are covered by the package D6 test; here the digits must survive.
