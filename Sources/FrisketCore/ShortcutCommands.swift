@@ -80,24 +80,12 @@ public enum SystemScreenshotHotkeys {
         desired.filter { isFamily($0) && systemEnabled.contains($0) }
     }
 
-    /// Turns the screenshot family off. Identifiers outside the family are unchanged.
-    public static func turnedOff(byDisablingFamily enabled: [String: Bool]) -> (enabled: [String: Bool], changed: [String]) {
-        var next = enabled
-        var changed: [String] = []
-        for identifier in familyIdentifiers where enabled[identifier] == true {
-            next[identifier] = false
-            changed.append(identifier)
-        }
-        return (next, changed)
-    }
 }
 
 @MainActor public final class ShortcutCommands {
     public private(set) var active: [ShortcutAction: ShortcutBinding] = [:]
     public private(set) var failures: [ShortcutAction: ShortcutFailure] = [:]
     private let system: any ShortcutSystem
-    /// Family bindings Frisket just turned off in macOS. Dispatch still allows them if the system list is stale.
-    private var claimedSystemShortcuts: [ShortcutBinding] = []
 
     public init(system: any ShortcutSystem) { self.system = system }
 
@@ -132,7 +120,7 @@ public enum SystemScreenshotHotkeys {
         let enabled: [ShortcutBinding]
         do { enabled = try system.enabledShortcuts() }
         catch { throw ShortcutFailure.cannotVerify }
-        if enabled.contains(binding), !claimedSystemShortcuts.contains(binding) {
+        if enabled.contains(binding) {
             throw ShortcutFailure.systemCollision
         }
     }
@@ -154,10 +142,11 @@ public enum SystemScreenshotHotkeys {
         active = [:]
     }
 
-    public func start(claimingSystemShortcuts: [ShortcutBinding] = []) {
+    /// Registers every saved shortcut that macOS doesn't own. Frisket never changes macOS settings
+    /// (DA-2): a collision stays a `.systemCollision` failure until the user turns it off in System Settings.
+    public func start() {
         stop()
         failures = [:]
-        claimedSystemShortcuts = claimingSystemShortcuts
         let resolved = Self.resolved(saved: system.load())
         for action in ShortcutAction.allCases {
             let binding = resolved[action] ?? action.defaultBinding

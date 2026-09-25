@@ -11,12 +11,14 @@ import FrisketCore
 
     init(system: any ShortcutSystem) { commands = ShortcutCommands(system: system) }
 
-    var onClaimSystemScreenshots: () -> Void = {}
+    var onCheckSystemScreenshots: () -> Void = {}
     var onRestoreSystemScreenshots: () -> Void = {}
     @Published var canRestoreSystemScreenshots = false
+    /// Frisket shortcuts that macOS still uses for its own screenshots (read-only, DA-2).
+    @Published var systemCollisions: [ShortcutBinding] = []
 
-    func start(claimingSystemShortcuts: [ShortcutBinding] = []) {
-        commands.start(claimingSystemShortcuts: claimingSystemShortcuts)
+    func start() {
+        commands.start()
         bindings = commands.active
         messages = commands.failures.mapValues(Self.message)
         changed?()
@@ -41,7 +43,7 @@ import FrisketCore
 
     private static func message(_ failure: ShortcutFailure) -> String {
         switch failure {
-        case .systemCollision: "This shortcut is enabled in macOS. Choose another combination."
+        case .systemCollision: "macOS uses this shortcut for screenshots. Turn it off in System Settings, or choose another combination."
         case .cannotVerify: "Cannot verify macOS shortcuts. The change was not applied; try again."
         case .duplicate: "Another Frisket action uses this shortcut. Choose another combination."
         case .invalidBinding: "Include Command, Control, or Option with a key."
@@ -113,8 +115,22 @@ struct ShortcutSettingsView: View {
                 ShortcutRow(settings: settings, action: action)
                     .id("\(action.rawValue)-\(settings.bindings[action]?.displayName ?? "inactive")")
             }
-            Button("Turn off macOS screenshot shortcuts") { settings.onClaimSystemScreenshots() }
-                .accessibilityLabel("Turn off the macOS screenshot shortcuts so Frisket can use Command-Shift and a number")
+            if !settings.systemCollisions.isEmpty {
+                // DA-2: Frisket never changes macOS settings; it says what to turn off and where.
+                let names = settings.systemCollisions.map(\.displayName).joined(separator: ", ")
+                Text("macOS still uses \(names) for its own screenshots, so Frisket can't. Turn those off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots. Frisket picks them up when you come back.")
+                    .font(.callout)
+                HStack {
+                    Button("Open Keyboard Shortcuts…") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .accessibilityLabel("Open Keyboard settings in System Settings to turn off the macOS screenshot shortcuts")
+                    Button("Check Again") { settings.onCheckSystemScreenshots() }
+                        .accessibilityLabel("Check the macOS screenshot shortcuts again")
+                }
+            }
             if settings.canRestoreSystemScreenshots {
                 Button("Restore macOS screenshot shortcuts") { settings.onRestoreSystemScreenshots() }
                     .accessibilityLabel("Restore the macOS screenshot shortcuts Frisket turned off")

@@ -2,9 +2,9 @@
   "check": "silgen",
   "strict": true,
   "files": {
-    "Frisket/SystemScreenshotHotkeyStore.swift": "@_silgen_name(\"notify_post\")\nprivate func notifyPost(_ name: UnsafePointer<CChar>) -> UInt32"
+    "Sources/FrisketCore/StripPNGEncoder.swift": "@_silgen_name(\"crc32\")\nprivate func crc32(_ c: UInt, _ b: UnsafePointer<UInt8>?, _ n: UInt32) -> UInt"
   },
   "expected": [
-    "Frisket/SystemScreenshotHotkeyStore.swift: @_silgen_name(\"notify_post\") binds a C function with the Swift calling convention"
+    "Sources/FrisketCore/StripPNGEncoder.swift: @_silgen_name(\"crc32\") binds a C function with the Swift calling convention"
   ]
 }

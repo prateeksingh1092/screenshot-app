@@ -152,11 +152,19 @@ import FrisketCore
         statusItem = item
         refreshPermissionIndicator()
         shortcutSettings.changed = { [weak self] in self?.refreshShortcutTitles() }
-        shortcutSettings.onClaimSystemScreenshots = { [weak self] in self?.claimSystemScreenshotShortcuts() }
+        shortcutSettings.onCheckSystemScreenshots = { [weak self] in self?.startShortcuts() }
         shortcutSettings.onRestoreSystemScreenshots = { [weak self] in
-            try? SystemScreenshotHotkeyStore.restore()
-            self?.shortcutSettings.canRestoreSystemScreenshots = false
-            self?.shortcutSettings.start()
+            do {
+                try SystemScreenshotHotkeyStore.restore()
+                self?.shortcutSettings.canRestoreSystemScreenshots = false
+            } catch {
+                self?.notice("Could not restore macOS shortcuts", "Turn them on in System Settings › Keyboard › Keyboard Shortcuts › Screenshots.")
+            }
+            self?.startShortcuts()
+        }
+        // After the user changes macOS shortcuts in System Settings, register Frisket's on return.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.startShortcuts() }
         }
         hotKey.action = { [weak self] action in
             guard let self, self.shortcutSettings.permits(action) else { return }
@@ -169,21 +177,18 @@ import FrisketCore
             case .showHistory: self.showHistory()
             }
         }
-        claimSystemScreenshotShortcuts()
+        startShortcuts()
         resumeLaunchSurfaces()
     }
 
-    /// If macOS still owns ⌘⇧3/4/5/6, turn those symbolic hotkeys off and register Frisket's.
-    private func claimSystemScreenshotShortcuts() {
+    /// Registers Frisket's shortcuts. macOS settings are only read (DA-2): a shortcut macOS still owns
+    /// stays inactive, and Settings says which ones to turn off in System Settings.
+    private func startShortcuts() {
         let desired = Array(ShortcutCommands.resolved(saved: hotKey.load()).values)
         let enabled = (try? hotKey.enabledShortcuts()) ?? []
-        let hits = SystemScreenshotHotkeys.collisions(desired: desired, systemEnabled: enabled)
-        var claim: [ShortcutBinding] = []
-        if !hits.isEmpty, (try? SystemScreenshotHotkeyStore.disableFamilyIfNeeded()) != nil {
-            claim = hits
-        }
+        shortcutSettings.systemCollisions = SystemScreenshotHotkeys.collisions(desired: desired, systemEnabled: enabled)
         shortcutSettings.canRestoreSystemScreenshots = !SystemScreenshotHotkeyStore.turnedOffIdentifiers().isEmpty
-        shortcutSettings.start(claimingSystemShortcuts: claim)
+        shortcutSettings.start()
     }
 
     private func installMainMenu() {
