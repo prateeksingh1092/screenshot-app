@@ -4,7 +4,8 @@ public enum EditorLeave: Equatable, Sendable {
     case finalize(DocumentEdits?)
     /// Delete capture: discard the pending image and write nothing.
     case delete
-    /// Finalize the rendered document, then copy, save, or drag that revision.
+    /// Finalize the rendered document, then copy or save that revision. A drag renders the
+    /// document but leaves it pending; only a drop the destination accepts finalizes it (DA-3).
     case deliver(DocumentEdits, EditorDelivery)
 }
 
@@ -32,6 +33,7 @@ extension EditorLeave {
     public func command(for revision: CaptureRevision) -> CaptureCommand {
         switch self {
         case .finalize(nil): return .dismiss(revision)
+        case let .deliver(edits, .drag): return .render(revision, edits)
         case let .finalize(edits?), let .deliver(edits, _): return .done(revision, edits)
         case .delete: return .discard(revision.captureID)
         }

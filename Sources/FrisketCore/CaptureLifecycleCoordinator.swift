@@ -11,7 +11,6 @@ actor CaptureLifecycleCoordinator {
     private let history: (any CaptureHistory)?
     private let exporter: (any CaptureExport)?
     private let drag: (any DragHandoff)?
-    private let dragStaging: (any DragCopyStaging)?
     private let codec: (any BitmapCodec)?
     private let scrollingFrames: (any ScrollingFrameFeed)?
     private let scrollingPreview: (any ScrollingPreviewSurface)?
@@ -44,7 +43,7 @@ actor CaptureLifecycleCoordinator {
     init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
          windowSource: (any CapturePixelSource)?,
          clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?, exporter: (any CaptureExport)?,
-         drag: (any DragHandoff)?, dragStaging: (any DragCopyStaging)?,
+         drag: (any DragHandoff)?,
          thumbnailPolicy: ThumbnailStackPolicy, clock: @escaping @Sendable () -> ContinuousClock.Instant,
          codec: (any BitmapCodec)?,
          scrollingFrames: (any ScrollingFrameFeed)?, scrollingPreview: (any ScrollingPreviewSurface)?,
@@ -61,7 +60,6 @@ actor CaptureLifecycleCoordinator {
         self.history = history
         self.exporter = exporter
         self.drag = drag
-        self.dragStaging = dragStaging
         self.codec = codec
         self.scrollingFrames = scrollingFrames
         self.scrollingPreview = scrollingPreview
@@ -226,7 +224,8 @@ actor CaptureLifecycleCoordinator {
             }
             inProgress.remove(id)
             return .finalized(revision, outcome)
-        case let .done(revision, edits):
+        case let .done(revision, edits), let .render(revision, edits):
+            let commits: Bool = if case .done = command { true } else { false }
             let id = revision.captureID
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }   // not isBusy: Done may run during Copy Text, whose result the stale check drops
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
@@ -268,6 +267,10 @@ actor CaptureLifecycleCoordinator {
                 case .failure(.unavailable):
                     clipboardFailure = .unavailable
                 }
+            }
+            guard commits else {
+                inProgress.remove(id)
+                return .rendered(next, clipboardFailure: clipboardFailure)
             }
             let commit = await history?.finalize(AuthorizedFinalization(revision: next, pngData: pngData))
                 ?? .notCommitted(.historyUnavailable)
@@ -419,46 +422,47 @@ actor CaptureLifecycleCoordinator {
                 }
             }
             inProgress.insert(id)
-            let request = AuthorizedFinalization(revision: revision, pngData: pngData)
-            let commit: CommitOutcome
-            if fromHistory {
-                commit = .committed
-            } else if let prior = deliveryCommits[id] {
-                commit = prior
-            } else if finalized.contains(id) {
-                commit = .committed
-                deliveryCommits[id] = commit
-            } else {
-                commit = await history?.finalize(request) ?? .notCommitted(.historyUnavailable)
-                deliveryCommits[id] = commit
-                if commit == .committed { finalized.insert(id) }
-            }
-            if commit == .notCommitted(.recoveryRequired) { recoveryRequired.insert(id) }
+            // DA-3: hand off first. The promised file is written from memory, and only a drop
+            // the destination accepted authorizes finalization.
             var delivery: DragDelivery = .failed
-            if let dragStaging, let drag {
+            if let drag {
                 do {
-                    let stagedID = try await dragStaging.stage(request)
-                    delivery = try await drag.deliver(.copy, image: DragImage(pngData: pngData),
-                        events: DragCopyEventBridge(staging: dragStaging, id: stagedID))
+                    delivery = try await drag.deliver(.copy, image: DragImage(pngData: pngData), events: DragSessionEvents())
                 } catch {
                     delivery = .failed
                 }
             }
             if fromHistory {
                 inProgress.remove(id)
+                return .drag(DragOutcome(revision: revision, commit: .committed, delivery: delivery))
+            }
+            guard delivery == .copied else {
+                // A cancelled or failed drag commits nothing: the capture stays pending and its Thumbnail stays open.
+                automaticExitSuppressed.insert(id)
+                inProgress.remove(id)
+                let commit: CommitOutcome? = finalized.contains(id) ? .committed : deliveryCommits[id]
                 return .drag(DragOutcome(revision: revision, commit: commit, delivery: delivery))
             }
-            if delivery == .copied {
-                delivered.insert(id)
-                failedDeliveries.removeValue(forKey: id)
-                automaticExitSuppressed.remove(id)
-                pendingBytes -= pngData.count
-                images.removeValue(forKey: id)
-                stack.remove(id)
-                copyReceipts.removeValue(forKey: id)
+            let commit: CommitOutcome
+            if let prior = deliveryCommits[id] {
+                commit = prior
+            } else if finalized.contains(id) {
+                commit = .committed
+                deliveryCommits[id] = commit
             } else {
-                automaticExitSuppressed.insert(id)
+                commit = await history?.finalize(AuthorizedFinalization(revision: revision, pngData: pngData))
+                    ?? .notCommitted(.historyUnavailable)
+                deliveryCommits[id] = commit
+                if commit == .committed { finalized.insert(id) }
             }
+            if commit == .notCommitted(.recoveryRequired) { recoveryRequired.insert(id) }
+            delivered.insert(id)
+            failedDeliveries.removeValue(forKey: id)
+            automaticExitSuppressed.remove(id)
+            pendingBytes -= pngData.count
+            images.removeValue(forKey: id)
+            stack.remove(id)
+            copyReceipts.removeValue(forKey: id)
             inProgress.remove(id)
             return .drag(DragOutcome(revision: revision, commit: commit, delivery: delivery))
         }
@@ -676,9 +680,9 @@ actor CaptureLifecycleCoordinator {
     }
 }
 
-private struct DragCopyEventBridge: DragCopyEvents {
-    let staging: any DragCopyStaging
-    let id: DragStagingID
-    func promiseWriteReturned() async throws { try await staging.promiseWriteReturned(id) }
-    func dragSessionEnded() async { await staging.dragSessionEnded(id) }
+/// Drag events need no bookkeeping: nothing is staged, and `deliver` returns `.copied`
+/// only after the promise write succeeded and the session ended.
+private struct DragSessionEvents: DragCopyEvents {
+    func promiseWriteReturned() async throws {}
+    func dragSessionEnded() async {}
 }

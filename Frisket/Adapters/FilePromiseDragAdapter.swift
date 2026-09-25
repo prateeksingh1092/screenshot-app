@@ -17,8 +17,9 @@ import FrisketCore
     private var queuedSessionEnd: NSDragOperation?
     private var accepting = false
 
-    public init(staging: DragStagingLifetime) {
-        writeCopy = { try await staging.writePromiseCopy($0, to: $1) }
+    /// The promised file is written from memory; nothing is staged on disk first (DA-3).
+    public init(writer: DragPromiseWriter) {
+        writeCopy = { try await writer.writePromiseCopy($0, to: $1) }
     }
 
     // Filesystem boundary injection for deterministic in-flight write tests.

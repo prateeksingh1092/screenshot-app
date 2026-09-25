@@ -167,6 +167,7 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Phase 1 choices:**
       - Ticket 59: Copy Text takes its own in-progress guard. Every command on that capture waits for it, except Done. Done may overtake Copy Text, because the stale-revision check already drops the old result; rejecting Done would make the user finish the edit twice.
       - Ticket 55: Copy Text with no text, or only whitespace, returns `.noTextFound` and writes nothing.
+      - Ticket 54 (DA-3): a drag commits only after the handoff reports an accepted drop. A cancelled or failed drag reports `DragOutcome.commit == nil` unless an earlier delivery already committed. An editor drag sends a new `.render` command instead of `.done`: the edit becomes the next pending revision, so a cancelled editor drag leaves History unchanged too.
     - **Effort level (Prateek, 2026-09-24):**
       - Tickets run at high effort.
       - Tickets 64, 65, 66, 67, 68 and 70 (the scrolling matcher and the native renderer) need xhigh. Before starting one, the coordinator stops and asks Prateek to switch; he changes the setting himself.

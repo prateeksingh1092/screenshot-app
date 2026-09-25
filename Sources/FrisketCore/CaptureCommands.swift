@@ -29,6 +29,9 @@ public enum CaptureCommand: Sendable {
     case drag(CaptureRevision, DragFileOperation)
     /// Finishes an edit: renders the edits over the current revision and finalizes the result as the next revision.
     case done(CaptureRevision, DocumentEdits)
+    /// Renders the edits over the current revision as the next revision and keeps it pending.
+    /// An editor drag uses it, because only a drop the destination accepts finalizes a drag (DA-3).
+    case render(CaptureRevision, DocumentEdits)
     /// Removes a finalized History item. Pending Delete capture stays `.discard`.
     case deleteHistory(CaptureID)
     /// Copies text recognized from this revision's current image. The text is not stored.
@@ -60,9 +63,10 @@ public struct CopyOutcome: Equatable, Sendable {
 
 public struct DragOutcome: Equatable, Sendable {
     public let revision: CaptureRevision
-    public let commit: CommitOutcome
+    /// `nil` when nothing was committed: the drop was cancelled or failed before any History commit (DA-3).
+    public let commit: CommitOutcome?
     public let delivery: DragDelivery
-    public init(revision: CaptureRevision, commit: CommitOutcome, delivery: DragDelivery) {
+    public init(revision: CaptureRevision, commit: CommitOutcome?, delivery: DragDelivery) {
         self.revision = revision
         self.commit = commit
         self.delivery = delivery
@@ -85,6 +89,8 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case drag(DragOutcome)
     /// The new rendered revision replaced the pending image, whether or not History committed it.
     case edited(CaptureRevision, CommitOutcome, clipboardFailure: ClipboardFailure? = nil)
+    /// The new rendered revision replaced the pending image and stays pending; nothing was committed.
+    case rendered(CaptureRevision, clipboardFailure: ClipboardFailure? = nil)
     case captureFailed(CaptureSourceFailure)
     case permissionRequired(CapturePermissionState)
     case scrollingLimited(CaptureRevision, ScrollingCaptureNotice)
@@ -105,7 +111,7 @@ public struct CaptureCommandLayer: Sendable {
                 windowSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
                 diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil, exporter: (any CaptureExport)? = nil,
-                drag: (any DragHandoff)? = nil, dragStaging: (any DragCopyStaging)? = nil,
+                drag: (any DragHandoff)? = nil,
                 thumbnailPolicy: ThumbnailStackPolicy = ThumbnailStackPolicy(),
                 clock: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
                 codec: (any BitmapCodec)? = nil,
@@ -116,7 +122,7 @@ public struct CaptureCommandLayer: Sendable {
                 textClipboard: (any TextClipboard)? = nil) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, windowSource: windowSource, clipboard: clipboard,
-                                                  pendingByteLimit: pendingByteLimit, history: history, exporter: exporter, drag: drag, dragStaging: dragStaging,
+                                                  pendingByteLimit: pendingByteLimit, history: history, exporter: exporter, drag: drag,
                                                   thumbnailPolicy: thumbnailPolicy, clock: clock, codec: codec,
                                                   scrollingFrames: scrollingFrames, scrollingPreview: scrollingPreview,
                                                   scrollingBudget: scrollingBudget,

@@ -88,16 +88,19 @@ extension DiagnosticEvent {
             case .discard: operation = .discard
             }
         case .drag: operation = .drag
-        case .done: operation = .done
+        case .done, .render: operation = .done
         case .deleteHistory: operation = .deleteHistory
         case .copyRecognizedText: operation = .copyRecognizedText
         }
         let name: DiagnosticEventName
         let error: DiagnosticError?
         switch outcome {
-        case .edited(_, _, .some):
+        case .edited(_, _, .some), .rendered(_, .some):
             name = .deliveryFailed
             error = DiagnosticError(domain: .clipboard, code: .unavailable)
+        case .rendered(_, nil):
+            name = .capturePending
+            error = nil
         case let .finalized(_, commit), let .edited(_, commit, _):
             switch commit {
             case .committed:
@@ -148,7 +151,7 @@ extension DiagnosticEvent {
             case .copied:
                 name = .deliverySucceeded
                 switch result.commit {
-                case .committed: error = nil
+                case .committed, nil: error = nil
                 case .notCommitted(.historyUnavailable): error = DiagnosticError(domain: .history, code: .unavailable)
                 case .notCommitted(.unknownMigrations): error = DiagnosticError(domain: .history, code: .unknownMigrations)
                 case .notCommitted(.invalidImage): error = DiagnosticError(domain: .history, code: .invalidImage)

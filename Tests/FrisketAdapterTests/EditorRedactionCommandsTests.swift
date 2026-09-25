@@ -422,7 +422,7 @@ extension EditorRedactionCommandsTests {
 
 extension EditorRedactionCommandsTests {
     @Test(arguments: HistoryCommitPoint.allCases.filter {
-        $0 != .rowCommitted && $0 != .thumbnailCached && $0 != .dragStaged && $0 != .dragPromiseWritten
+        $0 != .rowCommitted && $0 != .thumbnailCached
     })
     private func anInterruptedHistoryWriteCannotBecomeAnEditableOriginal(point: HistoryCommitPoint) async throws {
         let fixture = CanaryCase.all[0]
@@ -584,7 +584,7 @@ extension EditorRedactionCommandsTests {
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
             clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
-            drag: drag, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")),
+            drag: drag,
             codec: PNGBitmapCodec())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -679,7 +679,7 @@ extension EditorRedactionCommandsTests {
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
             clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
-            drag: drag, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")),
+            drag: drag,
             codec: PNGBitmapCodec())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -761,7 +761,7 @@ extension EditorRedactionCommandsTests {
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
-            drag: drag, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")),
+            drag: drag,
             codec: PNGBitmapCodec())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -839,7 +839,7 @@ extension EditorRedactionCommandsTests {
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
             clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
-            drag: drag, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")),
+            drag: drag,
             codec: PNGBitmapCodec())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -1053,5 +1053,80 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
                          Int(after.b) - Int(before.b), Int(after.a) - Int(before.a)].map(abs).max() ?? 0
             #expect(drift <= 1, "D21: a half-transparent pixel \(before) is delivered as \(after) after Done")
         }
+    }
+}
+
+/// A drop target that writes the promised file with the production `DragPromiseWriter`, or cancels.
+private actor PromiseFileDragHandoff: DragHandoff {
+    let destination: URL
+    var accepts = false
+    init(destination: URL) { self.destination = destination }
+    func accept() { accepts = true }
+    func deliver(_ operation: DragFileOperation, image: DragImage, events: any DragCopyEvents) async throws -> DragDelivery {
+        guard accepts else {
+            await events.dragSessionEnded()
+            return .failed
+        }
+        try await DragPromiseWriter().writePromiseCopy(image.pngData, to: destination)
+        try await events.promiseWriteReturned()
+        await events.dragSessionEnded()
+        return .copied
+    }
+}
+
+extension EditorRedactionCommandsTests {
+    /// Ticket 54 (DA-3): an editor drag renders the edit but finalizes only on an accepted drop.
+    /// A cancelled drop leaves the edited capture pending with nothing on disk; an accepted drop
+    /// commits one History row, and the dropped file holds the bytes Copy and Save deliver.
+    @Test(arguments: CanaryCase.all)
+    private func editorDragFinalizesOnlyOnAnAcceptedDrop(fixture: CanaryCase) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("History.noindex")
+        let exports = directory.appendingPathComponent("Exports")
+        let drops = directory.appendingPathComponent("Drops")
+        try FileManager.default.createDirectory(at: drops, withIntermediateDirectories: true)
+        let dropped = drops.appendingPathComponent("Capture.png")
+        let clipboard = RecordingClipboard()
+        let drag = PromiseFileDragHandoff(destination: dropped)
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+            exporter: PNGFileExporter(folder: { exports }, historyRoot: root), drag: drag, codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let rendered = CaptureRevision(captureID: id, number: 2)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
+        #expect(await commands.execute(EditorLeave.deliver(try fixture.edits(), .drag).command(for: original)) == .rendered(rendered))
+        #expect(!FileManager.default.fileExists(atPath: root.path))
+
+        #expect(await commands.execute(EditorDelivery.drag.command(for: rendered)) ==
+            .drag(DragOutcome(revision: rendered, commit: nil, delivery: .failed)))
+        #expect(!FileManager.default.fileExists(atPath: root.path))
+        #expect(!FileManager.default.fileExists(atPath: dropped.path))
+        #expect(try await commands.historyEntries().get().isEmpty)
+        let pending = try #require(await commands.image(for: rendered))
+        expectRedacted(try decodeSRGB(pending.pngData), fixture)
+        #expect(await commands.thumbnails().map(\.revision) == [rendered])
+
+        await drag.accept()
+        #expect(await commands.execute(EditorDelivery.drag.command(for: rendered)) ==
+            .drag(DragOutcome(revision: rendered, commit: .committed, delivery: .copied)))
+        let dropBytes = try Data(contentsOf: dropped)
+        expectRedacted(try decodeSRGB(dropBytes), fixture)
+        let entries = try await commands.historyEntries().get()
+        #expect(entries.count == 1)
+        let entry = try #require(entries.first)
+        #expect(entry.revision == rendered.number)
+        #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == dropBytes)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("staging/drag").path))
+
+        #expect(await commands.execute(.copy(rendered)) == .copy(CopyOutcome(revision: rendered, commit: .committed,
+            delivery: .copied(ClipboardReceipt(changeCount: 101)))))
+        #expect(try #require(await clipboard.images.last).pngData == dropBytes)
+        guard case let .save(saved) = await commands.execute(.save(rendered)), case let .saved(receipt) = saved.delivery else {
+            Issue.record("Save of the dropped revision should succeed"); return
+        }
+        #expect(try Data(contentsOf: exports.appendingPathComponent(receipt.filename)) == dropBytes)
+        #expect(try await commands.historyEntries().get().count == 1)
     }
 }

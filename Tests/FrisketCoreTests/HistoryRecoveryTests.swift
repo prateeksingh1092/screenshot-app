@@ -155,8 +155,7 @@ private func killAtCommitPoint(_ point: HistoryCommitPoint, root: URL, id: Captu
 
 extension HistoryRecoveryTests {
     @Test func bothCrashTiersCoverTheClosedCommitPointList() {
-        // Drag staging points are covered by DragHandoffTests, not History finalize.
-        let all = Set(HistoryCommitPoint.allCases).subtracting([.dragStaged, .dragPromiseWritten])
+        let all = Set(HistoryCommitPoint.allCases)
         #expect(Set(tierOnePoints) == all)
         #expect(Set(tierTwoPoints) == all)
         #expect(tierOnePoints.count == all.count)
@@ -476,5 +475,28 @@ extension HistoryRecoveryTests {
         let next = recoveryCommands(HistoryStore(root: root))
         _ = try await next.recoverHistory().get()
         #expect(try await next.historyEntries().get().map(\.captureID) == [id])
+    }
+}
+
+extension HistoryRecoveryTests {
+    /// Ticket 54 (DA-3): drags no longer stage on disk. The launch sweep removes drag staging an
+    /// earlier build left behind, such as a 744 B PNG under `staging/drag/`, and keeps History.
+    @Test func launchSweepRemovesLeftoverDragStagingAndKeepsHistory() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = CaptureID()
+        let before = try await committedEntries(root, ids: [id])
+        let drag = root.appendingPathComponent("staging/drag")
+        try FileManager.default.createDirectory(at: drag, withIntermediateDirectories: true)
+        try Data(repeating: 7, count: 744).write(to: drag.appendingPathComponent("\(UUID().uuidString).png"))
+        let commands = recoveryCommands(HistoryStore(root: root))
+        let report = try await commands.recoverHistory().get()
+        #expect(!FileManager.default.fileExists(atPath: drag.path))
+        #expect(try await commands.historyEntries().get() == before)
+        let snapshot = try recoverySnapshot(root)
+        #expect(!snapshot.keys.contains { $0.hasPrefix("staging/") })
+        #expect(report.logicalBytes == snapshot.values.reduce(Int64(0)) { $0 + Int64($1.count) })
+        _ = try await commands.recoverHistory().get()
+        #expect(try recoverySnapshot(root) == snapshot)
     }
 }

@@ -8,10 +8,10 @@
 
 **Status:** ready-for-agent
 
-- [ ] The D7 test passes without the known-defect mark, and `deliver(.drag)` commits on the promise-written event.
-- [ ] Drags neither create nor read a staging directory, and the launch sweep removes leftover drag staging, including the 744 B file on this Mac.
-- [ ] A completed drop writes the same bytes as Copy and Save of that revision.
-- [ ] The Solid redaction canaries hold for the dragged file.
+- [x] The D7 test passes without the known-defect mark, and `deliver(.drag)` commits on the promise-written event.
+- [x] Drags neither create nor read a staging directory, and the launch sweep removes leftover drag staging, including the 744 B file on this Mac.
+- [x] A completed drop writes the same bytes as Copy and Save of that revision.
+- [x] The Solid redaction canaries hold for the dragged file.
 - [ ] Live row: a cancelled drag leaves the Thumbnail pending and History unchanged; a drop on Finder adds exactly one History row.
 
 ## Comments
@@ -38,3 +38,17 @@ The coordinator read the current code and chose this design (decision 57, DA-3):
    - Rewrite the four `DragHandoffTests` that lock in commit-at-drag-start and staging, and the `EditorRedactionCommandsTests` drag cases.
    - Add a test that a completed drop commits exactly one History row, and writes the same bytes Copy delivers for that revision.
 7. **Live row:** flip `drag-cancel` in `Tools/LiveHarness/matrix.tsv` to `pass`.
+
+### 2026-09-24: implementer, report
+
+Claude Opus 5.5 (1M context), Claude Code, high effort. Implemented the DA-3 design above.
+
+- **Commit on an accepted drop.** The coordinator's `.drag` calls `drag.deliver(.copy, …)` first and finalizes through the existing commit cache only when it returns `.copied`. A cancelled, failed or thrown drag commits nothing, keeps the capture pending with its Thumbnail open, and suppresses automatic exit. History drags are unchanged.
+- **No disk staging.** `DragCopyStaging`, `DragStagingID`, `DragStagingLifetime.stage` and `DragCopyEventBridge` are gone; a no-op in-memory `DragSessionEvents` replaces the bridge. `DragStagingLifetime` became `DragPromiseWriter` (StorageAdapter) with only `writePromiseCopy(_:to:)`. `dragStaging:` is removed from `CaptureCommandLayer`, the coordinator and every call site. `HistoryCommitPoint.dragStaged` and `.dragPromiseWritten` are removed; both crash tiers still cover every remaining point.
+- **Where the code forced a different choice:**
+  1. `DragOutcome.commit` is now `CommitOutcome?`. A cancelled drag of an uncommitted capture has no truthful `CommitOutcome` value, so it reports `nil` (or the cached commit if an earlier delivery already committed).
+  2. The editor drag went through `.done`, which commits before the drag, so a cancelled editor drag (the `drag-cancel` live row) would still add a History row. I added `CaptureCommand.render` / `CaptureCommandOutcome.rendered`: the same render as Done without the commit. `EditorLeave.deliver(_, .drag)` maps to it, and `finishEditing` now executes `leave.command(for:)`. Recorded in decision 58.
+- **Tests.** D7 was unwrapped (red: History row plus a `staging/drag` PNG, then green). The DragHandoffTests that locked in commit-at-drag-start and staging were rewritten: `nothingReachesDiskUntilTheDropIsAccepted`, `failedPromiseWriteCommitsNothingAndARetriedDropCommitsOnce` and `aFaultedDragCommitsNothingAndKeepsTheCapturePending`. New tests: `editorDragFinalizesOnlyOnAnAcceptedDrop` (canaries on the dropped file, which `DragPromiseWriter` writes; one History row; the dropped bytes equal the History, Copy and Save bytes), `launchSweepRemovesLeftoverDragStagingAndKeepsHistory` (a 744 B leftover), and an `EditorLeaveTests` case. The EditorRedactionCommands drag cases only lost `dragStaging:`.
+- **Docs:** `core-package.md`, `history-storage.md` and `manual-checks/12-drag-handoff.md`. The `drag-cancel` matrix row is flipped to `pass`.
+- **Left open (live):** the `drag-cancel` row; a Finder drop adds exactly one History row; the real 744 B file on this Mac is removed by the next launch sweep.
+

@@ -70,7 +70,7 @@ private enum HistoryOpenFailure: String, CaseIterable {
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: FailureClipboard(),
             pendingByteLimit: source.bytes.count, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
-            drag: handoff, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")))
+            drag: handoff)
         let availability = await commands.historyAvailability()
         #expect(availability != nil)
         if kind == .unknownMigration {
