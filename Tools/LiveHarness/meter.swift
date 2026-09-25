@@ -4,6 +4,7 @@
 //   meter scan FILE [COL] [MARKCOL]  red/blue runs down COL and black marker runs down MARKCOL
 //   meter redink FILE [BAND]         annotation-red pixels per BAND-row band (default 100)
 //   meter band FILE START END        annotation-red pixels in rows START..<END
+//   meter colour FILE RRGGBB [X0 Y0 X1 Y1]  pixels within 8 per channel of RRGGBB (in the rect, else the image)
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -56,7 +57,7 @@ func bestColumn(_ img: Image, _ test: ((Int, Int, Int)) -> Bool) -> Int? {
 }
 
 let a = Array(CommandLine.arguments.dropFirst())
-guard a.count >= 2 else { fputs("usage: meter px|scan|redink|band FILE …\n", stderr); exit(2) }
+guard a.count >= 2 else { fputs("usage: meter px|scan|redink|band|colour FILE …\n", stderr); exit(2) }
 let img = Image(a[1])
 func int(_ i: Int, _ fallback: Int? = nil) -> Int {
     if i < a.count, let v = Int(a[i]) { return v }
@@ -83,6 +84,18 @@ case "band":
     let start = max(0, int(2)), end = min(img.height, int(3))
     var n = 0
     for y in start..<max(start, end) { for x in 0..<img.width where isInk(img.rgb(x, y)) { n += 1 } }
+    print(n)
+case "colour":
+    guard let value = UInt32(a.count > 2 ? a[2] : "", radix: 16) else { fputs("bad colour\n", stderr); exit(2) }
+    let want = (Int(value >> 16 & 0xff), Int(value >> 8 & 0xff), Int(value & 0xff))
+    let x0 = max(0, int(3, 0)), y0 = max(0, int(4, 0)), x1 = min(img.width, int(5, img.width)), y1 = min(img.height, int(6, img.height))
+    var n = 0
+    for y in y0..<max(y0, y1) {
+        for x in x0..<max(x0, x1) {
+            let c = img.rgb(x, y)
+            if abs(c.0 - want.0) <= 8, abs(c.1 - want.1) <= 8, abs(c.2 - want.2) <= 8 { n += 1 }
+        }
+    }
     print(n)
 default:
     fputs("unknown meter \(a[0])\n", stderr); exit(2)

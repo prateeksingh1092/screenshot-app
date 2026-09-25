@@ -72,6 +72,16 @@ public struct RedactionColour: Equatable, Sendable {
     }
 }
 
+/// One annotation ink the editor offers (ticket 99), with the name the palette shows and VoiceOver reads.
+public struct InkColour: Equatable, Sendable {
+    public let name: String
+    public let pixel: RGBAPixel
+    public init(name: String, pixel: RGBAPixel) {
+        self.name = name
+        self.pixel = pixel
+    }
+}
+
 /// A crop rectangle in document points from the top-left of the original capture.
 public struct DocumentCrop: Equatable, Sendable {
     public let x: Double
@@ -98,6 +108,21 @@ public struct DocumentAnnotation: Equatable, Sendable {
     public static let defaultWidth = 2.0
     /// The line widths the editor offers: thin (the default), medium and thick.
     public static let lineWidths = [2.0, 4.0, 8.0]
+    /// The inks the editor offers (decision 92): six opaque colours, Red (the default) first. The
+    /// hues are Apple's system colours, so Red is the existing default ink and every golden holds.
+    public static let palette = [
+        InkColour(name: "Red", pixel: stroke),
+        InkColour(name: "Yellow", pixel: RGBAPixel(red: 0xff, green: 0xcc, blue: 0x00, alpha: 255)),
+        InkColour(name: "Blue", pixel: RGBAPixel(red: 0x00, green: 0x7a, blue: 0xff, alpha: 255)),
+        InkColour(name: "Green", pixel: RGBAPixel(red: 0x34, green: 0xc7, blue: 0x59, alpha: 255)),
+        InkColour(name: "Black", pixel: RGBAPixel(red: 0x00, green: 0x00, blue: 0x00, alpha: 255)),
+        InkColour(name: "White", pixel: RGBAPixel(red: 0xff, green: 0xff, blue: 0xff, alpha: 255))
+    ]
+
+    /// The palette name of `ink`, or nil when it is not a palette colour.
+    public static func inkName(_ ink: RGBAPixel) -> String? {
+        palette.first { $0.pixel == ink }?.name
+    }
 
     public enum Kind: Equatable, Sendable {
         case rectangle(x: Double, y: Double, width: Double, height: Double)

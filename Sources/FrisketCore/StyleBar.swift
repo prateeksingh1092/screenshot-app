@@ -7,7 +7,7 @@ public enum EditorToolKind: CaseIterable, Sendable {
 
 /// One style control in the style bar.
 public enum StyleControl: Hashable, Sendable {
-    case redactionColour, arrowStyle, lineWidth, labelSize, labelStyle
+    case redactionColour, inkColour, arrowStyle, lineWidth, labelSize, labelStyle
 }
 
 /// Which style controls the editor shows (ticket 92, D29): the selected mark's when it has any,
@@ -25,9 +25,9 @@ public enum StyleBar {
     static func controls(for tool: EditorToolKind) -> [StyleControl] {
         switch tool {
         case .solidRedaction: [.redactionColour]
-        case .arrow: [.arrowStyle, .lineWidth]
-        case .line, .shape: [.lineWidth]
-        case .text: [.labelSize, .labelStyle]
+        case .arrow: [.inkColour, .arrowStyle, .lineWidth]
+        case .line, .shape: [.inkColour, .lineWidth]
+        case .text: [.inkColour, .labelSize, .labelStyle]
         case .select, .crop, .blur, .magnify: []
         }
     }
@@ -42,9 +42,9 @@ public enum StyleBar {
             guard edits.annotations.indices.contains(index) else { return [] }
             let annotation = edits.annotations[index]
             switch annotation.kind {
-            case .rectangle: return [.lineWidth]
-            case .arrow: return annotation.style == .line ? [.lineWidth] : [.arrowStyle, .lineWidth]
-            case .text: return [.labelSize, .labelStyle]
+            case .rectangle: return [.inkColour, .lineWidth]
+            case .arrow: return annotation.style == .line ? [.inkColour, .lineWidth] : [.inkColour, .arrowStyle, .lineWidth]
+            case .text: return [.inkColour, .labelSize, .labelStyle]
             }
         }
     }

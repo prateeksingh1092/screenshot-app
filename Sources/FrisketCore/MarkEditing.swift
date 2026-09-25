@@ -454,6 +454,12 @@ extension DocumentEdits {
         return edits.redactions[index].colour
     }
 
+    /// The selected annotation's ink (ticket 99); nil when no arrow, line, shape or label is selected.
+    public var selectionInk: RGBAPixel? {
+        guard case .annotation(let index)? = selection, edits.annotations.indices.contains(index) else { return nil }
+        return edits.annotations[index].colour
+    }
+
     /// A new style for the selected arrow or line (ticket 85).
     @discardableResult public func restyleSelection(_ style: ArrowStyle) -> Bool {
         guard let mark = selection else { return false }

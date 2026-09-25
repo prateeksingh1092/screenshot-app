@@ -679,6 +679,26 @@ row_editor_style_bar() {  # ticket 92
   return $ok
 }
 
+# ---------------------------------------------------------------- ticket 99: annotation ink palette (decision 92)
+# Uncalibrated: the first --live run confirms the swatch press and the pixel counts; adjust from its log.
+row_editor_ink_colour() {  # rows are document points of the 320×180 capture
+  pattern_up --show && capture_pattern && open_editor || return 1
+  image_rect 320 180 || return 1
+  tool "Shape" || return 1
+  "$H/drive" axfind frisket "Ink colour: Blue" >>"$log" 2>&1 || { note "no Ink colour: Blue swatch in the style bar"; return 1; }
+  drv axpress frisket "Ink colour: Blue"; nap 0.3
+  canvas_drag 0.1 0.1 0.4 0.4   # a Shape inside the red quadrant: points 32–128 × 18–72
+  editor_copy && clip_to editor-ink-colour || return 1
+  local f="$ev/editor-ink-colour.png" blue red
+  blue=$("$H/meter" colour "$f" 007AFF 0 0 $(( 160 * DS )) $(( 90 * DS )))   # the red quadrant
+  red=$("$H/meter" colour "$f" FF3B30)   # the default Red ink (the plate's antialiased edge on the pattern red can match meter band)
+  "$H/meter" px "$f" $(( 33 * DS )) $(( 45 * DS )) $(( 80 * DS )) $(( 19 * DS )) >>"$log" 2>&1
+  note "ink-blue px in the red quadrant=$blue, default-red ink px=$red"
+  # A 2 pt outline of a 96 × 54 pt box is about 300 pt long, 2 × DS pixels wide: expect over 200 × DS blue
+  # pixels, and a stray handful of red at most (a Red outline would give hundreds).
+  [ "$blue" -gt $(( 200 * DS )) ] && [ "$red" -lt $(( 10 * DS )) ]
+}
+
 # ---------------------------------------------------------------- ticket 98: the Thumbnail's hover × (decision 91)
 # Uncalibrated: the first --live run confirms the × appears on hover; adjust from its log.
 close_x() { "$H/drive" axfind frisket "Close thumbnail and keep capture in History" >>"$log" 2>&1; }   # the × is in the tree only while shown
