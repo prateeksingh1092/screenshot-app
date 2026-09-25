@@ -19,16 +19,12 @@ private struct Clipboard: ImageClipboard {
 
 @main enum HistoryCrashHelper {
     static func main() async {
-        guard [4, 5].contains(CommandLine.arguments.count),
+        guard CommandLine.arguments.count == 4,
               let point = HistoryCommitPoint(rawValue: CommandLine.arguments[2]),
               let uuid = UUID(uuidString: CommandLine.arguments[3]) else { Darwin._exit(64) }
         let store = HistoryStore(root: URL(fileURLWithPath: CommandLine.arguments[1]),
             clock: { Date(timeIntervalSince1970: 1234) }, commitPoint: { reached in
                 if reached == point {
-                    if CommandLine.arguments.count == 5 {
-                        FileHandle.standardOutput.write(Data([1]))
-                        _ = FileHandle.standardInput.readData(ofLength: 1)
-                    }
                     guard kill(getpid(), SIGKILL) == 0 else { Darwin._exit(65) }
                     while true { pause() }
                 }

@@ -362,8 +362,8 @@ Thumbnail. A cancelled or failed drag commits nothing (`DragOutcome.commit` is
 and suppresses timeout/overflow until an explicit action. Copy, Save and Drag
 share the cached History commit, including a failed commit. An editor drag uses
 `.render` rather than `.done`: the edit becomes the next pending revision, and
-the drag finalizes it only on an accepted drop. The launch sweep removes any
-`staging/drag/` an earlier build left.
+the drag finalizes it only on an accepted drop. History has no staging
+directory (ticket 78); the launch sweep removes any `staging/` an earlier build left.
 
 ## Ticket 26 editor document, renderer and Done
 
@@ -405,8 +405,8 @@ the drag finalizes it only on an accepted drop. The launch sweep removes any
   refreshed thumbnail. Committed copies remain final and cannot be re-edited.
 - **Interrupted writes:** History reports `recoveryRequired` once an image
   write has been attempted and finalization fails. Such revisions are frozen
-  against further editing because their authorized pixels may already exist
-  in staging or recovery files. No recovery or overwrite is attempted here.
+  against further editing because their authorized pixels may already be in
+  `images/`, where the next launch sweep adopts them (ticket 78).
 
 Seam 1 canary tests (`EditorRedactionCommandsTests`, adapter test target) use
 the real codec, `HistoryStore` and `ThumbnailImage` with 1× and 2× fixtures.

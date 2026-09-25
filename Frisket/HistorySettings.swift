@@ -86,8 +86,6 @@ enum HistoryFailureNotice {
             return "History can't open this library because it was written by a newer version. Captures can still be copied or saved."
         case .recoveryRequired:
             return "History needs attention before it can save new items. Captures can still be copied or saved."
-        case .rootLocked:
-            return "History is in use by another Frisket instance. Captures can still be copied or saved."
         default:
             return "History is unavailable. Captures can still be copied or saved."
         }

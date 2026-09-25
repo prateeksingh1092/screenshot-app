@@ -52,7 +52,6 @@ private enum HistoryCaptureKind: CaseIterable, Sendable {
         #expect(entry.width == 2 && entry.height == 1)
         #expect(entry.imageBytes == Int64(source.bytes.count))
         #expect(entry.finalizedAt == Date(timeIntervalSince1970: 1234))
-        #expect(entry.state == .finalized)
         #expect(!entry.imageLocation.hasPrefix("/"))
         #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == source.bytes)
         #expect(await commands.image(for: revision) == nil)
@@ -87,12 +86,8 @@ extension HistoryCommandsTests {
         _ = await commands.execute(kind.command(revision.captureID, maximumBytes: 1024))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
         let entry = try #require(try await store.entries().get().first)
-        let record = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(entry.recordLocation))) as? [String: Any]
-        #expect(record?["marker"] as? String == "frisket.finalized.v1")
-        #expect(record?["captureIdentifier"] as? String == revision.captureID.rawValue.uuidString)
-        #expect(record?["width"] as? Int == 2)
-        #expect(record?["height"] as? Int == 1)
-        #expect(entry.recordBytes == Int64(try Data(contentsOf: root.appendingPathComponent(entry.recordLocation)).count))
+        #expect(entry.width == 2 && entry.height == 1)
+        #expect(entry.revision == 1)
         if stopAfterRow {
             #expect(entry.thumbnailLocation == nil)
             #expect(entry.thumbnailBytes == 0)
@@ -194,8 +189,14 @@ private func migrationFixture(at root: URL, wal: Bool) throws {
 
 private func diskSnapshot(_ root: URL) throws -> [String: Data] {
     var result: [String: Data] = [:]
-    for file in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
-        result[file.lastPathComponent] = try Data(contentsOf: file)
+    for file in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) {
+        if try file.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
+            for child in try FileManager.default.contentsOfDirectory(at: file, includingPropertiesForKeys: nil) {
+                result[file.lastPathComponent + "/" + child.lastPathComponent] = try Data(contentsOf: child)
+            }
+        } else {
+            result[file.lastPathComponent] = try Data(contentsOf: file)
+        }
     }
     return result
 }
@@ -248,37 +249,43 @@ private func seedSQL(_ sql: String, at root: URL) throws {
 }
 
 extension HistoryCommandsTests {
+    /// The first schema needs the launch sweep's migration: a query never writes, so it reports
+    /// `recoveryRequired` and changes nothing. After the sweep the finalized row is kept and the
+    /// row the old store was deleting is gone.
     @Test(arguments: HistoryCaptureKind.allCases)
-    private func baselineFixtureReopensWithoutWritesAndSurvivesTheNextCommit(kind: HistoryCaptureKind) async throws {
+    private func baselineFixtureMigratesAtRecoveryAndSurvivesTheNextCommit(kind: HistoryCaptureKind) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Fixtures/History/history-v1.sql")
         try seedSQL(String(contentsOf: fixture, encoding: .utf8), at: root)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("images"), withIntermediateDirectories: false)
+        for id in ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"] {
+            try HistoryPixels().bytes.write(to: root.appendingPathComponent("images/\(id).png"))
+        }
         let before = try diskSnapshot(root)
         let history = HistoryStore(root: root, clock: { Date(timeIntervalSince1970: 1002) })
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
             history: history)
-        let oldEntries = try await history.entries().get()
-        #expect(oldEntries.count == 1) // deleting is a valid state but hidden
-        #expect(oldEntries.first?.key == 41)
-        #expect(oldEntries.first?.captureID.rawValue.uuidString == "11111111-1111-1111-1111-111111111111")
+        #expect(await history.entries() == .failure(.recoveryRequired))
         #expect(try diskSnapshot(root) == before)
+        _ = try await history.recover().get()
+        let oldEntries = try await history.entries().get()
+        #expect(oldEntries.map(\.key) == [41])
+        #expect(oldEntries.first?.captureID.rawValue.uuidString == "11111111-1111-1111-1111-111111111111")
+        #expect(oldEntries.first?.finalizedAt == Date(timeIntervalSince1970: 1000))
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("images/22222222-2222-2222-2222-222222222222.png").path))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(kind.command(revision.captureID, maximumBytes: 1024))
-        #expect(try diskSnapshot(root) == before)
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
         let after = try await history.entries().get()
         #expect(after.count == 2)
-        #expect(after.first == oldEntries.first)
+        #expect(after.first?.key == 41)
         #expect(after.last?.captureID == revision.captureID)
     }
 }
 
-private let historyFinalizationPoints: [HistoryCommitPoint] = [
-    .pngStaged, .pngSynced, .recordStaged, .recordSynced, .imageRenamed, .recordRenamed,
-    .directorySynced, .rowCommitted, .thumbnailCached
-]
+private let historyFinalizationPoints: [HistoryCommitPoint] = [.imageStaged, .imageWritten, .rowCommitted, .thumbnailCached]
 
 extension HistoryCommandsTests {
     @Test(arguments: historyFinalizationPoints, HistoryCaptureKind.allCases)
@@ -299,17 +306,12 @@ extension HistoryCommandsTests {
         #expect(try await store.entries().get().count == (committed ? 1 : 0))
         let expected: Set<String>
         switch point {
-        case .pngStaged, .pngSynced:
-            expected = ["staging/\(id).png"]
-        case .recordStaged, .recordSynced:
-            expected = ["staging/\(id).png", "staging/\(id).finalization.json"]
-        case .imageRenamed:
-            expected = ["images/\(id).png", "staging/\(id).finalization.json"]
-        case .recordRenamed, .directorySynced, .rowCommitted:
-            expected = ["images/\(id).png", "images/\(id).finalization.json"]
-        case .thumbnailCached:
-            expected = ["images/\(id).png", "images/\(id).finalization.json", "thumbnails/\(id).png"]
+        case .imageStaged: expected = [] // the partial write is removed on failure
+        case .imageWritten, .rowCommitted: expected = ["images/\(id).png"]
+        case .thumbnailCached: expected = ["images/\(id).png", "thumbnails/\(id).png"]
         }
+        // D24: there is no staging directory for recovery to share with anything.
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("staging").path))
         var files = Set<String>()
         for subdirectory in ["staging", "images", "thumbnails"] {
             let url = root.appendingPathComponent(subdirectory)
@@ -463,7 +465,7 @@ extension HistoryCommandsTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let source = HistoryPixels()
-        let interrupted = HistoryStore(root: root, evictionPoint: { if $0 == .markedDeleting { throw HistoryDeleteStop.interrupted } })
+        let interrupted = HistoryStore(root: root, evictionPoint: { if $0 == .filesUnlinked { throw HistoryDeleteStop.interrupted } })
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: source,
             clipboard: HistoryClipboard(), pendingByteLimit: source.bytes.count,
             history: interrupted)

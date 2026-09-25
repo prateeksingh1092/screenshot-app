@@ -12,7 +12,7 @@ architecture, signature, and fixture locations when the operator runs this list.
    captures disappear first, while exported PNG copies retain identical bytes.
 3. Fill synthetic History past a small quota. Confirm the newest finalized
    capture survives, equal dates use creation-key order, and usage includes
-   image/record/thumbnail files and SQLite sidecars. Verify the quota notice is
+   image and thumbnail files and the SQLite files. Verify the quota notice is
    presented once and the dated Settings line persists after dismissal/relaunch.
 4. Deliver an oversized synthetic fixture. Verify History refuses it with an
    explicit notice, Copy and Save still deliver, and failed Dismiss keeps the

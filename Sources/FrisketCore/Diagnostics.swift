@@ -9,7 +9,7 @@ public enum DiagnosticEventName: String, Codable, Sendable {
 public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done, deleteHistory, copyRecognizedText }
 public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history, fileExport, drag }
 public enum DiagnosticErrorCode: String, Codable, Sendable {
-    case rootLocked, missingHistoryImage
+    case missingHistoryImage
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired, insideHistory, unwritable
