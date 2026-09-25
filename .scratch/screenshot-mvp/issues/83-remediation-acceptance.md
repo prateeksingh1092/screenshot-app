@@ -10,7 +10,7 @@
 - ticket 40 is closed on a tree rebased onto the remediated `main`;
 - every DA item is recorded in `decisions.md`.
 
-**Blocked by:** 42–82
+**Blocked by:** 42–82, 84–86
 
 **Phase:** 6
 

@@ -144,6 +144,12 @@ These stories come from the live evaluation in `Plans/dreamy-giggling-barto.md`.
 100. As a user, I want the Loupe back while I choose a selection, so that I can place edges exactly (D26, story 6).
 101. As a user, I want History and Settings to open on the active display with the right focus, the Thumbnail's accessibility name to say whether the capture is pending or finalized, Save to confirm, and exported file names to carry a date, so that Frisket is clear to see and to hear (D15, D16, D17).
 
+### Editor marks (2026-09-25, decision 59)
+
+102. As a user, I want to select a mark I already drew and move, resize, delete or restyle it, so that I fix a mark instead of undoing everything after it.
+103. As a user, I want tapered arrows, curved arrows that I bend with a handle, double arrows and plain lines, so that I can point at things clearly.
+104. As a user, I want to type a label directly on the image in a real font, choose its size and a Standard, Outlined or Box style, and set its width with a handle, so that labels look right and read well.
+
 ## Implementation Decisions
 
 ### Architecture and boundaries

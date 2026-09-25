@@ -1,4 +1,28 @@
-> **Next session starts here:** Phase 1 is in progress (see "Phase 1 progress" below). Ticket 64 needs xhigh: ask Prateek to switch, then run it and stop at Gate A. The live-matrix checks of every Phase 1 fix wait until Prateek approves installing a new signed build (docs/app-build.md). After install, run `Tools/LiveHarness/beta-matrix.sh --live` on both displays.
+> **Next session starts here.** Prateek will say "continue from Plans/2026-09-24-session-handoff.md". Do these steps in order.
+>
+> **Effort rule (Prateek's request).**
+> - Before any step that needs xhigh, stop and ask him explicitly to switch Claude Code to xhigh. He changes the setting himself.
+> - When that work is done, tell him explicitly to move it back to high.
+> - xhigh is for tickets 64, 65, 66, 67, 68 and 70 only (decision 58). Everything else runs at high.
+> - He said he would switch to xhigh right after `/clear`. So at the start of the session, tell him steps 1–2 need only high, and let him choose whether to switch back now or keep xhigh until step 3.
+>
+> **Steps:**
+> 1. **Install and check Phase 1 live** (high).
+>    - Decision 59 approves installing a new signed Development build of `main`.
+>    - Follow `docs/app-build.md`: the signed build, then quit the running Frisket and copy it to `~/Applications/Frisket.app`. The `codesign` keychain prompt once hung a build, so run it in the background with a log and a watchdog.
+>    - Then run `Tools/LiveHarness/beta-matrix.sh --live` on both displays. Prateek must be away, or say it is fine.
+>    - Fix the calibration of the 3 unclear rows (ticket 48), and record each Phase 1 ticket's live result.
+> 2. **Check the candidate findings live:**
+>    - D28: a second drag doesn't replace the Selection;
+>    - pressing the selected tool deselects it;
+>    - a redaction drag that starts outside the image is ignored.
+> 3. **Ticket 64:** the scrolling stitch stopgap and Gate A (xhigh; ask first). Stop at Gate A and report the numbers. Then tell Prateek to move effort back to high.
+> 4. **Phase 2** (tickets 65–69) and the editor tickets 84–86 (decision 59) come next. Ask for xhigh before each of 65–68.
+>
+> **How to run tickets:**
+> - Use fresh helper agents, not forks, with the brief `Plans/implementer-brief.md`, at most two at a time.
+> - Merge in batches, and run `scripts/ci.sh` after each batch.
+> - Run long commands in the background, with logs.
 
 
 ## Phase 1 progress (2026-09-25)

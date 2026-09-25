@@ -175,6 +175,19 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
       - Tickets 64, 65, 66, 67, 68 and 70 (the scrolling matcher and the native renderer) need xhigh. Before starting one, the coordinator stops and asks Prateek to switch; he changes the setting himself.
       - Correction: commits `656d253` to `d96e7b8` say "medium effort", but they ran at xhigh.
 
+59. **Install approval and the editor's direction (Prateek, 2026-09-25):**
+    - **Install:** Prateek approved installing a new signed Development build of `main` at the one install path in `docs/app-build.md`, replacing the running build 8, so the live harness can check the Phase 1 fixes. This approval covers the Phase 1 checks and Gate A; later installs ask again.
+    - **Editor scope:** Prateek agreed with the recommendation in `.scratch/visual-pass/cleanshot-editor-study.md`.
+      - **In v1:**
+        - editable marks: select, move, resize, delete and restyle after drawing;
+        - arrows: tapered Standard and Curved with a bend handle, plus Double and a plain Line;
+        - text typed on the image in a real font, with a size menu and the Standard, Outlined and Box styles.
+
+        Tickets 84–86 follow the native renderer (66) and `NSUndoManager` (69).
+      - **After v1:** ellipse, counter, highlighter and a small colour palette.
+    - **Filled rectangles:** allowed only in colours other than black, never as fully opaque black, so no mark can be mistaken for Solid redaction.
+    - **Pixelate:** not added as concealment. If it is ever added, it is a softening effect like Blur, labelled as not hiding content.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).
