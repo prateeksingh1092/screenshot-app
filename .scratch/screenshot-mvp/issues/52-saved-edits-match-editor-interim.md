@@ -6,7 +6,7 @@
 
 **Phase:** 1
 
-**Status:** ready-for-agent
+**Status:** resolved (tested on `main` at `4775539`; live row waits for an approved install)
 
 - [x] The D1 test for the save path passes without the known-defect mark, for outputs up to 32,768 px tall.
 - [x] The strip-versus-render test stays a known defect for the strip path; ticket 65 retires it.
@@ -36,3 +36,7 @@ Claude Opus 5.5 (1M context), Claude Code, high effort.
 
 **Open.** Outputs over 32,768 px still use the strip path with D1 until ticket 65.
 
+
+### 2026-09-25: coordinator, integrated
+
+Batch 2 (52, 54, 56). The merge had two conflicts, in `matrix.tsv` and in the tests appended to `EditorRedactionCommandsTests`; both were resolved, keeping both sides. At `4775539`, `ci.sh` is green: 335 tests, 52 known issues. The helper's two design choices are sound and recorded in decision 58: `DragOutcome.commit` is optional, and editor drags use `.render`. The live rows wait for an approved install.

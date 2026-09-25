@@ -6,7 +6,7 @@
 
 **Phase:** 1
 
-**Status:** ready-for-agent
+**Status:** resolved (tested on `main` at `4775539`; live row waits for an approved install)
 
 - [x] The D7 test passes without the known-defect mark, and `deliver(.drag)` commits on the promise-written event.
 - [x] Drags neither create nor read a staging directory, and the launch sweep removes leftover drag staging, including the 744 B file on this Mac.
@@ -52,3 +52,7 @@ Claude Opus 5.5 (1M context), Claude Code, high effort. Implemented the DA-3 des
 - **Docs:** `core-package.md`, `history-storage.md` and `manual-checks/12-drag-handoff.md`. The `drag-cancel` matrix row is flipped to `pass`.
 - **Left open (live):** the `drag-cancel` row; a Finder drop adds exactly one History row; the real 744 B file on this Mac is removed by the next launch sweep.
 
+
+### 2026-09-25: coordinator, integrated
+
+Batch 2 (52, 54, 56). The merge had two conflicts, in `matrix.tsv` and in the tests appended to `EditorRedactionCommandsTests`; both were resolved, keeping both sides. At `4775539`, `ci.sh` is green: 335 tests, 52 known issues. The helper's two design choices are sound and recorded in decision 58: `DragOutcome.commit` is optional, and editor drags use `.render`. The live rows wait for an approved install.
