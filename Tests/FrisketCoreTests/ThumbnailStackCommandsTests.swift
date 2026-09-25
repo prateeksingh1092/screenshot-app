@@ -31,12 +31,14 @@ private struct StackFixture {
     let commands: CaptureLifecycleCoordinator
     let history: HistoryStore
 
-    init(clipboard: any ImageClipboard = StackClipboard(), policy: ThumbnailStackPolicy = ThumbnailStackPolicy()) {
+    init(clipboard: any ImageClipboard = StackClipboard(), policy: ThumbnailStackPolicy = ThumbnailStackPolicy(),
+         flattener: (any CaptureFlattening)? = nil) {
         let clock = clock
         let history = HistoryStore(root: root)
         self.history = history
         commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: StackPixels(), clipboard: clipboard,
-            pendingByteLimit: 1024, history: history, thumbnailPolicy: policy, clock: { clock.now })
+            pendingByteLimit: 1024, history: history, thumbnailPolicy: policy, clock: { clock.now },
+            flattener: flattener)
     }
 
     func capture() async throws -> CaptureRevision {
@@ -114,6 +116,8 @@ extension ThumbnailStackCommandsTests {
         let second = try await fixture.capture()
         #expect(await fixture.commands.execute(.copy(second)) == .copy(CopyOutcome(revision: second,
             commit: .committed, delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+        // Ticket 91: the copied card stays, finalized, until it leaves.
+        #expect(await fixture.commands.execute(.exitThumbnail(second, .close)) == .finalized(second, .committed))
         let third = try await fixture.capture()
         #expect(await fixture.commands.execute(.exitThumbnail(first, .delete)) == .discarded(first.captureID))
         let fourth = try await fixture.capture()
@@ -188,7 +192,9 @@ extension ThumbnailStackCommandsTests {
         #expect(try await fixture.historyIDs() == (historyUnavailable ? [] : [revision.captureID]))
         #expect(await fixture.commands.execute(.retryCopy(revision)) == .copy(CopyOutcome(revision: revision,
             commit: commit, delivery: .copied(ClipboardReceipt(changeCount: 2)))))
-        #expect(await fixture.commands.thumbnails().allSatisfy { $0.revision != revision })
+        // Ticket 91: a committed capture keeps its finalized Thumbnail; an uncommitted one closes.
+        let kept = await fixture.commands.thumbnails().first { $0.revision == revision }
+        #expect(kept?.status == (historyUnavailable ? nil : .finalized))
         #expect(try await fixture.historyIDs() == (historyUnavailable ? [] : [revision.captureID]))
     }
 
@@ -536,5 +542,126 @@ extension ThumbnailStackCommandsTests {
         let thumbnails = await fixture.commands.thumbnails()
         #expect(thumbnails.first?.automaticExitSuppressed == true)
         #expect(thumbnails.nextDueAt == nil)
+    }
+}
+
+/// Ticket 91: a finalized Thumbnail stays until its timeout, a Close or overflow, and an open
+/// editor pauses its timeout; leaving the editor restarts it in full.
+extension ThumbnailStackCommandsTests {
+    @Test(arguments: [ThumbnailExit.timeout, .close])
+    func copyKeepsAFinalizedThumbnailUntilItsTimeoutOrClose(exit: ThumbnailExit) async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let delay = ThumbnailStackPolicy().autoDismissDelay
+        let start = fixture.clock.now
+        let revision = try await fixture.capture()
+        #expect(await fixture.commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
+            commit: .committed, delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+
+        let after = await fixture.commands.thumbnails()
+        #expect(after.map(\.revision) == [revision])
+        #expect(after.first?.status == .finalized)
+        #expect(after.first?.editable == false)
+        #expect(after.first?.dueExit == nil)
+        #expect(after.nextDueAt == start + delay)
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .delete)) == .rejected(.alreadyFinalized))
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .timeout)) == .rejected(.thumbnailExitNotDue))
+        // The kept card still delivers, now from History.
+        #expect(await fixture.commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
+            commit: .committed, delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+        #expect(await fixture.commands.thumbnails().count == 1)
+
+        if exit == .timeout {
+            fixture.clock.advance(by: delay)
+            #expect(await fixture.commands.thumbnails().first?.dueExit == .timeout)
+        }
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, exit)) == .finalized(revision, .committed))
+        #expect(await fixture.commands.thumbnails().isEmpty)
+        #expect(try await fixture.historyIDs() == [revision.captureID])
+    }
+
+    @Test func anOpenEditorPausesTheTimeoutAndDoneRestartsItInFull() async throws {
+        let fixture = StackFixture(flattener: ScriptedFlattener(always: StackPixels.bytes))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let delay = ThumbnailStackPolicy().autoDismissDelay
+        let revision = try await fixture.capture()
+        await fixture.commands.setEditorOpen(true, for: revision.captureID)
+        #expect(await fixture.commands.thumbnails().nextDueAt == nil)
+
+        fixture.clock.advance(by: .seconds(12))
+        #expect(await fixture.commands.thumbnails().first?.dueExit == nil)
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .timeout)) == .rejected(.thumbnailExitNotDue))
+
+        let edits = try #require(DocumentEdits(scale: 1))
+        let edited = CaptureRevision(captureID: revision.captureID, number: 2)
+        #expect(await fixture.commands.execute(.done(revision, edits)) == .edited(edited, .committed))
+        await fixture.commands.setEditorOpen(false, for: revision.captureID)
+        let restarted = fixture.clock.now
+        let cards = await fixture.commands.thumbnails()
+        #expect(cards.map(\.revision) == [edited])
+        #expect(cards.first?.status == .finalized)
+        #expect(cards.first?.dueExit == nil)
+        #expect(cards.first?.expiresAt == restarted + delay)
+        #expect(cards.nextDueAt == restarted + delay)
+
+        fixture.clock.advance(by: delay)
+        #expect(await fixture.commands.thumbnails().first?.dueExit == .timeout)
+        #expect(await fixture.commands.execute(.exitThumbnail(edited, .timeout)) == .finalized(edited, .committed))
+        #expect(await fixture.commands.thumbnails().isEmpty)
+    }
+
+    @Test func closingAnUnchangedEditorKeepsTheThumbnailAndRestartsItsTimeout() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let delay = ThumbnailStackPolicy().autoDismissDelay
+        let revision = try await fixture.capture()
+        await fixture.commands.setEditorOpen(true, for: revision.captureID)
+        fixture.clock.advance(by: .seconds(12))
+        // The editor's Close finalizes an unchanged capture (EditorLeave.finalize(nil)).
+        #expect(await fixture.commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
+        await fixture.commands.setEditorOpen(false, for: revision.captureID)
+        let cards = await fixture.commands.thumbnails()
+        #expect(cards.map(\.revision) == [revision])
+        #expect(cards.first?.status == .finalized)
+        #expect(cards.first?.expiresAt == fixture.clock.now + delay)
+        #expect(cards.first?.dueExit == nil)
+        #expect(try await fixture.historyIDs() == [revision.captureID])
+    }
+
+    @Test func aQuickEditStillReturnsAFinalizedThumbnail() async throws {
+        let fixture = StackFixture(flattener: ScriptedFlattener(always: StackPixels.bytes))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let delay = ThumbnailStackPolicy().autoDismissDelay
+        let revision = try await fixture.capture()
+        await fixture.commands.setEditorOpen(true, for: revision.captureID)
+        fixture.clock.advance(by: .seconds(1))
+        let edited = CaptureRevision(captureID: revision.captureID, number: 2)
+        #expect(await fixture.commands.execute(.done(revision, try #require(DocumentEdits(scale: 1))))
+                == .edited(edited, .committed))
+        await fixture.commands.setEditorOpen(false, for: revision.captureID)
+        let cards = await fixture.commands.thumbnails()
+        #expect(cards.map(\.revision) == [edited])
+        #expect(cards.first?.status == .finalized)
+        #expect(cards.first?.expiresAt == fixture.clock.now + delay)
+        // Copy from the edited card keeps it listed too.
+        #expect(await fixture.commands.execute(.copy(edited)) == .copy(CopyOutcome(revision: edited,
+            commit: .committed, delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+        #expect(await fixture.commands.thumbnails().map(\.revision) == [edited])
+    }
+
+    @Test func quitAndHistoryDeleteCloseAKeptThumbnail() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let quitting = try await fixture.capture()
+        let deleting = try await fixture.capture()
+        for revision in [quitting, deleting] {
+            #expect(await fixture.commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
+                commit: .committed, delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+        }
+        #expect(await fixture.commands.thumbnails().count == 2)
+        #expect(await fixture.commands.execute(.deleteHistory(deleting.captureID)) == .historyDeleted(deleting.captureID))
+        #expect(await fixture.commands.thumbnails().map(\.revision) == [quitting])
+        #expect(await fixture.commands.handleSystemEvent(.quit) == [.finalized(quitting, .committed)])
+        #expect(await fixture.commands.thumbnails().isEmpty)
     }
 }

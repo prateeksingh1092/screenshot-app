@@ -108,7 +108,7 @@ public struct ThumbnailStackPolicy: Sendable {
 public enum ThumbnailStatus: Equatable, Sendable {
     /// In memory only. Delete is available, and Edit when the card is `editable`.
     case pending
-    /// Kept in History. The Thumbnail stays open only after a failed delivery; Edit and Delete are gone.
+    /// Kept in History. The Thumbnail stays until its timeout, a Close or overflow; Edit and Delete are gone.
     case finalized
 }
 
@@ -152,7 +152,7 @@ public struct Thumbnails: RandomAccessCollection, Equatable, Sendable {
     public subscript(position: Int) -> ThumbnailCard { cards[position] }
 }
 
-/// Pure ordering and exit policy for the cards of Pending captures.
+/// Pure ordering and exit policy for the cards of Pending captures and of finalized ones still shown.
 struct ThumbnailStack: Sendable {
     private var policy: ThumbnailStackPolicy
     private var newestFirst: [(revision: CaptureRevision, arrivedAt: ContinuousClock.Instant)] = []
@@ -169,6 +169,14 @@ struct ThumbnailStack: Sendable {
     mutating func remove(_ id: CaptureID) {
         newestFirst.removeAll { $0.revision.captureID == id }
         displays.removeValue(forKey: id)
+    }
+
+    func contains(_ id: CaptureID) -> Bool { newestFirst.contains { $0.revision.captureID == id } }
+
+    /// The editor left: the timeout runs again in full from `now` (ticket 91). Order is unchanged.
+    mutating func restartTimeout(_ id: CaptureID, at now: ContinuousClock.Instant) {
+        guard let index = newestFirst.firstIndex(where: { $0.revision.captureID == id }) else { return }
+        newestFirst[index].arrivedAt = now
     }
 
     /// Keeps arrival order and expiry; only the current revision changes after Done.

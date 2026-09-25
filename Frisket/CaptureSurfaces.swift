@@ -230,6 +230,7 @@ import FrisketCore
             }
             editor.onFileDrag = { [weak self] view, event in self?.startEditorDrag(id, from: view, event: event) }
             storeEditor(editor, for: id)
+            await commands.setEditorOpen(true, for: id)   // ticket 91: the Thumbnail's timeout waits for the editor
             editor.show()
         }
     }
@@ -247,7 +248,8 @@ import FrisketCore
             notice(Notice.after(.dismiss(panel.revision), outcome))
             if case .finalized(_, let commit) = outcome {
                 storeEditor(nil, for: id)
-                if commit == .committed { remove(id); return true }
+                await commands.setEditorOpen(false, for: id)   // the timeout restarts in full
+                if commit == .committed { panel.model.busy = false; await closeUnlessKept(id); return true }
                 panel.model.busy = false
                 panel.model.dismissFailed = true
                 return true
@@ -258,6 +260,7 @@ import FrisketCore
         case .delete:
             _ = await commands.execute(.discard(id))
             storeEditor(nil, for: id)
+            await commands.setEditorOpen(false, for: id)
             remove(id)
             return true
         case .finalize(.some), .deliver:
@@ -274,6 +277,7 @@ import FrisketCore
                 return false
             }
             storeEditor(nil, for: id)
+            await commands.setEditorOpen(false, for: id)   // the timeout restarts in full
             guard let image = await commands.image(for: revision),
                   let preview = await ThumbnailImage.decode(image.pngData, maximumPixelSize: 480) else {
                 remove(id)
@@ -352,7 +356,8 @@ import FrisketCore
                     panel.model.copyFailed = false
                     panel.model.dismissFailed = true   // the status line says it (DA-5)
                 } else {
-                    remove(id)
+                    panel.model.copyFailed = false
+                    await closeUnlessKept(id)
                 }
             } else {
                 panel.model.copyFailed = true
@@ -386,7 +391,8 @@ import FrisketCore
             }
             if case .copied = outcome.delivery {
                 notice(Notice.after(.drag(panel.revision, .copy), result))
-                remove(id)
+                panel.model.dragFailed = false
+                await closeUnlessKept(id)
             } else {
                 await settleThumbnails()
                 panel.model.dragFailed = true
@@ -408,7 +414,8 @@ import FrisketCore
             await refreshHistory()
             notice(Notice.after(command, result))
             if case .saved = outcome.delivery {
-                remove(id)
+                panel.model.saveFailed = false
+                await closeUnlessKept(id)
             } else {
                 await settleThumbnails()
                 panel.model.saveFailed = true   // the status line says what failed and offers Retry Save (DA-5)
@@ -458,6 +465,13 @@ import FrisketCore
     func historyDeleted(_ id: CaptureID) {
         guard panels[id] != nil else { return }
         remove(id)
+    }
+
+    /// A finalized Thumbnail stays until its timeout, a Close or overflow (ticket 91). A capture the
+    /// core released without keeping its card (not committed to History) closes.
+    private func closeUnlessKept(_ id: CaptureID) async {
+        await settleThumbnails()
+        if await !commands.thumbnails().contains(where: { $0.revision.captureID == id }) { remove(id) }
     }
 
     private func remove(_ id: CaptureID) {

@@ -85,6 +85,7 @@ private struct ThumbnailCard: View {
                 ? "Kept in History. Copy failed. Retry Copy or Close."
                 : "Copy failed. Retry Copy or close to add it to History."
         }
+        if model.historyCommitted { return "Kept in History" }   // ticket 91: the card stays until it leaves
         return ""
     }
 }

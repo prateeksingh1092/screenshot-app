@@ -17,7 +17,7 @@ public actor CaptureLifecycleCoordinator {
     private let flattener: (any CaptureFlattening)?
     private let textRecognizer: (any TextRecognizer)?
     private let textClipboard: (any TextClipboard)?
-    /// One record per capture whose pixels are in memory, that is, whose Thumbnail is open.
+    /// One record per capture whose pixels are in memory. A finalized capture may keep its Thumbnail without one.
     private var pending: [CaptureID: PendingCapture] = [:]
     /// What stays known about a capture once its pixels are released.
     private var settled: [CaptureID: SettledCapture] = [:]
@@ -29,7 +29,9 @@ public actor CaptureLifecycleCoordinator {
     private var stackFocused = false
     private var focusedCapture: CaptureID?
     private var screenLocked = false
-    // Holds exactly the captures in `pending`; update both together.
+    /// Captures whose editor is open; their timeout is paused (ticket 91).
+    private var editorOpen: Set<CaptureID> = []
+    // Holds the captures in `pending` plus finalized ones whose Thumbnail is kept (ticket 91).
     private var stack: ThumbnailStack
     private let clock: @Sendable () -> ContinuousClock.Instant
 
@@ -98,6 +100,15 @@ public actor CaptureLifecycleCoordinator {
         return cards[next].revision
     }
 
+    /// An open editor pauses its Thumbnail's timeout; leaving it restarts the timeout in full (ticket 91).
+    public func setEditorOpen(_ isOpen: Bool, for id: CaptureID) {
+        if isOpen {
+            editorOpen.insert(id)
+        } else if editorOpen.remove(id) != nil {
+            stack.restartTimeout(id, at: clock())
+        }
+    }
+
     public func setThumbnailPolicy(_ policy: ThumbnailStackPolicy) {
         stack.setPolicy(policy)
     }
@@ -113,7 +124,7 @@ public actor CaptureLifecycleCoordinator {
             var outcomes: [CaptureCommandOutcome] = []
             // D25: try every Thumbnail; one that History refuses stays pending and is reported.
             for revision in stack.arrivalOrder() {
-                outcomes.append(await perform(.dismiss(revision)))
+                outcomes.append(await finalizeAndClose(revision))
             }
             return outcomes
         case .screenLocked:
@@ -132,18 +143,21 @@ public actor CaptureLifecycleCoordinator {
         let now = clock()
         let paused = stackFocused || screenLocked
         let cards = stack.cards(at: now).map { card in
-            let record = pending[card.revision.captureID]
+            let id = card.revision.captureID
+            let record = pending[id]
             let suppressed = record?.automaticExitSuppressed ?? false
-            let pauseTimeout = paused && card.dueExit == .timeout
-            let finalized = record?.finalized ?? false
+            let pauseTimeout = (paused || editorOpen.contains(id)) && card.dueExit == .timeout
+            let finalized = isFinalized(id)
             return ThumbnailCard(revision: card.revision, expiresAt: card.expiresAt,
                                  dueExit: (suppressed || pauseTimeout) ? nil : card.dueExit,
                                  automaticExitSuppressed: suppressed,
                                  displayID: card.displayID,
                                  status: finalized ? .finalized : .pending,
-                                 editable: !finalized && record?.recoveryRequired != true)
+                                 editable: record != nil && !finalized && record?.recoveryRequired != true)
         }
-        let timing = cards.filter { $0.dueExit == nil && !$0.automaticExitSuppressed }
+        let timing = cards.filter {
+            $0.dueExit == nil && !$0.automaticExitSuppressed && !editorOpen.contains($0.revision.captureID)
+        }
         let nextDueAt = paused ? nil : timing.compactMap(\.expiresAt).filter { $0 > now }.min()
         return Thumbnails(cards: cards, nextDueAt: nextDueAt)
     }
@@ -257,6 +271,7 @@ public actor CaptureLifecycleCoordinator {
             switch deleted {
             case .success:
                 release(id)   // D10: Delete closes the capture's open Thumbnail and releases its pixels
+                stack.remove(id)   // a kept finalized Thumbnail has no pixels left to release
                 return .historyDeleted(id)
             case .failure, nil: return .rejected(.unknownCapture)
             }
@@ -340,12 +355,19 @@ public actor CaptureLifecycleCoordinator {
                     guard !record.automaticExitSuppressed else { return .rejected(.thumbnailExitNotDue) }
                 }
                 if exit == .timeout {
-                    guard !stackFocused, !screenLocked else { return .rejected(.thumbnailExitNotDue) }
+                    guard !stackFocused, !screenLocked, !editorOpen.contains(id) else { return .rejected(.thumbnailExitNotDue) }
+                }
+                guard stack.admits(exit, for: id, at: clock()) else { return .rejected(.thumbnailExitNotDue) }
+            } else if stack.contains(id), !isBusy(id) {
+                // A kept finalized Thumbnail (ticket 91): its pixels are gone, only the card remains.
+                guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
+                if exit == .timeout {
+                    guard !stackFocused, !screenLocked, !editorOpen.contains(id) else { return .rejected(.thumbnailExitNotDue) }
                 }
                 guard stack.admits(exit, for: id, at: clock()) else { return .rejected(.thumbnailExitNotDue) }
             }
             switch exit.outcome {
-            case .finalizeToHistory: return await perform(.dismiss(revision))
+            case .finalizeToHistory: return await finalizeAndClose(revision)
             case .discard: return await perform(.discard(id))
             }
         case let .drag(revision, operation):
@@ -488,6 +510,24 @@ public actor CaptureLifecycleCoordinator {
         }
     }
 
+    /// A Thumbnail exit or quit: finalize if still pending, then close the card. `.dismiss`
+    /// alone (the editor's Close) keeps a finalized card on screen (ticket 91).
+    private func finalizeAndClose(_ revision: CaptureRevision) async -> CaptureCommandOutcome {
+        let id = revision.captureID
+        if pending[id] == nil, stack.contains(id), isFinalized(id), !isBusy(id),
+           revision.number == currentRevision(id) {
+            stack.remove(id)
+            editorOpen.remove(id)
+            return .finalized(revision, .committed)
+        }
+        let outcome = await perform(.dismiss(revision))
+        if case .finalized(_, .committed) = outcome {
+            stack.remove(id)
+            editorOpen.remove(id)
+        }
+        return outcome
+    }
+
     private func isBusy(_ id: CaptureID) -> Bool { inProgress.contains(id) || recognizing.contains(id) }
 
     private func currentRevision(_ id: CaptureID) -> UInt64 { pending[id]?.revision ?? settled[id]?.revision ?? 1 }
@@ -498,11 +538,15 @@ public actor CaptureLifecycleCoordinator {
         pending[id]?.recoveryRequired ?? settled[id]?.recoveryRequired ?? false
     }
 
-    /// Closes the capture's Thumbnail and releases its pixels. The settled map keeps how it ended.
+    /// Releases the capture's pixels. The settled map keeps how it ended. A finalized capture keeps
+    /// its Thumbnail until its timeout, a Close or overflow (ticket 91); any other closes it.
     private func release(_ id: CaptureID, discarded: Bool = false) {
         guard let record = pending.removeValue(forKey: id) else { return }
         pendingBytes -= record.image.pngData.count
-        stack.remove(id)
+        if discarded || !record.finalized {
+            stack.remove(id)
+            editorOpen.remove(id)
+        }
         settled[id] = SettledCapture(revision: record.revision, finalized: record.finalized,
                                      delivered: record.delivered, recoveryRequired: record.recoveryRequired,
                                      discarded: discarded)
@@ -516,7 +560,7 @@ private enum DeliveryKind { case copy, save, drag }
 private struct PendingCapture {
     var image: CaptureImage
     var revision: UInt64 = 1
-    /// History committed this capture; its Thumbnail stays open after a failed delivery or a Done.
+    /// History committed this capture; its Thumbnail stays until its timeout, a Close or overflow.
     var finalized = false
     /// A delivery took this revision while History could not commit it (Copy keeps it editable).
     var delivered = false

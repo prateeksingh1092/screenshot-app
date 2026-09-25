@@ -163,7 +163,7 @@ private final class FirstEventFiles: @unchecked Sendable {
         let entry = try #require(entries.first)
         #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == source.bytes)
         #expect(await commands.image(for: revision) == nil)
-        #expect(await commands.thumbnails().isEmpty)
+        #expect(await commands.thumbnails().map(\.status) == [.finalized])   // ticket 91: the card stays, kept in History
     }
 
     @Test(arguments: DragCaptureKind.allCases)
@@ -293,7 +293,7 @@ extension DragHandoffTests {
 
         await handoff.setWriteFails(false)
         #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: .committed, delivery: .copied)))
-        #expect(await commands.thumbnails().isEmpty)
+        #expect(await commands.thumbnails().map(\.status) == [.finalized])   // ticket 91: the card stays, kept in History
         #expect(try await history.entries().get().map(\.captureID) == [revision.captureID])
     }
 }
