@@ -329,13 +329,33 @@ public actor HistoryStore: CaptureHistory {
             guard !closed else { throw HistoryFailure.unavailable }
             if let recoveryFailure { throw recoveryFailure }
             try acquireRootLockIfPresent()
-            guard let database else { throw HistoryFailure.unavailable }
+            let database = try writerForExistingHistory()
             let entries = try readEntries(database)
             guard let entry = entries.first(where: { $0.captureID == id }) else { throw HistoryFailure.unavailable }
             try evict(entry, database: database)
             return .success(())
         } catch let failure as HistoryFailure { return .failure(failure) }
         catch { return .failure(.unavailable) }
+    }
+
+    // D19: recovery closes the writer after its checkpoint, and a relaunch never opens it, so row
+    // actions open what they need on demand. A root with no History database has no rows, and
+    // nothing is created for it.
+    private func currentEntries() throws -> [HistoryEntry] {
+        if let database { return try readEntries(database) }
+        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) else { return [] }
+        let reader = try readOnlyDatabase()
+        defer { try? reader.close() }
+        try validateMigrations(reader)
+        return try readEntries(reader)
+    }
+
+    private func writerForExistingHistory() throws -> DatabaseQueue {
+        if let database { return database }
+        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) else {
+            throw HistoryFailure.unavailable
+        }
+        return try writableDatabase()
     }
 
     public func thumbnailPNG(_ id: CaptureID) async -> Data? {
@@ -350,8 +370,7 @@ public actor HistoryStore: CaptureHistory {
             guard !closed else { throw HistoryFailure.unavailable }
             if let recoveryFailure { throw recoveryFailure }
             try acquireRootLockIfPresent()
-            guard let database else { throw HistoryFailure.unavailable }
-            let entries = try readEntries(database)
+            let entries = try currentEntries()
             guard let entry = entries.first(where: { $0.captureID == id }) else { throw HistoryFailure.unavailable }
             let image = try ownedLocations(entry)[0]
             let data = try Data(contentsOf: image)
