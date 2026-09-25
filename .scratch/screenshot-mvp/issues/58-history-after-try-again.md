@@ -16,3 +16,7 @@
 ### 2026-09-24: coordinator, created
 
 Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82–101 (decision 58). Claude Opus 5.5, Claude Code, medium effort.
+
+### 2026-09-24: coordinator, note from ticket 47
+
+Ticket 47 found that D19 is wider than "Try Again": after any relaunch, History row actions fail until something new is committed, because the launch sweep never reopens the database for writing (`d19HistoryRowActionsWorkAfterRelaunch`). The fix must cover relaunch too.

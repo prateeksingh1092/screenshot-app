@@ -16,3 +16,7 @@
 ### 2026-09-24: coordinator, created
 
 Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82–101 (decision 58). Claude Opus 5.5, Claude Code, medium effort.
+
+### 2026-09-24: coordinator, note from ticket 47
+
+Two existing tests conflict with the fix. `quitStopsWhenACommitFailsAndLeavesLaterCardsPending` locks in quit stopping at the first failure. `staleRevisionResultsAreDroppedAndDoNotWriteTheClipboard` expects Done to succeed during Copy Text; decide whether Done is rejected or exempted when Copy Text takes the in-progress guard, and record the choice (found by ticket 47).

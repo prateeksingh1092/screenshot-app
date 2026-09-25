@@ -19,3 +19,7 @@
 ### 2026-09-24: coordinator, created
 
 Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82–101 (decision 58). Claude Opus 5.5, Claude Code, medium effort.
+
+### 2026-09-24: coordinator, note from ticket 47
+
+Four existing tests in `DragHandoffTests` lock in committing at drag start and staging on disk. Change them with the fix (found by ticket 47).
