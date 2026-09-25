@@ -11,6 +11,20 @@
 
 **Status:** ready-for-agent (medium effort)
 
-- [ ] A `WindowSelection` test with an unbundled owner's window, taken from a real `sckwins` row, goes red, then green.
-- [ ] The D2 cursor test still passes, and the cursor is excluded without using the bundle ID.
+- [x] A `WindowSelection` test with an unbundled owner's window, taken from a real `sckwins` row, goes red, then green.
+- [x] The D2 cursor test still passes, and the cursor is excluded without using the bundle ID.
 - [ ] The live `window` row passes on both displays; the coordinator checks this and flips the row from `xfail` to `pass`.
+
+## Comments
+
+### 2026-09-25: implementer, report
+
+Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62). Recorded as decision 68.
+
+**What changed:** `Sources/FrisketCore/WindowSelection.swift` drops the empty-bundle-ID rejection. The cursor stays excluded by its level (2147483630, above the Dock-level ceiling of 20) and its size (under 32 pt). The Capture exclusion list is unchanged; it matches bundle IDs, so an unbundled window cannot be excluded by it.
+
+**Tests (red → green):** `unbundledAppsWindowIsPicked` and `unbundledAppsWindowIsOfferedAndTheCursorIsNot` (the live `sckwins` rows: pattern window `bundle=""` at layer 0 behind the cursor) were red, now green. The D2 intruder case `empty bundle ID` locked in the old behaviour; it is replaced by `cursor-level window` (a large, bundled window at the cursor level), which shows the cursor is excluded without the bundle ID. The D2 cursor tests (core and adapter) pass unchanged.
+
+**Evidence:** `scripts/ci.sh`: `ci: green`, 336 tests in 49 suites, unsigned app build, live harness compiled.
+
+**Open:** the live `window` row on both displays (coordinator).
