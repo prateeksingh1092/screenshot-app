@@ -53,7 +53,7 @@ import Foundation
         if old.annotations != new.annotations, let added = new.annotations.last {
             switch added.kind {
             case .rectangle: return "Shape"
-            case .arrow: return "Arrow"
+            case .arrow: return added.style == .line ? "Line" : "Arrow"
             case .text: return "Label"
             }
         }

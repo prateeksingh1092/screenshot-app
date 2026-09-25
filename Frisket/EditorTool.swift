@@ -18,6 +18,11 @@ enum EditorToolRole: Equatable {
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool
 }
 
+/// A tool that draws with a line width chosen in its contextual controls (ticket 85).
+@MainActor protocol LineWidthTool: EditorTool {
+    var width: Double { get set }
+}
+
 /// Selects marks (ticket 84): a press on any mark takes hold of it. It draws nothing.
 @MainActor final class SelectTool: EditorTool {
     let title = "Select"
@@ -67,7 +72,8 @@ enum EditorToolRole: Equatable {
     }
 }
 
-@MainActor final class RectangleTool: EditorTool {
+@MainActor final class RectangleTool: LineWidthTool {
+    var width = DocumentAnnotation.defaultWidth
     let title = "Shape"
     let accessibilityLabel = "Rectangle shape tool. Drawing does not hide pixels."
     let keyEquivalent = "s"
@@ -78,27 +84,47 @@ enum EditorToolRole: Equatable {
         let originX = edits.crop?.x ?? 0
         let originY = edits.crop?.y ?? 0
         guard let annotation = DocumentAnnotation(.rectangle(x: min(start.x, end.x) + originX, y: min(start.y, end.y) + originY,
-                                                             width: abs(end.x - start.x), height: abs(end.y - start.y))) else { return false }
+                                                             width: abs(end.x - start.x), height: abs(end.y - start.y)),
+                                                width: width) else { return false }
         edits.annotations.append(annotation)
         return true
     }
 }
 
-@MainActor final class ArrowTool: EditorTool {
-    let title = "Arrow"
-    let accessibilityLabel = "Arrow tool. Drawing does not hide pixels."
-    let keyEquivalent = "a"
-    let symbolName = "arrow.up.right"
+/// Arrows in the style chosen in its style menu (ticket 85): Standard, Curved or Double.
+@MainActor class ArrowTool: LineWidthTool {
+    var width = DocumentAnnotation.defaultWidth
+    var style: ArrowStyle
+    var title: String { "Arrow" }
+    var accessibilityLabel: String { "Arrow tool. Drawing does not hide pixels." }
+    var keyEquivalent: String { "a" }
+    var symbolName: String { "arrow.up.right" }
     let role = EditorToolRole.draw
+
+    init(style: ArrowStyle = .standard) {
+        self.style = style
+    }
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
         let originX = edits.crop?.x ?? 0
         let originY = edits.crop?.y ?? 0
         guard let annotation = DocumentAnnotation(.arrow(x0: start.x + originX, y0: start.y + originY,
-                                                         x1: end.x + originX, y1: end.y + originY)) else { return false }
+                                                         x1: end.x + originX, y1: end.y + originY),
+                                                  width: width, style: style) else { return false }
         edits.annotations.append(annotation)
         return true
     }
+}
+
+/// The plain Line tool (ticket 85): an arrow-kind mark with no head.
+@MainActor final class LineTool: ArrowTool {
+    init() {
+        super.init(style: .line)
+    }
+    override var title: String { "Line" }
+    override var accessibilityLabel: String { "Line tool. Drawing does not hide pixels." }
+    override var keyEquivalent: String { "l" }
+    override var symbolName: String { "line.diagonal" }
 }
 
 @MainActor final class TextTool: EditorTool {

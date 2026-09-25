@@ -10,10 +10,10 @@ public enum MarkReference: Hashable, Sendable {
     case annotation(Int)
 }
 
-/// A handle on a selected mark. Boxes have four corners; an arrow has its tail and tip.
-/// A label has none until ticket 86 gives it a size.
+/// A handle on a selected mark. Boxes have four corners; an arrow has its tail and tip, and a Curved
+/// arrow also its middle, `bend` (ticket 85). A label has none until ticket 86 gives it a size.
 public enum MarkHandle: Hashable, Sendable {
-    case topLeft, topRight, bottomLeft, bottomRight, tail, tip
+    case topLeft, topRight, bottomLeft, bottomRight, tail, tip, bend
 }
 
 /// A change to one mark. Each is one undo step.
@@ -26,6 +26,8 @@ public enum MarkChange: Equatable, Sendable {
     case recolour(RGBAPixel)
     /// A new line width in document points, for shapes and arrows.
     case rewidth(Double)
+    /// A new style for an arrow or line (ticket 85).
+    case restyle(ArrowStyle)
 }
 
 /// A rectangle in document points.
@@ -72,8 +74,11 @@ extension DocumentEdits {
             switch annotations[index].kind {
             case let .rectangle(x, y, width, height):
                 return MarkBox(x: x, y: y, width: width, height: height)
-            case let .arrow(x0, y0, x1, y1):
-                return MarkBox(x: min(x0, x1), y: min(y0, y1), width: abs(x1 - x0), height: abs(y1 - y0))
+            case .arrow:
+                let spine = spine(of: annotations[index])
+                let xs = spine.map(\.x), ys = spine.map(\.y)
+                let minX = xs.min() ?? 0, minY = ys.min() ?? 0
+                return MarkBox(x: minX, y: minY, width: (xs.max() ?? 0) - minX, height: (ys.max() ?? 0) - minY)
             case let .text(x, y, characters):
                 let size = AnnotationPainter.labelSize(characters)
                 return MarkBox(x: x, y: y, width: size.width, height: size.height)
@@ -86,7 +91,11 @@ extension DocumentEdits {
         guard contains(mark) else { return [] }
         if case .annotation(let index) = mark {
             switch annotations[index].kind {
-            case let .arrow(x0, y0, x1, y1): return [(.tail, x0, y0), (.tip, x1, y1)]
+            case let .arrow(x0, y0, x1, y1):
+                let annotation = annotations[index]
+                guard annotation.style == .curved else { return [(.tail, x0, y0), (.tip, x1, y1)] }
+                let middle = annotation.bend.handle(tail: CGPoint(x: x0, y: y0), tip: CGPoint(x: x1, y: y1))
+                return [(.tail, x0, y0), (.bend, middle.x, middle.y), (.tip, x1, y1)]
             case .text: return []
             case .rectangle: break
             }
@@ -124,11 +133,21 @@ extension DocumentEdits {
             let inside = MarkBox(x: box.x + inner, y: box.y + inner, width: box.width - 2 * inner, height: box.height - 2 * inner)
             return box.contains(px, py, outset: tolerance)
                 && !(inside.width > 0 && inside.height > 0 && inside.contains(px, py, outset: 0))
-        case let .arrow(x0, y0, x1, y1):
-            let dx = x1 - x0, dy = y1 - y0
-            let t = max(0, min(1, ((px - x0) * dx + (py - y0) * dy) / (dx * dx + dy * dy)))
-            return hypot(x0 + t * dx - px, y0 + t * dy - py) <= tolerance + annotation.width / 2
+        case .arrow:
+            let spine = spine(of: annotation)
+            return zip(spine, spine.dropFirst()).contains { a, b in
+                let dx = b.x - a.x, dy = b.y - a.y, squared = dx * dx + dy * dy
+                let t = squared > 0 ? max(0, min(1, ((px - a.x) * dx + (py - a.y) * dy) / squared)) : 0
+                return hypot(a.x + t * dx - px, a.y + t * dy - py) <= tolerance + annotation.width / 2
+            }
         }
+    }
+
+    /// An arrow's centre line in document points: straight, or sampled along its curve.
+    private func spine(of annotation: DocumentAnnotation) -> [CGPoint] {
+        guard case let .arrow(x0, y0, x1, y1) = annotation.kind else { return [] }
+        return ArrowGeometry.spine(style: annotation.style, tail: CGPoint(x: x0, y: y0), tip: CGPoint(x: x1, y: y1),
+                                   bend: annotation.bend)
     }
 
     /// These edits with `change` made to `mark`, or nil when the change does not apply to it
@@ -143,6 +162,7 @@ extension DocumentEdits {
             let colour: RGBAPixel
             if case .recolour(let chosen) = change { colour = chosen } else { colour = old.colour }
             if case .rewidth = change { return nil }
+            if case .restyle = change { return nil }
             guard let box = Self.box(MarkBox(x: old.x, y: old.y, width: old.width, height: old.height), change),
                   let redaction = SolidRedaction(x: box.x, y: box.y, width: box.width, height: box.height, colour: colour)
             else { return nil }
@@ -178,25 +198,29 @@ extension DocumentEdits {
             case .topRight: fixed = (box.x, box.y + box.height)
             case .bottomLeft: fixed = (box.x + box.width, box.y)
             case .bottomRight: fixed = (box.x, box.y)
-            case .tail, .tip: return nil
+            case .tail, .tip, .bend: return nil
             }
             return MarkBox(x: min(fixed.x, x), y: min(fixed.y, y), width: abs(x - fixed.x), height: abs(y - fixed.y))
         case .recolour:
             return box
-        case .rewidth, .delete:
+        case .rewidth, .restyle, .delete:
             return nil
         }
     }
 
     private static func annotation(_ old: DocumentAnnotation, _ change: MarkChange) -> DocumentAnnotation? {
-        var colour = old.colour, width = old.width, kind = old.kind
+        var colour = old.colour, width = old.width, kind = old.kind, style = old.style, bend: ArrowBend? = old.bend
         switch (change, old.kind) {
         case let (.recolour(ink), _):
             colour = ink
         case let (.rewidth(value), .rectangle), let (.rewidth(value), .arrow):
             width = value
-        case (.rewidth, .text), (.delete, _):
+        case (.rewidth, .text), (.delete, _), (.restyle, .rectangle), (.restyle, .text):
             return nil
+        case let (.restyle(next), .arrow):
+            // A Curved arrow keeps its bend; one that becomes Curved bows as a new one does.
+            style = next
+            if old.style != .curved { bend = nil }
         case let (.move(dx, dy), .arrow(x0, y0, x1, y1)):
             kind = .arrow(x0: x0 + dx, y0: y0 + dy, x1: x1 + dx, y1: y1 + dy)
         case let (.move(dx, dy), .text(x, y, characters)):
@@ -205,13 +229,17 @@ extension DocumentEdits {
             kind = .arrow(x0: x, y0: y, x1: x1, y1: y1)
         case let (.resize(.tip, x, y), .arrow(x0, y0, _, _)):
             kind = .arrow(x0: x0, y0: y0, x1: x, y1: y)
+        case let (.resize(.bend, x, y), .arrow(x0, y0, x1, y1)):
+            guard old.style == .curved else { return nil }
+            bend = ArrowBend.through(CGPoint(x: x, y: y), tail: CGPoint(x: x0, y: y0), tip: CGPoint(x: x1, y: y1))
+            guard bend != nil else { return nil }
         case (.resize, .arrow), (.resize, .text):
             return nil
         case let (_, .rectangle(x, y, w, h)):
             guard let box = box(MarkBox(x: x, y: y, width: w, height: h), change) else { return nil }
             kind = .rectangle(x: box.x, y: box.y, width: box.width, height: box.height)
         }
-        return DocumentAnnotation(kind, colour: colour, width: width)
+        return DocumentAnnotation(kind, colour: colour, width: width, style: style, bend: bend)
     }
 
     /// What the mark is called in the Undo menu: "Solid Redaction", "Blur", "Shape", "Label"…
@@ -227,7 +255,7 @@ extension DocumentEdits {
         case .annotation(let index):
             switch annotations[index].kind {
             case .rectangle: return "Shape"
-            case .arrow: return "Arrow"
+            case .arrow: return annotations[index].style == .line ? "Line" : "Arrow"
             case .text: return "Label"
             }
         }
@@ -250,7 +278,13 @@ extension DocumentEdits {
             switch annotations[index].kind {
             case .rectangle: return "Shape, rectangle outline, \(size)"
             case let .arrow(x0, y0, x1, y1):
-                return "Arrow from \(n(x0 - ox)), \(n(y0 - oy)) to \(n(x1 - ox)), \(n(y1 - oy))"
+                let ends = "from \(n(x0 - ox)), \(n(y0 - oy)) to \(n(x1 - ox)), \(n(y1 - oy))"
+                switch annotations[index].style {
+                case .standard: return "Arrow \(ends)"
+                case .curved: return "Curved arrow \(ends)"
+                case .double: return "Double arrow \(ends)"
+                case .line: return "Line \(ends)"
+                }
             case let .text(_, _, characters): return "Label, \(characters), at \(n(box.x - ox)), \(n(box.y - oy))"
             }
         }
@@ -398,6 +432,18 @@ extension AnnotationPainter {
     public var selectionFill: RGBAPixel? {
         guard case .redaction(let index)? = selection else { return nil }
         return edits.redactions[index].colour
+    }
+
+    /// A new style for the selected arrow or line (ticket 85).
+    @discardableResult public func restyleSelection(_ style: ArrowStyle) -> Bool {
+        guard let mark = selection else { return false }
+        return change(mark, .restyle(style), verb: "Restyle")
+    }
+
+    /// The selected mark's style, when it is an arrow or a line.
+    public var selectionStyle: ArrowStyle? {
+        guard case .annotation(let index)? = selection, case .arrow = edits.annotations[index].kind else { return nil }
+        return edits.annotations[index].style
     }
 
     /// The selected mark's line width, when it has one to change.

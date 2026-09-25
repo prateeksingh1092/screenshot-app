@@ -212,8 +212,9 @@ private func picture(_ rows: [String]) throws -> Picture {
         let annotation = try #require(DocumentAnnotation(.arrow(x0: 2, y0: 16, x1: 30, y1: 16)))
         let rendered = try render(base, annotations: [annotation])
         #expect(rendered.pixel(x: 16, y: 16) == DocumentAnnotation.stroke)
+        // Ticket 85: a solid head 12 px long and 6 px each side; row 14 is past the shaft's width.
         var headPixels = 0
-        for y in 0..<12 where rendered.pixel(x: 24, y: y) == DocumentAnnotation.stroke { headPixels += 1 }
+        for y in 0..<15 where rendered.pixel(x: 24, y: y) == DocumentAnnotation.stroke { headPixels += 1 }
         #expect(headPixels > 0)
         #expect(rendered.pixel(x: 0, y: 0) == palette["."])
     }

@@ -23,7 +23,10 @@ Apps whose windows are always left out of captures.
 ### Editing
 
 **Annotation**:
-A visual addition to a capture, such as an arrow, label, or shape.
+A visual addition to a capture, such as an arrow, line, label, or shape.
+
+**Arrow style**:
+How an arrow is drawn: Standard (a tapered shaft with a solid head), Curved (bent by its middle handle; the head follows the curve) or Double (a head at each end). A **Line** is the same mark with no head.
 
 **Solid redaction**:
 An opaque replacement of a selected image region to conceal its contents in the delivered image. Its fill is one colour from a small neutral palette, black by default, always at full opacity.
