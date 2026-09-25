@@ -381,6 +381,18 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Rule:** the canvas's mark elements live in `MarkAccessibilityElements` (`Frisket/Adapters`), which holds them strongly and updates them only when the marks' labels, frames or selection change: in place when the count is unchanged, rebuilt otherwise. Each is an `.image` element with the label from `MarkEditor.accessibilityLabel(for:)`, the canvas as parent, its selected state, and a frame set with `setAccessibilityFrameInParentSpace` so AppKit reports screen coordinates that follow the window. AppKit reads that frame from the view's bottom-left even when the view is flipped, as the canvas is, so the adapter flips it first; the canvas recomputes the frames on each `accessibilityChildren()` call, so they follow the zoom.
     - **Why:** AppKit keeps no reference to the elements `accessibilityChildren()` returns; the old code built fresh ones per call, so they were deallocated before a client read them. The pure mapping (marks to labels and boxes in canvas points) was already in the core, `MarkEditor.accessibleMarks`, and tested there; element ownership and frames are AppKit-only, so they sit in the adapters package, where `MarkAccessibilityElementsTests` reaches them without an app host.
 
+91. **A Close × on the Thumbnail, shown on hover (Prateek, 2026-09-25; decisions 60 and 76):**
+    - When the pointer is over a Thumbnail, a small × appears in its corner. It is the same exit as swipe and Esc: a pending capture is kept in History and the card closes. The five-button row from decision 60 is unchanged.
+    - **Why:** the design audit of 2026-09-25 found that a mouse user could only wait out the timeout.
+
+92. **Annotation ink palette of six colours, before v1 (Prateek, 2026-09-25; amends decision 59's "after v1"; decisions 81 and 83):**
+    - The style bar offers Red (default), Yellow, Blue, Green, Black and White for arrows, lines, shapes and labels: for new marks, and to recolour a selected one. Ink stays opaque, and the white plate rule of decision 68 still applies.
+    - **Why:** the model already carries ink colour (decision 81), so the cost is low.
+
+93. **The editor remembers the last-used styles (Prateek, 2026-09-25; amends decision 82's reset to black):**
+    - The redaction colour, ink colour, arrow style, line width, label size and label style persist across editors and relaunches. They are stored in UserDefaults through `PreferenceKey` (decision 80).
+    - A remembered redaction colour is still one of the opaque palette colours, so Solid redaction's guarantees are unchanged.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).
