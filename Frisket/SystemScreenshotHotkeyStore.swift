@@ -6,7 +6,7 @@ import FrisketCore
 @MainActor enum SystemScreenshotHotkeyStore {
     private static let domain = "com.apple.symbolichotkeys" as CFString
     private static let hotkeysKey = "AppleSymbolicHotKeys"
-    private static let memoryKey = "systemScreenshotHotkeys.turnedOffByFrisket"
+    private static let memoryKey = PreferenceKey.systemScreenshotShortcutsTurnedOff.rawValue
 
     static func turnedOffIdentifiers(defaults: UserDefaults = .standard) -> [String] {
         defaults.stringArray(forKey: memoryKey) ?? []

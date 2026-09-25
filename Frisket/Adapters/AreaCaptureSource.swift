@@ -1,7 +1,7 @@
 import Foundation
 import FrisketCore
 
-struct AreaSelection {
+public struct AreaSelection {
     let displayID: UInt32
     let displayFrame: CGRect // AppKit global points (bottom-left origin).
     let rect: CGRect
@@ -9,7 +9,7 @@ struct AreaSelection {
     let spaceGeneration: UInt64 // Sampled when the rectangle is accepted.
 }
 
-struct AreaCaptureRequest {
+public struct AreaCaptureRequest {
     let displayID: UInt32
     let sourceRect: CGRect // Display-local points (top-left origin), snapped to pixels.
     let pixelWidth: Int
@@ -32,7 +32,7 @@ extension AreaCaptureRequest {
 }
 
 /// The OS seam: prefetch completes before selection; all selection paths hide before pixels.
-@MainActor protocol AreaCapturePlatform: AnyObject {
+@MainActor public protocol AreaCapturePlatform: AnyObject {
     var spaceGeneration: UInt64 { get }
     func prefetchShareableContent() async throws
     func prepareSelection() async
@@ -43,14 +43,14 @@ extension AreaCaptureRequest {
     func finishCapture()
 }
 
-@MainActor final class AreaCaptureSource: CapturePixelSource {
+@MainActor public final class AreaCaptureSource: CapturePixelSource {
     private let platform: any AreaCapturePlatform
     private let bundleIdentifier: String
     private let exclusions: @MainActor () -> Set<String>
     private let latency: CaptureLatencyLog?
     /// Uncompressed RGBA ceiling. Nil uses the encoded `maximumBytes` allowance.
     private let decodedByteCeiling: Int?
-    init(platform: any AreaCapturePlatform, bundleIdentifier: String,
+    public init(platform: any AreaCapturePlatform, bundleIdentifier: String,
          exclusions: @escaping @MainActor () -> Set<String> = { [] },
          latency: CaptureLatencyLog? = nil, decodedByteCeiling: Int? = nil) {
         self.platform = platform
@@ -60,7 +60,7 @@ extension AreaCaptureRequest {
         self.decodedByteCeiling = decodedByteCeiling
     }
 
-    func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
+    public func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
         defer { platform.finishCapture() }
         let previewGeneration = platform.spaceGeneration
         do { try await platform.prefetchShareableContent() }

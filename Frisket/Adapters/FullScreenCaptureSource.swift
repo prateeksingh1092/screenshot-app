@@ -1,21 +1,21 @@
 import Foundation
 import FrisketCore
 
-@MainActor protocol FullScreenCapturePlatform: AnyObject {
+@MainActor public protocol FullScreenCapturePlatform: AnyObject {
     func prefetchShareableContent() async throws
     func displayUnderPointer() -> SelectionDisplay?
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data
     func finishCapture()
 }
 
-@MainActor final class FullScreenCaptureSource: CapturePixelSource {
+@MainActor public final class FullScreenCaptureSource: CapturePixelSource {
     private let platform: any FullScreenCapturePlatform
     private let bundleIdentifier: String
     private let latency: CaptureLatencyLog?
     private let exclusions: @MainActor () -> Set<String>
     /// Uncompressed RGBA ceiling. Nil uses the encoded `maximumBytes` allowance.
     private let decodedByteCeiling: Int?
-    init(platform: any FullScreenCapturePlatform, bundleIdentifier: String,
+    public init(platform: any FullScreenCapturePlatform, bundleIdentifier: String,
          exclusions: @escaping @MainActor () -> Set<String> = { [] },
          latency: CaptureLatencyLog? = nil, decodedByteCeiling: Int? = nil) {
         self.platform = platform
@@ -25,7 +25,7 @@ import FrisketCore
         self.decodedByteCeiling = decodedByteCeiling
     }
 
-    func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
+    public func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
         defer { platform.finishCapture() }
         do { try await platform.prefetchShareableContent() }
         catch let failure as CaptureSourceFailure { return .failure(failure) }

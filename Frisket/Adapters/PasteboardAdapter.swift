@@ -2,14 +2,15 @@ import AppKit
 import FrisketCore
 
 /// Write-only system seam. Tests receive the actual AppKit items and options.
-@MainActor protocol PasteboardDestination: AnyObject {
+@MainActor public protocol PasteboardDestination: AnyObject {
     var changeCount: Int { get }
     func replace(with items: [NSPasteboardItem], options: NSPasteboard.ContentsOptions) -> Int?
 }
 
-@MainActor final class GeneralPasteboardDestination: PasteboardDestination {
-    var changeCount: Int { NSPasteboard.general.changeCount }
-    func replace(with items: [NSPasteboardItem], options: NSPasteboard.ContentsOptions) -> Int? {
+@MainActor public final class GeneralPasteboardDestination: PasteboardDestination {
+    public init() {}
+    public var changeCount: Int { NSPasteboard.general.changeCount }
+    public func replace(with items: [NSPasteboardItem], options: NSPasteboard.ContentsOptions) -> Int? {
         let board = NSPasteboard.general
         board.prepareForNewContents(with: options)
         guard board.writeObjects(items) else { return nil }
@@ -17,11 +18,11 @@ import FrisketCore
     }
 }
 
-@MainActor final class PasteboardAdapter: ImageClipboard, TextClipboard {
+@MainActor public final class PasteboardAdapter: ImageClipboard, TextClipboard {
     private let destination: any PasteboardDestination
-    init(destination: any PasteboardDestination) { self.destination = destination }
+    public init(destination: any PasteboardDestination) { self.destination = destination }
 
-    func write(_ image: ClipboardImage) async -> Result<ClipboardReceipt, ClipboardFailure> {
+    public func write(_ image: ClipboardImage) async -> Result<ClipboardReceipt, ClipboardFailure> {
         // This method has no suspension between the metadata check and replacement.
         // Never read types, items or contents from the general pasteboard.
         if let receipt = image.replacing, destination.changeCount != receipt.changeCount {
@@ -36,7 +37,7 @@ import FrisketCore
         return .success(ClipboardReceipt(changeCount: count))
     }
 
-    func writeText(_ text: String) async -> Result<ClipboardReceipt, ClipboardFailure> {
+    public func writeText(_ text: String) async -> Result<ClipboardReceipt, ClipboardFailure> {
         let item = NSPasteboardItem()
         guard item.setString(text, forType: .string),
               item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")),

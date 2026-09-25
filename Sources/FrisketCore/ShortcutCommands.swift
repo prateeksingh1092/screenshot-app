@@ -29,16 +29,6 @@ public enum ShortcutAction: String, CaseIterable, Codable, Sendable {
         }
         return ShortcutBinding(keyCode: code, modifiers: 768) // Command–Shift
     }
-
-    /// Control–Option–Command defaults from before the number row. An unchanged saved copy migrates.
-    public var legacyDefaultBinding: ShortcutBinding? {
-        switch self {
-        case .captureArea: ShortcutBinding(keyCode: 21, modifiers: 6400)
-        case .captureFullScreen: ShortcutBinding(keyCode: 20, modifiers: 6400)
-        case .focusThumbnails: ShortcutBinding(keyCode: 17, modifiers: 6400)
-        case .showHistory, .captureWindow: nil
-        }
-    }
 }
 
 extension ShortcutAction {
@@ -114,13 +104,10 @@ public enum SystemScreenshotHotkeys {
 
     public init(system: any ShortcutSystem) { self.system = system }
 
-    /// Saved shortcuts, with an unchanged Control–Option–Command default replaced by the number-row default.
+    /// Saved shortcuts, with the default for any action that has none saved.
     public static func resolved(saved: [ShortcutAction: ShortcutBinding]) -> [ShortcutAction: ShortcutBinding] {
         var resolved: [ShortcutAction: ShortcutBinding] = [:]
-        for action in ShortcutAction.allCases {
-            let stored = saved[action] ?? action.defaultBinding
-            resolved[action] = stored == action.legacyDefaultBinding ? action.defaultBinding : stored
-        }
+        for action in ShortcutAction.allCases { resolved[action] = saved[action] ?? action.defaultBinding }
         return resolved
     }
 

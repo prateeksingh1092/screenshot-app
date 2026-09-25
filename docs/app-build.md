@@ -15,10 +15,12 @@ and `swift test` compile the core from the same package. GRDB is pinned once,
 in `Package.swift`. The project's `project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
 is a symlink to the root `Package.resolved`. The package links no extra
 libraries (ticket 67 removed the zlib and libcompression flags). `SDKROOT` is `macosx`, so the build uses the
-installed Xcode's SDK. The AppKit/SwiftUI adapters still compile in the app
-target (ticket 77 moves them into a package product). The root package also
-compiles `Frisket/Adapters/` in a test-only module, so Swift Testing can
-exercise the adapters without an application host.
+installed Xcode's SDK. The app also links the package's `FrisketAdapters`
+product (ticket 77): the synchronized `Frisket` folder's membership exceptions
+list every `Adapters/*.swift` file (Xcode ignores a bare folder name there), so the adapters compile once, in the package, and the code the
+app runs is the code `FrisketAdapterTests` exercises without an application
+host. The `app-sources` repository check fails if an adapter file is missing from
+the exceptions (add a new adapter file there) or the app stops linking the product.
 
 **Signing.** The app target's base configuration is `Config/Frisket.xcconfig`.
 It signs ad hoc unless `Config/Signing.xcconfig` exists. That file is ignored by
@@ -205,7 +207,7 @@ xcrun swiftc -typecheck -parse-as-library -swift-version 6 \
   -target x86_64-apple-macos26.0 -module-name Frisket \
   -I .build/x86_64-apple-macosx/debug/Modules \
   -Xcc -fmodule-map-file=.build/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap \
-  Frisket/*.swift Frisket/Adapters/*.swift
+  Frisket/*.swift
 ```
 
 This typecheck does not establish Xcode linking, packaging, signing, or runtime

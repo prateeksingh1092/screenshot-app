@@ -49,8 +49,6 @@ public enum ThumbnailAutoDismiss: Equatable, Sendable {
 
 /// Persisted Settings mapping. `never` is an explicit flag so stored zero stays immediate timeout.
 public struct ThumbnailAutoDismissPreference: Equatable, Sendable {
-    public static let neverKey = "thumbnailAutoDismissNever"
-    public static let secondsKey = "thumbnailAutoDismissSeconds"
     public static let defaultSeconds = 10
 
     public var never: Bool

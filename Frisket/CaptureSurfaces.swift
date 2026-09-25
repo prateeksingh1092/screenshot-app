@@ -1,4 +1,5 @@
 import AppKit
+import FrisketAdapters
 import FrisketCore
 
 /// Thumbnail cards, the editor, and capture dispatch. Policy stays in `CaptureLifecycleCoordinator`.

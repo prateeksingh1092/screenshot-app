@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import FrisketAdapters
 import FrisketCore
 
 /// This target does not enable App Sandbox. A bundle-scoped plain path avoids
@@ -9,7 +10,7 @@ import FrisketCore
     @Published private(set) var message: String?
     private let historyRoot: URL
     private let defaults: UserDefaults
-    private let key = "exportFolderPath"
+    private let key = PreferenceKey.exportFolder.rawValue
 
     init(historyRoot: URL, defaults: UserDefaults = .standard) {
         self.historyRoot = historyRoot

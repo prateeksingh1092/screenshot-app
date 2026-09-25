@@ -27,7 +27,7 @@ import FrisketCore
         self.writeCopy = writeCopy
     }
 
-    @discardableResult func beginSession(from view: NSView, event: NSEvent, image: NSImage?) -> Bool {
+    @discardableResult public func beginSession(from view: NSView, event: NSEvent, image: NSImage?) -> Bool {
         guard active == nil else { return false }
         accepting = true
         queuedWrite = nil
@@ -41,7 +41,7 @@ import FrisketCore
     }
 
     /// After the command returns, fail a promise write that never met a handoff.
-    func endHandoff() {
+    public func endHandoff() {
         accepting = false
         if let queuedWrite {
             queuedWrite.1(promiseError())
@@ -203,20 +203,20 @@ import FrisketCore
     }
 }
 
-final class ThumbnailDragWellView: NSView {
-    var image: NSImage?
-    var dragEnabled = true
-    var onMouseDown: ((NSView, NSEvent) -> Void)?
+public final class ThumbnailDragWellView: NSView {
+    public var image: NSImage?
+    public var dragEnabled = true
+    public var onMouseDown: ((NSView, NSEvent) -> Void)?
 
-    override var acceptsFirstResponder: Bool { true }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    public override var acceptsFirstResponder: Bool { true }
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    override func draw(_ dirtyRect: NSRect) {
+    public override func draw(_ dirtyRect: NSRect) {
         guard let image, image.size.width > 0, image.size.height > 0, bounds.width > 0, bounds.height > 0 else { return }
         image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1)
     }
 
-    override func mouseDown(with event: NSEvent) {
+    public override func mouseDown(with event: NSEvent) {
         guard dragEnabled else { return }
         DragStart.track(from: self, event: event) { [weak self] drag in
             guard let self, self.dragEnabled else { return }
@@ -225,9 +225,9 @@ final class ThumbnailDragWellView: NSView {
     }
 }
 
-@MainActor enum DragStart {
+@MainActor public enum DragStart {
     /// Accessory apps ignore a drag that begins on mouse-down before the app is active.
-    static func track(from view: NSView, event: NSEvent, perform: (NSEvent) -> Void) {
+    public static func track(from view: NSView, event: NSEvent, perform: (NSEvent) -> Void) {
         guard let window = view.window else { return }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKey()

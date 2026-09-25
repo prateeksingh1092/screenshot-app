@@ -1,11 +1,11 @@
 import AppKit
-@preconcurrency import ScreenCaptureKit
+import ScreenCaptureKit
 import QuartzCore
 import ImageIO
 import UniformTypeIdentifiers
 import FrisketCore
 
-@MainActor final class WindowScreenCapturePlatform: NSObject, WindowCapturePlatform {
+@MainActor public final class WindowScreenCapturePlatform: NSObject, WindowCapturePlatform {
     private let permission: ScreenCapturePermissionAdapter
     private let bundleIdentifier: String
     private let exclusions: @MainActor () -> Set<String>
@@ -14,7 +14,7 @@ import FrisketCore
     private var environmentGeneration = 0
     private var selectionGeneration = 0
 
-    init(permission: ScreenCapturePermissionAdapter, bundleIdentifier: String,
+    public init(permission: ScreenCapturePermissionAdapter, bundleIdentifier: String,
          exclusions: @escaping @MainActor () -> Set<String> = { [] }) {
         self.permission = permission
         self.bundleIdentifier = bundleIdentifier
@@ -26,14 +26,14 @@ import FrisketCore
             name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
     }
 
-    func prepareWindows() async throws -> WindowRows {
+    public func prepareWindows() async throws -> WindowRows {
         selectionGeneration = environmentGeneration
         let windows = try await loadWindows()
         guard selectionGeneration == environmentGeneration else { throw CaptureSourceFailure.cancelled }
         return windows
     }
 
-    func displays() -> [SelectionDisplay] { NSScreen.screens.compactMap(\.selectionDisplay) }
+    public func displays() -> [SelectionDisplay] { NSScreen.screens.compactMap(\.selectionDisplay) }
 
     /// Fetches both listings; `WindowSelection(rows:)` joins them. ScreenCaptureKit is authoritative
     /// for shareability; CG supplies metadata-only front-to-back order.
@@ -66,22 +66,22 @@ import FrisketCore
             })
     }
 
-    func selectWindow(from selection: WindowSelection) async -> UInt32? {
+    public func selectWindow(from selection: WindowSelection) async -> UInt32? {
         guard selectionGeneration == environmentGeneration else { return nil }
         return await overlay.select(from: selection)
     }
 
-    func hideSelection() {
+    public func hideSelection() {
         overlay.hide()
         CATransaction.flush()
     }
 
-    func finishCapture() { content = nil }
+    public func finishCapture() { content = nil }
 
     /// Uncompressed RGBA ceiling. Nil uses the encoded `maximumBytes` allowance.
-    var decodedByteCeiling: Int?
+    public var decodedByteCeiling: Int?
 
-    func capture(_ selected: WindowCandidate, maximumBytes: Int) async throws -> Data {
+    public func capture(_ selected: WindowCandidate, maximumBytes: Int) async throws -> Data {
         // Selection has already been hidden. Refresh after clicking so closed,
         // minimized, moved-to-another-Space, or recycled windows fail closed.
         guard selectionGeneration == environmentGeneration else { throw CaptureSourceFailure.cancelled }

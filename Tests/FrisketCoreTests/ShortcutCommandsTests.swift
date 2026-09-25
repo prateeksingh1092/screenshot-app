@@ -48,22 +48,18 @@ import Testing
     #expect(commands.permits(.captureWindow))
 }
 
-@MainActor @Test func unchangedLegacyDefaultsMigrateToCommandShiftNumbers() {
+/// The ⌃⌥⌘ defaults never shipped, so a saved ⌃⌥⌘ shortcut is the user's own choice and is kept.
+@MainActor @Test func aSavedControlOptionCommandShortcutIsKept() {
     let system = ShortcutSystemStandIn()
-    system.saved = [
-        .captureArea: ShortcutBinding(keyCode: 21, modifiers: 6400),
-        .captureFullScreen: ShortcutBinding(keyCode: 20, modifiers: 6400),
-        .focusThumbnails: ShortcutBinding(keyCode: 17, modifiers: 6400),
-    ]
+    let saved = ShortcutBinding(keyCode: 21, modifiers: 6400)
+    system.saved = [.captureArea: saved]
     let commands = ShortcutCommands(system: system)
     commands.start()
-    #expect(commands.active[.captureArea] == ShortcutBinding(keyCode: 21, modifiers: 768))
-    #expect(commands.active[.captureFullScreen] == ShortcutBinding(keyCode: 20, modifiers: 768))
-    #expect(commands.active[.focusThumbnails] == ShortcutBinding(keyCode: 19, modifiers: 768))
+    #expect(commands.active[.captureArea] == saved)
     #expect(commands.active[.showHistory] == ShortcutBinding(keyCode: 18, modifiers: 768))
 }
 
-@MainActor @Test func aCustomShortcutSurvivesTheNumberRowMigration() {
+@MainActor @Test func aCustomShortcutSurvivesAndOtherActionsTakeTheirDefaults() {
     let system = ShortcutSystemStandIn()
     let custom = ShortcutBinding(keyCode: 0, modifiers: 256)
     system.saved = [.captureArea: custom]
