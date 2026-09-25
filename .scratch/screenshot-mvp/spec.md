@@ -119,11 +119,36 @@ Frisket is a native macOS menu-bar app that captures an area, a window, the full
 80. As a user, I want Frisket to use almost no CPU while idle and to keep the low-power GPU, so that it doesn't drain battery or heat this Mac.
 81. As a user, I want a long scrolling capture to stay within a bounded amount of memory, so that it doesn't bog down my 16 GB Mac.
 
+### Remediation behaviour (2026-09-24, decision 57)
+
+These stories come from the live evaluation in `Plans/dreamy-giggling-barto.md`. Where they conflict with an earlier story or implementation decision in this spec, these stories win.
+
+82. As a user, I want the saved, copied, and dragged image to match the editor preview exactly, so that what I see is what I share (D1, D23).
+83. As a user, I want a label to keep every character I type, including lowercase and `$ . - %`, so that prices and versions stay correct (D6).
+84. As a user, I want window capture to select the window under the pointer and never the cursor, and a failure message that names the real cause, so that window capture works (D2).
+85. As a user, I want a click inside a selection to stay in Frisket and Esc to always cancel, so that I never click the app underneath by mistake (D4).
+86. As a user, I want every selection to have an origin display, including when the pointer is on the top pixel row, so that a selection always starts (D14).
+87. As a user, I want Done, Copy, and Save always visible in the editor, and ⌘C, ⌘S, and Return always to work, so that I can always finish an edit. The finish action is called "Done" everywhere (D5).
+88. As a user, I want a cancelled drag to leave the capture pending with nothing on disk, so that only a completed drop finalizes it (D7, DA-3).
+89. As a user, I want Copy Text on an image with no text to leave my clipboard unchanged and show a non-modal "No text found", so that I don't lose what I copied (D8, DA-5).
+90. As a user, I want Thumbnails to be one fixed size and to stack without overlapping, so that I can see every pending capture (D9).
+91. As a user, I want History Delete to ask for confirmation, and to close the capture's open Thumbnail first, so that deletion is deliberate and always succeeds (D10, DA-4).
+92. As a user, I want the page to keep keyboard scrolling during a scrolling capture, and ⌘⇧6 pressed again to finish it, so that I can scroll with the keyboard (D11, DA-9).
+93. As a user, I want a scrolling capture to reproduce the page exactly, to ask me to slow down when a scroll is too fast or ambiguous while keeping the part already captured, and to stop at 32,768 px, so that I never get a silently wrong image (D3, D20, DA-6).
+94. As a user, I want ⌘⇧2 to move keyboard focus to the latest Thumbnail with a visible focus ring, so that I can act on it from the keyboard (D12).
+95. As a user, I want Frisket to leave macOS settings unchanged, show which macOS screenshot shortcuts to turn off, link to System Settings, and restore them only when I ask, so that I stay in control of my Mac (D13, DA-2).
+96. As a user, I want cropping never to leave a sliver of redacted content visible, so that Solid redaction always conceals (D18).
+97. As a user, I want History row actions to work after "Try Again", so that recovery really recovers (D19).
+98. As a user, I want to restore a History item to a Thumbnail with Copy, Save, Drag, and Copy Text but no Edit, so that I can reuse a finalized capture (DA-10, decision 28).
+99. As a user, I want notices never to block me, and only destructive choices to ask, so that Frisket stays out of my way (DA-5).
+100. As a user, I want the Loupe back while I choose a selection, so that I can place edges exactly (D26, story 6).
+101. As a user, I want History and Settings to open on the active display with the right focus, the Thumbnail's accessibility name to say whether the capture is pending or finalized, Save to confirm, and exported file names to carry a date, so that Frisket is clear to see and to hear (D15, D16, D17).
+
 ## Implementation Decisions
 
 ### Architecture and boundaries
 
-- Frisket is built fresh. Snapzy is a read-only reference for scenarios, edge cases, and bug fixes (ADR 0001). The scrolling stitcher is the only port candidate; a trial decides it (see Further Notes). Any ported file keeps its BSD-3 header and a provenance entry, and its tests are converted to Swift Testing.
+- Frisket is built fresh. Snapzy is a read-only reference for scenarios, edge cases, and bug fixes (ADR 0001). The scrolling stitcher is Frisket-owned code; the trial port was removed, and nothing from Snapzy ships (ADR 0001; `docs/ported-files.json` is empty).
 - Core logic lives in a Swift package that builds without Xcode. The app target (Xcode 26.5 with its SDK pinned, decision 47; package tests also need Xcode's toolchain for Swift Testing) holds AppKit and SwiftUI adapters. Dependency direction: adapters depend on the core; lifecycle policy never depends on AppKit controllers, preference singletons, or concrete GRDB types.
 - Dependency allowlist is GRDB only, linked statically. No Sparkle, WebP, networking, analytics, URL scheme, or App Intents in v1.
 - Deployment target macOS 26. Development builds are native architecture only; release builds are universal and label the arm64 half "built and signed, never executed" until an Apple-silicon run exists. Nothing is distributed before that run.
@@ -150,10 +175,19 @@ Frisket is a native macOS menu-bar app that captures an area, a window, the full
 - **Shortcuts:** Carbon hot keys only; no event taps and no global mouse monitors while idle. Defaults are Command–Shift and a number (decision 55). When one of those bindings is still an enabled macOS screenshot shortcut, Frisket turns that symbolic hotkey off and remembers it for restore. Remapping validates against the system list and fails closed when it can't verify.
 - **Settings and onboarding:** SwiftUI. Retention days and size limit, shortcuts, auto-dismiss, export folder, Capture exclusion list, eviction history line, third-party notices. Onboarding covers permission, what History keeps, and that Save keeps a permanent copy.
 - **Diagnostics:** a logging interface that accepts only an event from a closed set, an error domain and code, and fields from a fixed allowed set; no free-text strings. System-log and assertion messages are static text. Local only, 7-day retention.
-- **Signing and build:** a stable signing identity from Prateek's Xcode Personal Team (created when the first build needs it), hardened runtime, minimal entitlements written fresh, no debugging entitlement on the installed build, one fixed install path, and one signing path. No update feed or key. Packaging steps are documented; a packaging script is written only when a delivery need exists. Before the first commit: no project licence while the repository stays private (decision 43), third-party notices (GRDB, copied skills, and Snapzy if the stitcher is ported), extended ignore rules, a staged-diff secret review.
+- **Signing and build:** a stable signing identity from Prateek's Xcode Personal Team (created when the first build needs it), hardened runtime, minimal entitlements written fresh, no debugging entitlement on the installed build, one fixed install path, and one signing path. No update feed or key. Packaging steps are documented; a packaging script is written only when a delivery need exists. Before the first commit: the project licence is MIT (decision 56, which amends decision 43), third-party notices (GRDB, copied skills, and Snapzy if the stitcher is ported), extended ignore rules, a staged-diff secret review.
 
 ## Testing Decisions
 
+- **Remediation seams (decision 57).** Tests for stories 82–101 run at these interfaces:
+  - `CaptureFlattening.flatten`, and `CaptureRenderer.preview(...).render(edits)` for preview parity;
+  - `ScrollingCaptureSession.ingest`;
+  - `WindowSelection(rows:)`;
+  - the Thumbnail status from `thumbnails()`;
+  - `HistoryStore.rows()`;
+  - `deliver(.drag)`.
+
+  The red loops on branch `diagnose/red-loops` are the first tests at these interfaces.
 - A good test drives the app the way a user would and checks only observable results: command outcomes, public queries, bytes delivered to recording stand-ins, and files on disk. Tests never reach into private state, reflection, or timing internals.
 - **Seam 1, the command layer over the Capture lifecycle coordinator:** tests issue commands against stand-ins for the clock, the screen pixel source (fixtures), the clipboard, the drag handoff, and text recognition, with a real file store and real SQLite in a temporary directory. This covers lifecycle transitions, every thumbnail exit path, editor close and quit choices, retention and quota (including an oversized capture and equal timestamps), clock anomalies, delivery retries and stale commands, the history-database failure mode, and OCR on the rendered result.
 - **Redaction leak tests through seam 1:** fixtures place unique "canary" colours under each redaction; every output (clipboard, saved file, History image, drag file, thumbnail) is decoded in a fixed sRGB space, and every covered pixel must equal the fill with full opacity and no canary colour may appear anywhere. Cases cover 1x and 2x sources, fractional rectangles, crop, and an overlapping blur or magnifier.

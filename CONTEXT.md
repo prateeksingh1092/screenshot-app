@@ -4,6 +4,8 @@ Capturing visible content on a Mac, preparing it for use, and delivering the res
 
 ## Language
 
+### Capturing
+
 **Capture**:
 A still image obtained from a selected area, window, or entire screen.
 _Avoid_: Recording (which implies moving images)
@@ -11,15 +13,45 @@ _Avoid_: Recording (which implies moving images)
 **Scrolling capture**:
 A single still image assembled from successive views of content that extends beyond the visible area.
 
+**Selection**:
+The rectangle chosen on screen for an area capture or a scrolling capture.
+_Avoid_: Region, crop (crop happens in the editor)
+
+**Origin display**:
+The display on which a selection begins; the selection cannot leave it.
+
+**Loupe**:
+A magnified view of the pixels under the pointer, shown while choosing a selection so its edges can be placed exactly.
+_Avoid_: Magnifier (confused with Magnify)
+
+**Capture exclusion list**:
+Apps whose windows are always left out of captures.
+
+### Editing
+
 **Annotation**:
 A visual addition to a capture, such as an arrow, label, or shape.
 
 **Solid redaction**:
 An opaque replacement of a selected image region to conceal its contents in the delivered image.
-_Avoid_: Blur (a different transformation)
+_Avoid_: Blur, pixelate, black box (none of these is guaranteed to conceal)
+
+**Blur**:
+An editor effect that softens part of a capture. It never conceals content.
+_Avoid_: Redaction
+
+**Magnify**:
+An editor effect that enlarges part of a capture in place. It never conceals content.
+_Avoid_: Loupe, zoom
 
 **OCR**:
 Extraction of text from a capture so that the text can be copied or otherwise used.
+
+### Lifecycle
+
+**Thumbnail**:
+The small floating preview of one capture, shown right after capturing or editing, from which the capture is copied, saved, dragged, edited, or dismissed.
+_Avoid_: Card, Quick Access Overlay, popup
 
 **Pending capture**:
 A capture that exists only in memory, shown as a thumbnail or open in the editor, and not yet finalized or deleted. Nothing about it reaches storage before an authorized finalization request.
@@ -38,6 +70,3 @@ _Avoid_: Deciding ownership from a file's path
 
 **Export**:
 A copy of a finalized capture's rendered image placed outside the app-owned root by Save, drag, or Export. Frisket never moves, tracks, or deletes an export.
-
-**Capture exclusion list**:
-Apps whose windows are always left out of captures.

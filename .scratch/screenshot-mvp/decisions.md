@@ -114,6 +114,28 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
 
 55. **Command–Shift number shortcuts (2026-09-23):** Prateek will replace CleanShot and wants captures on Command–Shift and a number, not Control–Option–Command. This supersedes decision 29 for the defaults. The defaults are ⌘⇧1 History, ⌘⇧2 focus the latest thumbnail, ⌘⇧3 full screen, ⌘⇧4 area, ⌘⇧5 window, and ⌘⇧6 scrolling page. Carbon registration stays. If macOS still has the screenshot symbolic hotkeys for ⇧⌘3/4/5/6 or their Control variants, Frisket turns those identifiers off (28, 29, 30, 31, 181, 182, 184), remembers which ones it changed, and can restore only those. An unchanged saved Control–Option–Command default migrates. A shortcut the user chose themselves stays. Remapping still fails closed on a system collision Frisket did not just claim, a duplicate, or an unverifiable system list. CleanShot may be quit so it releases these keys.
 56. **Beta use on Intel and Apple silicon (2026-09-23):** Prateek wants other people to run Frisket and try it, not only an automated suite. Development builds follow the machine's architecture (`NATIVE_ARCH_64_BIT`): x86_64 on this Intel Mac, arm64 on Apple silicon. Release stays a universal binary. The floor remains macOS 26, which is the deployment target already in the project; lowering it is a separate compatibility pass. The project licence for Frisket itself is MIT so it can be circulated as open source. Third-party notices stay in `THIRD-PARTY-NOTICES.md`. This amends decision 43's "private, no project licence" for the moment of publication. A public remote is created only after a local use pass, and the repository must not gain signing secrets or captured personal pixels.
+57. **Remediation decisions (2026-09-24):** Prateek delegated all technical choices ("I don't have enough technical knowledge; that's why I'm asking you"), in line with decision 54. The coordinator accepts the proposals in `Plans/dreamy-giggling-barto.md` §2. Evidence is in the plan's §1 and in `Plans/2026-09-24-session-handoff.md`.
+    - **DA-1:** FrisketCore rendering may import CoreGraphics, CoreText, ImageIO and Accelerate. The core still does no disk I/O.
+    - **DA-2** (amends the mechanism of 55; the ⌘⇧ defaults stay):
+      - Frisket stops writing `com.apple.symbolichotkeys`.
+      - It detects collisions read-only and deep-links to System Settings › Keyboard › Keyboard Shortcuts › Screenshots.
+      - Restoring what Frisket turned off is opt-in.
+    - **DA-3** (amends 17): a drag finalizes when a destination accepts the promise; a cancelled drag leaves the capture pending, with nothing on disk.
+    - **DA-4** (with DA-11, amends the commit protocol behind 5, 18 and 20):
+      - Keep 30 days / 1 GB.
+      - Atomic PNG writes, GRDB at default durability, and a launch sweep that adopts orphan PNGs.
+      - Sidecars, the ledger, the `F_FULLFSYNC` chain and the flock are removed.
+      - History Delete asks for confirmation.
+    - **DA-5:** notices are non-modal; modals only for destructive or irreversible choices.
+    - **DA-6:** scrolling and edited output are capped at 32,768 px tall. Encoded size is used only for History admission (27).
+    - **DA-7** (amends 7, 8, 45–53):
+      - Merges are gated by `scripts/ci.sh`, a pre-push hook and the automated live harness.
+      - Process artefacts go to `archive/`.
+      - The lead agent is whichever one Prateek runs.
+      - Hosted CI waits until the repository is public (billing, 9).
+    - **DA-9:** the scrolling panel never takes key; ⌘⇧6 pressed again means Done.
+    - **DA-10** (consistent with 28): History items can be restored to a Thumbnail that is already committed, with Edit disabled.
+    - **DA-11:** see DA-4.
 
 ## Evaluation update: Xcode question resolved narrowly
 
