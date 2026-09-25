@@ -82,7 +82,7 @@ import UniformTypeIdentifiers
     func displayUnderPointer() -> FullScreenDisplay? {
         let pointer = NSEvent.mouseLocation
         captureDisplayID = nil
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }),
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) }),   // D14: top row included
               let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
             return nil
         }

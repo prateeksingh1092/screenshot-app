@@ -3,8 +3,8 @@
 # flip its row to pass in the same change; an unexpected pass (XPASS) fails the run.
 # id	defects	expect	check
 area	-	pass	Area capture of the pattern; Copy gives the exact 320×180 pattern (pattern --verify)
-area-click-inside	D4	xfail	A press inside the Selection doesn't move the pattern window, and Esc still cancels
-top-row	D14	xfail	A pointer on the display's top pixel row starts a Selection with an Origin display; Esc cancels it
+area-click-inside	D4	pass	A press inside the Selection doesn't move the pattern window, and Esc still cancels
+top-row	D14	pass	A pointer on the display's top pixel row starts a Selection with an Origin display; Esc cancels it
 window	D2	xfail	Window capture of a pattern window gives exactly that window (pattern --verify-full)
 full	-	pass	Full-screen capture gives the exact display (pattern --verify-full)
 scroll-steady	D3	xfail	Four steady wheel steps stitch the scroll page exactly (meter blocks)
