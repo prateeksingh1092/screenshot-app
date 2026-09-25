@@ -267,26 +267,16 @@ def network_issues(files):
     return issues
 
 
-# D22: C functions bound with the Swift calling convention. Ticket 63 removed notify_post;
-# ticket 67 removes the zlib and libcompression bindings. Nothing may join this list.
-KNOWN_SILGEN_NAMES = {
-    ("Sources/FrisketCore/StripPNGEncoder.swift", "compression_stream_init"),
-    ("Sources/FrisketCore/StripPNGEncoder.swift", "compression_stream_process"),
-    ("Sources/FrisketCore/StripPNGEncoder.swift", "compression_stream_destroy"),
-    ("Sources/FrisketCore/StripPNGEncoder.swift", "crc32"),
-    ("Sources/FrisketCore/StripPNGEncoder.swift", "adler32"),
-}
-
-
-def silgen_issues(files, strict=False):
+# D22: C functions bound with the Swift calling convention. Ticket 63 removed notify_post and
+# ticket 67 removed the zlib and libcompression bindings, so every use in product code is rejected.
+def silgen_issues(files):
     issues = []
     for path, text in product_swift(files):
         if not re.search(r'@_silgen_name\b', swift_code(text)):
             continue
         names = re.findall(r'@_silgen_name\s*\(\s*"([^"]*)"', text) or ["?"]
         for name in names:
-            if strict or (path, name) not in KNOWN_SILGEN_NAMES:
-                issues.append(f"{path}: @_silgen_name(\"{name}\") binds a C function with the Swift calling convention")
+            issues.append(f"{path}: @_silgen_name(\"{name}\") binds a C function with the Swift calling convention")
     return issues
 
 def app_source_issues(root):
@@ -415,7 +405,7 @@ def check_fixture(path):
     elif fixture["check"] == "network":
         actual = network_issues(fixture["files"])
     elif fixture["check"] == "silgen":
-        actual = silgen_issues(fixture["files"], fixture.get("strict", False))
+        actual = silgen_issues(fixture["files"])
     else:
         raise ValueError("unknown fixture check")
     if actual != fixture["expected"]:
@@ -459,7 +449,7 @@ def dumped_manifest(root):
     return json.loads(result.stdout)
 
 
-def repository_issues(root, check, strict=False):
+def repository_issues(root, check):
     if check == "app-sources":
         return app_source_issues(root)
     if check == "dependencies":
@@ -472,7 +462,7 @@ def repository_issues(root, check, strict=False):
     if check == "network":
         return network_issues(files)
     if check == "silgen":
-        return silgen_issues(files, strict)
+        return silgen_issues(files)
     if check == "imports":
         return import_issues(files)
     if check == "diagnostics":
@@ -491,8 +481,6 @@ if __name__ == "__main__":
     mode.add_argument("--fixture", type=pathlib.Path)
     mode.add_argument("--root", type=pathlib.Path)
     parser.add_argument("--check", choices=CHECKS)
-    parser.add_argument("--strict", action="store_true",
-                        help="silgen: also report the known D22 uses")
     args = parser.parse_args()
     try:
         if args.fixture:
@@ -500,7 +488,7 @@ if __name__ == "__main__":
         else:
             if not args.check:
                 parser.error("--root requires --check")
-            issues = repository_issues(args.root.resolve(), args.check, args.strict)
+            issues = repository_issues(args.root.resolve(), args.check)
             if issues:
                 raise ValueError("\n".join(issues))
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:

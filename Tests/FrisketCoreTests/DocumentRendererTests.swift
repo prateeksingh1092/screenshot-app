@@ -293,7 +293,7 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         ]))
     }
 
-    @Test func blurAveragesAThreeByThreeWindow() throws {
+    @Test func blurAveragesAThreeByThreeWindowWithVImage() throws {
         let base = try picture([
             "aaa",
             "a.a",
@@ -301,8 +301,8 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         ])
         let effect = try #require(DocumentEffect(.blur(x: 0, y: 0, width: 3, height: 3)))
         let rendered = try render(base, effects: [effect])
-        // This 3×3 is already one average. Further passes stay put under integer division.
-        #expect(rendered.pixel(x: 1, y: 1) == RGBAPixel(red: 0xaf, green: 0x73, blue: 0x41, alpha: 0xff))
+        // vImage's box convolution (edge-extended, rounded to nearest; ticket 67), six passes.
+        #expect(rendered.pixel(x: 1, y: 1) == RGBAPixel(red: 0xaf, green: 0x74, blue: 0x42, alpha: 0xff))
     }
 
     @Test func blurAndMagnifyOverARedactionKeepFillAndHideTheCanary() throws {
@@ -435,7 +435,8 @@ private struct SeededGenerator: RandomNumberGenerator {
 
 /// A 48-px-wide patterned capture with at least one of every edit kind: Solid redaction,
 /// rectangle, arrow, label, Blur and Magnify. Positions are anywhere in the image.
-private func generatedDocument(seed: UInt64, height: Int, effects withEffects: Bool = true) throws -> EditorDocument {
+private func generatedDocument(seed: UInt64, height: Int, effects withEffects: Bool = true,
+                               annotations withAnnotations: Bool = true) throws -> EditorDocument {
     var random = SeededGenerator(seed: seed)
     let width = 48
     var pixels: [RGBAPixel] = []
@@ -473,7 +474,7 @@ private func generatedDocument(seed: UInt64, height: Int, effects withEffects: B
         try #require(DocumentEffect(.blur(x: blurred.x, y: blurred.y, width: blurred.width, height: blurred.height))),
         try #require(DocumentEffect(.magnify(x: magnified.x, y: magnified.y, width: magnified.width, height: magnified.height)))
     ]
-    let edits = try #require(DocumentEdits(scale: 1, redactions: redactions, annotations: annotations,
+    let edits = try #require(DocumentEdits(scale: 1, redactions: redactions, annotations: withAnnotations ? annotations : [],
                                            effects: withEffects ? effects : []))
     return EditorDocument(base: base, edits: edits)
 }
@@ -497,24 +498,22 @@ private func generatedDocument(seed: UInt64, height: Int, effects withEffects: B
         }
     }
 
-    /// D1, effects: Blur and Magnify read only a 1-row halo, so they differ at strip boundaries.
-    /// Ticket 67 draws them natively (the production save path has no strips since ticket 65).
+    /// D1, effects: a strip that meets a Blur or Magnify box is widened to the box's whole rows
+    /// (and any effect box those rows meet), so each effect reads the same pixels as in the whole
+    /// image (ticket 67). Annotations keep the stated `annotationTolerance`; without them the strips
+    /// are exact.
     @Test(arguments: [7, 64, DocumentRenderer.stripHeight])
-    func d1StripOutputEqualsTheWholeImageRenderForEveryEditKind(stripHeight: Int) async throws {
-        let heights = [8, 13, 255, 256, 257, 600, 1024, 1500, 2000]
-        var cases: [(seed: UInt64, height: Int, whole: Bitmap, strips: Bitmap)] = []
-        for (index, height) in heights.enumerated() {
+    func d1StripOutputEqualsTheWholeImageRenderForEveryEditKind(stripHeight: Int) throws {
+        for (index, height) in [8, 13, 255, 256, 257, 600, 1024, 1500, 2000].enumerated() {
             let seed = UInt64(index + 1)
-            let document = try generatedDocument(seed: seed, height: height)
-            var strips: [Bitmap] = []
-            DocumentRenderer.forEachStrip(document, stripHeight: stripHeight) { strips.append($0) }
-            let joined = try #require(DocumentRenderer.concatenate(strips))
-            cases.append((seed, height, DocumentRenderer.render(document), joined))
-        }
-        try await knownDefect("D1") {
-            for item in cases {
-                let row = item.strips.firstDifferingRow(from: item.whole)
-                #expect(row == nil, "D1: strip height \(stripHeight), image height \(item.height), seed \(item.seed): strips differ from the whole render from row \(row ?? -1)")
+            for annotated in [true, false] {
+                let document = try generatedDocument(seed: seed, height: height, annotations: annotated)
+                var strips: [Bitmap] = []
+                DocumentRenderer.forEachStrip(document, stripHeight: stripHeight) { strips.append($0) }
+                let joined = try #require(DocumentRenderer.concatenate(strips))
+                let whole = DocumentRenderer.render(document)
+                let row = joined.firstDifferingRow(from: whole, tolerance: annotated ? annotationTolerance : 0)
+                #expect(row == nil, "D1: strip height \(stripHeight), image height \(height), seed \(seed), annotations \(annotated): strips differ from the whole render from row \(row ?? -1)")
             }
         }
     }

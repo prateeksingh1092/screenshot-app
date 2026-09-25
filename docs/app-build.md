@@ -13,8 +13,8 @@ through their existing build-setting paths, so they are not copied as resources.
 package's `FrisketCore` product through a local package reference, so the app
 and `swift test` compile the core from the same package. GRDB is pinned once,
 in `Package.swift`. The project's `project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
-is a symlink to the root `Package.resolved`. The package supplies the
-zlib and libcompression link flags. `SDKROOT` is `macosx`, so the build uses the
+is a symlink to the root `Package.resolved`. The package links no extra
+libraries (ticket 67 removed the zlib and libcompression flags). `SDKROOT` is `macosx`, so the build uses the
 installed Xcode's SDK. The AppKit/SwiftUI adapters still compile in the app
 target (ticket 77 moves them into a package product). The root package also
 compiles `Frisket/Adapters/` in a test-only module, so Swift Testing can
@@ -62,8 +62,8 @@ Carbon hot-key registration) used to run as a build phase on every Xcode build.
 It now runs in `ci.sh` and in the Swift suite, with its fixtures unchanged.
 Two checks are new. The first, `network`, rejects networking modules and
 APIs in product code (story 74). The second, `silgen`, rejects
-`@_silgen_name`, apart from the six D22 uses listed in the checker, which
-tickets 63 and 67 remove; `--strict` reports those too. Like the other lexical
+every `@_silgen_name` in product code (D22); tickets 63 and 67 removed the
+last uses, so it has no allowance list. Like the other lexical
 checks, none of these proves the absence of deliberately obfuscated or
 dynamically resolved APIs.
 

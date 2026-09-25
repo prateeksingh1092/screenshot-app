@@ -1,7 +1,6 @@
 {
   "check": "silgen",
   "files": {
-    "Sources/FrisketCore/StripPNGEncoder.swift": "@_silgen_name(\"crc32\")\nprivate func crc32(_ c: UInt, _ b: UnsafePointer<UInt8>?, _ n: UInt32) -> UInt\n@_silgen_name(\"adler32\")\nprivate func adler32(_ a: UInt, _ b: UnsafePointer<UInt8>?, _ n: UInt32) -> UInt",
     "Frisket/Comment.swift": "// @_silgen_name(\"write\") is banned\nlet note = \"@_silgen_name\"",
     "Tests/Probe.swift": "@_silgen_name(\"open\") func probe()"
   },

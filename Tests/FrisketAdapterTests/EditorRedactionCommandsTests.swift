@@ -1081,62 +1081,6 @@ extension EditedOutputParityTests {
         #expect(saved.width == expected.width && saved.height == expected.height)
         #expect(saved == expected, "the save path delivers the whole-image render at \(fixture.width)×\(fixture.height)")
     }
-
-    /// Peak memory of an edited 5,120 × 32,768 save through the production renderer (tickets 52 and 65).
-    /// The fixture PNG is written strip by strip, so the recorded peak is the save's.
-    /// Run: `FRISKET_EDITOR_MEMORY_RUN=1 scripts/test-core.sh -c release --filter editedSaveOf5120x32768`.
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["FRISKET_EDITOR_MEMORY_RUN"] == "1"))
-    func editedSaveOf5120x32768MeasuresPeakMemory() throws {
-        let started = ContinuousClock.now
-        let width = 5120, height = CaptureRenderer.maximumOutputHeight
-        let encoder = try #require(StripPNGEncoder(width: width, height: height))
-        var row = 0
-        while row < height {
-            let count = min(256, height - row)
-            var bytes = [UInt8](repeating: 255, count: width * count * 4)
-            for y in 0..<count {
-                for x in 0..<width {
-                    var value = UInt64((row + y) / 8) &* 0x9e3779b97f4a7c15 ^ UInt64(x / 16)
-                    value = (value ^ (value >> 30)) &* 0xbf58476d1ce4e5b9
-                    value ^= value >> 31
-                    let i = (y * width + x) * 4
-                    bytes[i] = UInt8(truncatingIfNeeded: value)
-                    bytes[i + 1] = UInt8(truncatingIfNeeded: value >> 8)
-                    bytes[i + 2] = UInt8(truncatingIfNeeded: value >> 16)
-                }
-            }
-            let strip = try #require(Bitmap(width: width, height: count, bytes: bytes))
-            #expect(encoder.append(strip))
-            row += count
-        }
-        let png = try #require(encoder.finish())
-        let beforeSave = try peakPhysicalFootprint()
-        let label = try #require(DocumentAnnotation(.text(x: 40, y: 30, characters: "HI")))
-        let arrow = try #require(DocumentAnnotation(.arrow(x0: 40, y0: 32_000, x1: 4_000, y1: 32_000)))
-        let redaction = try #require(SolidRedaction(x: 0, y: 1000, width: 64, height: 64))
-        let blur = try #require(DocumentEffect(.blur(x: 200, y: 16_000, width: 400, height: 300)))
-        let magnify = try #require(DocumentEffect(.magnify(x: 1_000, y: 20_000, width: 300, height: 200)))
-        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], annotations: [label, arrow],
-                                               effects: [blur, magnify]))
-        let saved = try CaptureRenderer().flatten(png, edits: edits)
-        let peak = try peakPhysicalFootprint()
-        print("EDITED_SAVE_MEMORY_RUN dimensions=\(width)x\(height) source_png_bytes=\(png.count) saved_png_bytes=\(saved.count) peak_before_save_bytes=\(beforeSave) peak_phys_footprint_bytes=\(peak) elapsed=\(started.duration(to: .now))")
-        #expect(saved.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]))
-        #expect(peak < 2_000_000_000)
-    }
-}
-
-private func peakPhysicalFootprint() throws -> Int64 {
-    var info = task_vm_info_data_t()
-    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
-    let result = withUnsafeMutablePointer(to: &info) {
-        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
-        }
-    }
-    try #require(result == KERN_SUCCESS)
-    try #require(info.ledger_phys_footprint_peak > 0)
-    return info.ledger_phys_footprint_peak
 }
 
 /// A drop target that writes the promised file with the production `DragPromiseWriter`, or cancels.

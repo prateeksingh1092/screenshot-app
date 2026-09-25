@@ -1,3 +1,5 @@
+import Accelerate
+import CoreGraphics
 import Foundation
 
 /// A pure function from document to bitmap; the same document always renders the same pixels.
@@ -6,8 +8,9 @@ import Foundation
 /// scaled to output pixels, snapped outward (down on the minimum edges, up on the maximum
 /// edges), shifted by the crop's whole-pixel origin, clipped to the cropped image, and copied
 /// as opaque fill with no blending or antialiasing. Every mark therefore covers the same
-/// content it would cover without the crop (D18). Sampling effects read that redacted composite; redactions are stamped
-/// again afterwards. Annotations draw last, natively (`AnnotationPainter`): a white plate, the redactions once more, then ink.
+/// content it would cover without the crop (D18). Blur (vImage) and Magnify (CoreGraphics) then read only
+/// that redacted composite, inside their own box; redactions are stamped again afterwards. Annotations
+/// draw last, natively (`AnnotationPainter`): a white plate, the redactions once more, then ink.
 public enum DocumentRenderer {
     public static let stripHeight = 256
     /// One output pixel of white around annotation ink. It is a constant, never a sample of the capture.
@@ -69,9 +72,8 @@ public enum DocumentRenderer {
     private static func renderWindow(edits: DocumentEdits, origin: (x: Int, y: Int), startRow: Int, rowCount: Int,
                                      full: (width: Int, height: Int),
                                      copyRows: (Int, Int) -> Bitmap?) -> Bitmap {
-        let halo = edits.effects.isEmpty ? 0 : 1
-        let paddedStart = max(0, startRow - halo)
-        let paddedEnd = min(full.height, startRow + rowCount + halo)
+        let rows = windowRows(edits: edits, origin: origin, startRow: startRow, rowCount: rowCount, full: full)
+        let paddedStart = rows.lowerBound, paddedEnd = rows.upperBound
         var window = copyRows(paddedStart, paddedEnd - paddedStart)
             ?? Bitmap(width: full.width, height: rowCount, bytes: [UInt8](repeating: 0, count: full.width * rowCount * 4))!
         paint(&window, edits: edits, origin: origin, rowShift: paddedStart, fullWidth: full.width, fullHeight: full.height)
@@ -84,6 +86,30 @@ public enum DocumentRenderer {
             bytes.append(contentsOf: window.bytes[start..<(start + window.width * 4)])
         }
         return Bitmap(width: window.width, height: rowCount, bytes: bytes) ?? window
+    }
+
+    /// The strip's rows, widened to the whole rows of every effect box they meet (and of any box
+    /// those rows then meet), so each effect reads exactly the pixels it reads in the whole image.
+    private static func windowRows(edits: DocumentEdits, origin: (x: Int, y: Int), startRow: Int, rowCount: Int,
+                                   full: (width: Int, height: Int)) -> Range<Int> {
+        let spans = edits.effects.compactMap { effect -> Range<Int>? in
+            let r = effect.rectangle
+            return snapped(x: r.x, y: r.y, width: r.width, height: r.height, scale: edits.scale,
+                           originX: origin.x, originY: origin.y, rowShift: 0,
+                           fullWidth: full.width, fullHeight: full.height, outputHeight: full.height)
+                .map { $0.minY..<$0.maxY }
+        }
+        var lower = startRow, upper = startRow + rowCount
+        var widened = true
+        while widened {
+            widened = false
+            for span in spans where span.overlaps(lower..<upper) && (span.lowerBound < lower || span.upperBound > upper) {
+                lower = min(lower, span.lowerBound)
+                upper = max(upper, span.upperBound)
+                widened = true
+            }
+        }
+        return lower..<upper
     }
 
     /// The crop's snapped top-left in output pixels of the uncropped image, for a capture of this size.
@@ -128,7 +154,7 @@ public enum DocumentRenderer {
         let boxes = redactions.compactMap { redaction in
             snapped(x: redaction.x, y: redaction.y, width: redaction.width, height: redaction.height,
                     scale: scale, originX: originX, originY: originY, rowShift: rowShift,
-                    fullWidth: fullWidth, fullHeight: fullHeight, in: output).map { (box: $0, fill: redaction.colour) }
+                    fullWidth: fullWidth, fullHeight: fullHeight, outputHeight: output.height).map { (box: $0, fill: redaction.colour) }
         }
         let rowWidth = output.width
         output.bytes.withUnsafeMutableBytes { raw in
@@ -151,105 +177,94 @@ public enum DocumentRenderer {
 
     private static func apply(_ effect: DocumentEffect, on output: inout Bitmap, scale: Double,
                               originX: Int, originY: Int, rowShift: Int, fullWidth: Int, fullHeight: Int) {
-        let rectangle: (x: Double, y: Double, width: Double, height: Double)
-        switch effect.kind {
-        case let .blur(x, y, width, height), let .magnify(x, y, width, height):
-            rectangle = (x, y, width, height)
-        }
-        guard let bounds = snapped(x: rectangle.x, y: rectangle.y, width: rectangle.width, height: rectangle.height,
+        let r = effect.rectangle
+        guard let bounds = snapped(x: r.x, y: r.y, width: r.width, height: r.height,
                                    scale: scale, originX: originX, originY: originY, rowShift: rowShift,
-                                   fullWidth: fullWidth, fullHeight: fullHeight, in: output) else { return }
+                                   fullWidth: fullWidth, fullHeight: fullHeight, outputHeight: output.height) else { return }
+        // Each effect copies its box out, works on that copy alone and writes it back, so it never
+        // reads a pixel outside its box, and it runs after the redactions are stamped.
+        var box = copyBox(bounds, from: output)
+        let width = bounds.maxX - bounds.minX, height = bounds.maxY - bounds.minY
         switch effect.kind {
-        case .blur:
-            // Six passes of the same 3×3 average. Samples stay inside the box, so a
-            // solid redaction that fills the box cannot pick up colour from outside it.
-            blurBox(bounds, on: &output)
-        case .magnify:
-            magnifyBox(bounds, on: &output)
+        case .blur: blur(&box, width: width, height: height)
+        case .magnify: magnify(&box, width: width, height: height)
         }
+        writeBox(box, bounds, to: &output)
     }
 
-    private static func blurBox(_ bounds: (minX: Int, minY: Int, maxX: Int, maxY: Int), on output: inout Bitmap) {
-        let boxWidth = bounds.maxX - bounds.minX
-        let boxHeight = bounds.maxY - bounds.minY
-        guard boxWidth > 0, boxHeight > 0 else { return }
-        let count = boxWidth * boxHeight * 4
-        var source = [UInt8](repeating: 0, count: count)
-        var destination = [UInt8](repeating: 0, count: count)
-        output.bytes.withUnsafeBytes { raw in
-            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            for row in 0..<boxHeight {
-                let from = ((bounds.minY + row) * output.width + bounds.minX) * 4
-                _ = source.withUnsafeMutableBytes { box in
-                    memcpy(box.baseAddress! + row * boxWidth * 4, pixels + from, boxWidth * 4)
+    /// Blur passes: the same 3×3 box average, repeated.
+    static let blurPasses = 6
+
+    /// vImage box convolution, edge-extended at the box's edges (deterministic on x86_64 and arm64).
+    /// Averaging premultiplied RGBA keeps every channel at or under its alpha.
+    private static func blur(_ box: inout [UInt8], width: Int, height: Int) {
+        var scratch = [UInt8](repeating: 0, count: box.count)
+        box.withUnsafeMutableBytes { boxRaw in
+            scratch.withUnsafeMutableBytes { scratchRaw in
+                var source = vImage_Buffer(data: boxRaw.baseAddress, height: vImagePixelCount(height),
+                                           width: vImagePixelCount(width), rowBytes: width * 4)
+                var destination = vImage_Buffer(data: scratchRaw.baseAddress, height: vImagePixelCount(height),
+                                                width: vImagePixelCount(width), rowBytes: width * 4)
+                for _ in 0..<blurPasses {
+                    vImageBoxConvolve_ARGB8888(&source, &destination, nil, 0, 0, 3, 3, nil,
+                                               vImage_Flags(kvImageEdgeExtend))
+                    swap(&source, &destination)
                 }
-            }
-        }
-        for _ in 0..<6 {
-            source.withUnsafeBytes { sourceRaw in
-                destination.withUnsafeMutableBytes { destinationRaw in
-                    guard let src = sourceRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                          let dst = destinationRaw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-                    for y in 0..<boxHeight {
-                        for x in 0..<boxWidth {
-                            var red = 0, green = 0, blue = 0, alpha = 0
-                            for dy in -1...1 {
-                                let sampleY = min(max(y + dy, 0), boxHeight - 1)
-                                for dx in -1...1 {
-                                    let sampleX = min(max(x + dx, 0), boxWidth - 1)
-                                    let index = (sampleY * boxWidth + sampleX) * 4
-                                    red += Int(src[index])
-                                    green += Int(src[index + 1])
-                                    blue += Int(src[index + 2])
-                                    alpha += Int(src[index + 3])
-                                }
-                            }
-                            let index = (y * boxWidth + x) * 4
-                            dst[index] = UInt8(red / 9)
-                            dst[index + 1] = UInt8(green / 9)
-                            dst[index + 2] = UInt8(blue / 9)
-                            dst[index + 3] = UInt8(alpha / 9)
-                        }
-                    }
-                }
-            }
-            swap(&source, &destination)
-        }
-        output.bytes.withUnsafeMutableBytes { raw in
-            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            for row in 0..<boxHeight {
-                let to = ((bounds.minY + row) * output.width + bounds.minX) * 4
-                _ = source.withUnsafeBytes { box in
-                    memcpy(pixels + to, box.baseAddress! + row * boxWidth * 4, boxWidth * 4)
+                if source.data != boxRaw.baseAddress {
+                    boxRaw.baseAddress!.copyMemory(from: source.data, byteCount: boxRaw.count)
                 }
             }
         }
     }
 
-    private static func magnifyBox(_ bounds: (minX: Int, minY: Int, maxX: Int, maxY: Int), on output: inout Bitmap) {
-        let boxWidth = bounds.maxX - bounds.minX
-        let boxHeight = bounds.maxY - bounds.minY
-        guard boxWidth > 0, boxHeight > 0 else { return }
-        var magnified = [UInt8](repeating: 0, count: boxWidth * boxHeight * 4)
-        output.bytes.withUnsafeBytes { raw in
-            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            for y in 0..<boxHeight {
-                for x in 0..<boxWidth {
-                    let from = ((bounds.minY + y / 2) * output.width + bounds.minX + x / 2) * 4
-                    let to = (y * boxWidth + x) * 4
-                    magnified[to] = pixels[from]
-                    magnified[to + 1] = pixels[from + 1]
-                    magnified[to + 2] = pixels[from + 2]
-                    magnified[to + 3] = pixels[from + 3]
+    /// CoreGraphics draws the box's top-left quarter at twice the size over the whole box, with no
+    /// interpolation, so each source pixel becomes a 2×2 block.
+    private static func magnify(_ box: inout [UInt8], width: Int, height: Int) {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let provider = CGDataProvider(data: Data(box) as CFData),
+              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                                  bytesPerRow: width * 4, space: space,
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent),
+              let quarter = image.cropping(to: CGRect(x: 0, y: 0, width: (width + 1) / 2, height: (height + 1) / 2))
+        else { return }
+        box.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            context.setBlendMode(.copy)
+            context.interpolationQuality = .none
+            context.setShouldAntialias(false)
+            // Device space is bottom-up: the enlarged quarter's top edge sits on the box's top edge.
+            let drawn = (width: quarter.width * 2, height: quarter.height * 2)
+            context.draw(quarter, in: CGRect(x: 0, y: height - drawn.height, width: drawn.width, height: drawn.height))
+            context.flush()
+        }
+    }
+
+    private static func copyBox(_ bounds: (minX: Int, minY: Int, maxX: Int, maxY: Int), from output: Bitmap) -> [UInt8] {
+        let rowBytes = (bounds.maxX - bounds.minX) * 4
+        var box = [UInt8](repeating: 0, count: rowBytes * (bounds.maxY - bounds.minY))
+        output.bytes.withUnsafeBytes { pixels in
+            box.withUnsafeMutableBytes { copy in
+                for row in 0..<(bounds.maxY - bounds.minY) {
+                    let from = ((bounds.minY + row) * output.width + bounds.minX) * 4
+                    (copy.baseAddress! + row * rowBytes).copyMemory(from: pixels.baseAddress! + from, byteCount: rowBytes)
                 }
             }
         }
-        output.bytes.withUnsafeMutableBytes { raw in
-            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            for row in 0..<boxHeight {
-                let to = ((bounds.minY + row) * output.width + bounds.minX) * 4
-                _ = magnified.withUnsafeBytes { box in
-                    memcpy(pixels + to, box.baseAddress! + row * boxWidth * 4, boxWidth * 4)
+        return box
+    }
+
+    private static func writeBox(_ box: [UInt8], _ bounds: (minX: Int, minY: Int, maxX: Int, maxY: Int),
+                                 to output: inout Bitmap) {
+        let rowBytes = (bounds.maxX - bounds.minX) * 4
+        let outputWidth = output.width
+        output.bytes.withUnsafeMutableBytes { pixels in
+            box.withUnsafeBytes { copy in
+                for row in 0..<(bounds.maxY - bounds.minY) {
+                    let to = ((bounds.minY + row) * outputWidth + bounds.minX) * 4
+                    (pixels.baseAddress! + to).copyMemory(from: copy.baseAddress! + row * rowBytes, byteCount: rowBytes)
                 }
             }
         }
@@ -257,7 +272,7 @@ public enum DocumentRenderer {
 
     private static func snapped(x: Double, y: Double, width: Double, height: Double, scale: Double,
                                 originX: Int, originY: Int, rowShift: Int,
-                                fullWidth: Int, fullHeight: Int, in output: Bitmap)
+                                fullWidth: Int, fullHeight: Int, outputHeight: Int)
     -> (minX: Int, minY: Int, maxX: Int, maxY: Int)? {
         func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullWidth))) }
         func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullHeight))) }
@@ -266,7 +281,7 @@ public enum DocumentRenderer {
         let maxX = column(((x + width) * scale).rounded(.up) - Double(originX))
         let rawMaxY = row(((y + height) * scale).rounded(.up) - Double(originY))
         let minY = max(0, rawMinY - rowShift)
-        let maxY = min(output.height, rawMaxY - rowShift)
+        let maxY = min(outputHeight, rawMaxY - rowShift)
         return minX < maxX && minY < maxY ? (minX, minY, maxX, maxY) : nil
     }
 
@@ -320,5 +335,14 @@ public enum DocumentRenderer {
             bytes.append(contentsOf: base.bytes[start..<(start + width * 4)])
         }
         return Bitmap(width: width, height: rowCount, bytes: bytes)
+    }
+}
+
+extension DocumentEffect {
+    /// The effect's box in document points.
+    var rectangle: (x: Double, y: Double, width: Double, height: Double) {
+        switch kind {
+        case let .blur(x, y, width, height), let .magnify(x, y, width, height): (x, y, width, height)
+        }
     }
 }

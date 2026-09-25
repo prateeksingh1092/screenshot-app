@@ -37,7 +37,7 @@ func repositorySatisfiesStaticChecks(check: String) throws {
     "diagnostics-rejected", "diagnostics-accepted", "diagnostics-collection-rejected",
     "capture-memory-rejected", "capture-memory-accepted", "capture-memory-render-accepted", "capture-memory-render-url-rejected", "capture-finalization-rejected", "capture-finalization-accepted",
     "capture-latency-stdout-accepted", "capture-latency-stdout-rejected",
-    "network-rejected", "network-accepted", "silgen-rejected", "silgen-accepted", "silgen-strict-rejected"
+    "network-rejected", "network-accepted", "silgen-rejected", "silgen-accepted"
 ])
 func staticCheckFixturesHaveExpectedOutcomes(fixture: String) throws {
     let path = repository.appendingPathComponent("Checks/Fixtures/\(fixture).json")
@@ -45,13 +45,11 @@ func staticCheckFixturesHaveExpectedOutcomes(fixture: String) throws {
     #expect(result.status == 0, Comment(rawValue: result.output))
 }
 
-/// D22: `@_silgen_name` calls C functions with the Swift calling convention. Tickets 63 and 67 remove the last uses.
+/// D22: `@_silgen_name` calls C functions with the Swift calling convention. Tickets 63 and 67 removed every use.
 @Test
-func d22ProductCodeBindsNoCFunctionThroughSilgenName() async throws {
-    try await knownDefect("D22") {
-        let result = try runCheck(["--root", repository.path, "--check", "silgen", "--strict"])
-        #expect(result.status == 0, "D22: \(result.output)")
-    }
+func d22ProductCodeBindsNoCFunctionThroughSilgenName() throws {
+    let result = try runCheck(["--root", repository.path, "--check", "silgen"])
+    #expect(result.status == 0, "D22: \(result.output)")
 }
 
 @Test
