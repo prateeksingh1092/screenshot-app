@@ -1,3 +1,10 @@
+> **2026-09-25 evening, design-audit round:** `main` is at `7592ebd`, with `ci.sh` green (446 tests). The installed build is still `118d09f`.
+> - **Audit:** the design research in `.scratch/visual-pass/` was checked against the code. Prateek then chose decisions 91 (Thumbnail × on hover), 92 (six ink colours now) and 93 (remember styles).
+> - **Merged:** 98 (decision 94), 97 (decision 95, live drag feedback), 101 (decision 96), 99 (decision 97) and 100 (decision 98, which also adds the label corner handle and the reopened onboarding's Close).
+> - **Harness:** the new rows `thumbnail-close` and `editor-ink-colour` are uncalibrated. The harness now deletes the eight `editor*` style keys before each row, so a harness run resets Prateek's remembered styles.
+> - **Next (the Mac was locked):** sign and install `main`, run the full matrix on both displays and calibrate the two new rows. Then take the editor screenshots to set beside `.scratch/visual-pass/cleanshot-editor/`, and hand Prateek ticket 83.
+> - **Open for Prateek, raised in ticket 99:** White and Yellow ink keep the white halo (decision 92). Offer a dark halo if they look weak.
+>
 > **2026-09-25 13:44, final state:** `main` at `118d09f` (ci green, 424 tests); signed build `118d09f` installed. Full live matrix **29/29 on both displays** (runs `20260925-133157`, `-133746`).
 > - Since the locked-screen note: ticket 94's six rows calibrated (harness faults: Undo name read from Edit menu, pop-up values, toolbar item labels); D31 found and fixed (ticket 96, decision 90: marks readable by VoiceOver).
 > - Environmental hazards seen: displays sleep and the Mac locks while Prateek is away (hold `caffeinate -d -i -u` during runs); FindMyMacMessenger once took the front mid-row (rerun passed).
