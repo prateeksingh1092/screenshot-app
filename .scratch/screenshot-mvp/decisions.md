@@ -362,7 +362,7 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Why not the alternatives:** a narrower toolbar (smaller items, no labels) still overflows once a tool gains a control; a wider default window doesn't fit small captures on a laptop display; and a popover per tool hides the choice one click deeper. A contextual row keeps every control one click away and scales as tools gain options.
     - **Accessibility:** the controls keep their labels ("Redaction colour: Grey", "Arrow style", "Line width", "Label size", "Label style"); the bar is a group named "Style". Hidden controls are not in the accessibility tree. The canvas description names the chosen colour ("Drag to hide pixels with a Solid redaction in Grey."; "in Black" by default).
 
-NN. **History opens on the newest capture (implementer, 2026-09-25, ticket 93; D30):**
+87. **History opens on the newest capture (implementer, 2026-09-25, ticket 93; D30):**
     - **Rule:** opening History (⌘⇧1, the menu or Reveal in History) selects the newest row and scrolls it to the top, so Copy, Save, Restore and Delete act on the capture just made. A reload while the window is open (a commit, a Delete, Try Again) keeps the user's row while it still exists, else selects the newest. The rule is `HistoryList.selection(keeping:opening:)` in FrisketCore, tested in `HistoryListTests`; the window only applies it and scrolls with a `ScrollViewReader`.
     - **Live row:** `history-copy` captures a size no other row uses, varied per run (the pattern plus a 2–80 point margin), and passes only when History's Copy gives exactly that size and the pattern. `history_newest` no longer clicks the top row: the row now proves History's own selection, which is what D30 got wrong.
 
