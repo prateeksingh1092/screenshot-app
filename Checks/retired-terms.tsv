@@ -9,4 +9,4 @@ ScrollingCapture|Stitcher|captureScrolling|scrolling capture|⌘⇧6	60	(scrolli
 \bCaptureCommandLayer\b	71	CaptureLifecycleCoordinator (actions) or HistoryStore (History reads)
 \bHistoryRootLock\b|\brootLocked\b	74	(no History lock; HistoryStore sweeps at launch)
 \bDocumentRenderer\b|\bEditorProxy\b|\bPNGBitmapCodec\b|\bEditorDocument\b|\bBitmapCodec\b	75	CaptureRenderer.flatten (output) or CaptureRenderer.preview(...).render(edits) (editor preview)
-\bLocalDiagnosticLog\b|\bDiagnosticRecord\b	NN (ticket 80)	SystemDiagnosticLog (os.Logger), injected by the app	
+\bLocalDiagnosticLog\b|\bDiagnosticRecord\b	85	SystemDiagnosticLog (os.Logger), injected by the app	
