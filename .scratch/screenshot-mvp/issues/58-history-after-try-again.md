@@ -8,8 +8,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] The D19 test passes without the known-defect mark.
-- [ ] Running recovery twice in a row leaves History consistent.
+- [x] The D19 test passes without the known-defect mark.
+- [x] Running recovery twice in a row leaves History consistent.
 
 ## Comments
 
@@ -20,3 +20,12 @@ Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82â
 ### 2026-09-24: coordinator, note from ticket 47
 
 Ticket 47 found that D19 is wider than "Try Again": after any relaunch, History row actions fail until something new is committed, because the launch sweep never reopens the database for writing (`d19HistoryRowActionsWorkAfterRelaunch`). The fix must cover relaunch too.
+
+### 2026-09-24: coordinator, implemented
+
+- **Implementer:** the coordinator (Claude Opus 5.5, Claude Code, high effort).
+- **Cause:** recovery truncates the WAL and then closes the writer (`database = nil`), and a relaunch never opens it. `delete` and `finalizedImage` then refused with `guard let database`.
+- **Fix, in `HistoryStore`:**
+  - `finalizedImage` reads through `currentEntries()`: the open writer, or else the read-only immutable reader that `entries()` already uses.
+  - `delete` uses `writerForExistingHistory()`, which reopens the writer on demand, but only when `history.sqlite` exists. An empty root still gets nothing on disk.
+- **Tests:** `d19HistoryRowActionsWorkRightAfterRecovery` and `d19HistoryRowActionsWorkAfterRelaunch` are unwrapped and green. The History suites pass: 61 tests in 13 suites. Running recovery twice is still covered by `tierOneRecoversEveryInterruptedCommitTwice`.
