@@ -29,6 +29,13 @@ import Foundation
         undoManager.setActionName(name)
     }
 
+    /// Applies `next` as one undoable edit named `name`, such as "Move Arrow" (ticket 84).
+    public func apply(_ next: DocumentEdits, named name: String) {
+        guard next != edits else { return }
+        replace(with: next)
+        undoManager.setActionName(name)
+    }
+
     /// Registers the inverse before changing, so undo registers redo and redo registers undo.
     private func replace(with next: DocumentEdits) {
         let previous = edits

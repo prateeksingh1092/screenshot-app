@@ -69,10 +69,16 @@ public struct DocumentCrop: Equatable, Sendable {
     }
 }
 
-/// An annotation drawn above redactions. Stroke is a fixed opaque colour; there is
-/// no opacity, corner radius, or fill that could be mistaken for Solid redaction.
+/// An annotation drawn above redactions. Its ink is one opaque colour and its line a width in
+/// document points (ticket 84: both can be changed after drawing); there is no opacity, corner
+/// radius, or fill that could be mistaken for Solid redaction.
 public struct DocumentAnnotation: Equatable, Sendable {
+    /// The default ink.
     public static let stroke = RGBAPixel(red: 0xff, green: 0x3b, blue: 0x30, alpha: 0xff)
+    /// The default line width, in document points.
+    public static let defaultWidth = 2.0
+    /// The line widths the editor offers: thin (the default), medium and thick.
+    public static let lineWidths = [2.0, 4.0, 8.0]
 
     public enum Kind: Equatable, Sendable {
         case rectangle(x: Double, y: Double, width: Double, height: Double)
@@ -81,8 +87,13 @@ public struct DocumentAnnotation: Equatable, Sendable {
     }
 
     public let kind: Kind
+    /// The ink, always fully opaque.
+    public let colour: RGBAPixel
+    /// The line width in document points. A label's glyphs ignore it.
+    public let width: Double
 
-    public init?(_ kind: Kind) {
+    /// Refuses an empty mark, a colour that is not fully opaque, or a width outside (0, 64] points.
+    public init?(_ kind: Kind, colour: RGBAPixel = DocumentAnnotation.stroke, width: Double = DocumentAnnotation.defaultWidth) {
         switch kind {
         case let .rectangle(x, y, width, height):
             guard [x, y, width, height].allSatisfy(\.isFinite), width > 0, height > 0 else { return nil }
@@ -91,7 +102,10 @@ public struct DocumentAnnotation: Equatable, Sendable {
         case let .text(x, y, characters):
             guard x.isFinite, y.isFinite, !characters.allSatisfy(\.isWhitespace) else { return nil }
         }
+        guard colour.alpha == 255, width.isFinite, width > 0, width <= 64 else { return nil }
         self.kind = kind
+        self.colour = colour
+        self.width = width
     }
 }
 

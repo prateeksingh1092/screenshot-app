@@ -13,6 +13,8 @@ enum EditorAction {
     var toolKey: ((Character) -> Bool)?
     var perform: ((EditorAction) -> Void)?
     var canPerform: ((EditorAction) -> Bool)?
+    /// Esc first deselects a selected mark (ticket 84); returns false when nothing was selected.
+    var deselect: (() -> Bool)?
 
     override func keyDown(with event: NSEvent) {
         let commandLike = !event.modifierFlags.intersection([.command, .control, .option]).isEmpty
@@ -42,7 +44,10 @@ enum EditorAction {
     @objc func undo(_ sender: Any?) { request(.undo) }
     @objc func redo(_ sender: Any?) { request(.redo) }
     /// Esc closes an unchanged editor; with edits it does nothing, and ⌘W asks.
-    override func cancelOperation(_ sender: Any?) { request(.closeUnchanged) }
+    override func cancelOperation(_ sender: Any?) {
+        if deselect?() == true { return }
+        request(.closeUnchanged)
+    }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
@@ -98,8 +103,9 @@ enum EditorAction {
     }
 }
 
-/// Shows the rendered document and hands each drag to the active tool. The canvas is one
-/// labelled element; its contents are exempt from VoiceOver and keyboard operation.
+/// Shows the rendered document and hands each press and drag to the editor. The canvas is one
+/// labelled element whose children are the marks (ticket 84); it takes Tab, the arrow keys and
+/// Delete for the selected mark. What those do is `MarkEditor`'s, in the core.
 @MainActor final class EditorCanvasView: NSView {
     enum DragGuide {
         case box, line, crop, label(String), conceal, soften
@@ -108,9 +114,19 @@ enum EditorAction {
     var rendered: NSImage? { didSet { needsDisplay = true } }
     var documentSize: CGSize { didSet { needsDisplay = true } }
     var guide: DragGuide = .box { didSet { needsDisplay = true } }
-    var onDrag: ((CGPoint, CGPoint) -> Void)?
+    /// A press at a point, with the hit tolerance in document points; true when it took hold of a mark.
+    var onPress: ((CGPoint, Double) -> Bool)?
+    /// The end of a press: start, end and tolerance.
+    var onRelease: ((CGPoint, CGPoint, Double) -> Void)?
+    /// A canvas key for marks; true when handled.
+    var onMarkKey: ((MarkKey) -> Bool)?
+    /// The selected mark's outline and handles, in canvas points.
+    var selection: (box: MarkBox, handles: [(handle: MarkHandle, x: Double, y: Double)])? { didSet { needsDisplay = true } }
+    /// Every mark's VoiceOver label and box, in canvas points, in Tab order.
+    var accessibleMarks: [(label: String, box: MarkBox, selected: Bool)] = []
     private var dragStart: CGPoint?
     private var dragCurrent: CGPoint?
+    private var grabbing = false
 
     init(documentSize: CGSize) {
         self.documentSize = documentSize
@@ -135,6 +151,39 @@ enum EditorAction {
                       width: size.width, height: size.height)
     }
 
+    /// Five view points, in document points.
+    private var tolerance: Double { zoom > 0 ? Double(5 / zoom) : 5 }
+
+    private func viewRect(_ box: MarkBox) -> CGRect {
+        CGRect(x: imageRect.minX + box.x * zoom, y: imageRect.minY + box.y * zoom,
+               width: box.width * zoom, height: box.height * zoom)
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        let shift = event.modifierFlags.contains(.shift)
+        let commandLike = !event.modifierFlags.intersection([.command, .control, .option]).isEmpty
+        if !commandLike, let key = MarkKey.action(characters: event.charactersIgnoringModifiers, shift: shift),
+           onMarkKey?(key) == true { return }
+        if !commandLike, event.charactersIgnoringModifiers == "\t" || event.charactersIgnoringModifiers == "\u{19}" {
+            // Past the last mark, Tab leaves the canvas as usual.
+            shift || event.charactersIgnoringModifiers == "\u{19}" ? window?.selectPreviousKeyView(self) : window?.selectNextKeyView(self)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        guard let window else { return nil }
+        return accessibleMarks.map { mark in
+            let frame = window.convertToScreen(convert(viewRect(mark.box).insetBy(dx: -2, dy: -2), to: nil))
+            let element = NSAccessibilityElement.element(withRole: .image, frame: frame, label: mark.label, parent: self)
+            (element as? NSAccessibilityElement)?.setAccessibilitySelected(mark.selected)
+            return element
+        }
+    }
+
     private func documentPoint(_ event: NSEvent) -> CGPoint? {
         guard zoom > 0 else { return nil }
         let point = convert(event.locationInWindow, from: nil)
@@ -147,7 +196,8 @@ enum EditorAction {
         bounds.fill()
         rendered?.draw(in: imageRect, from: .zero, operation: .copy, fraction: 1, respectFlipped: true,
                        hints: [.interpolation: NSNumber(value: NSImageInterpolation.none.rawValue)])
-        guard let start = dragStart, let current = dragCurrent else { return }
+        drawSelection()
+        guard !grabbing, let start = dragStart, let current = dragCurrent else { return }
         let startView = CGPoint(x: imageRect.minX + start.x * zoom, y: imageRect.minY + start.y * zoom)
         let currentView = CGPoint(x: imageRect.minX + current.x * zoom, y: imageRect.minY + current.y * zoom)
         switch guide {
@@ -205,9 +255,34 @@ enum EditorAction {
         }
     }
 
+    /// A blue outline with square handles; while the mark is dragged, the outline follows the pointer.
+    private func drawSelection() {
+        guard let selection else { return }
+        var offset = CGPoint.zero
+        if grabbing, let start = dragStart, let current = dragCurrent {
+            offset = CGPoint(x: (current.x - start.x) * zoom, y: (current.y - start.y) * zoom)
+        }
+        NSColor.controlAccentColor.setStroke()
+        let outline = NSBezierPath(rect: viewRect(selection.box).insetBy(dx: -3, dy: -3).offsetBy(dx: offset.x, dy: offset.y))
+        outline.lineWidth = 1
+        outline.setLineDash([4, 3], count: 2, phase: 0)
+        outline.stroke()
+        for handle in selection.handles {
+            let centre = CGPoint(x: imageRect.minX + handle.x * zoom, y: imageRect.minY + handle.y * zoom)
+            let square = NSBezierPath(rect: CGRect(x: centre.x - 4, y: centre.y - 4, width: 8, height: 8))
+            NSColor.white.setFill()
+            square.fill()
+            NSColor.controlAccentColor.setStroke()
+            square.lineWidth = 1.5
+            square.stroke()
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         dragStart = documentPoint(event)
         dragCurrent = dragStart
+        grabbing = dragStart.map { onPress?($0, tolerance) ?? false } ?? false
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -216,9 +291,11 @@ enum EditorAction {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if let start = dragStart, let end = documentPoint(event) { onDrag?(start, end) }
+        let start = dragStart, end = documentPoint(event)
         dragStart = nil
         dragCurrent = nil
+        grabbing = false
+        if let start, let end { onRelease?(start, end, tolerance) }
         needsDisplay = true
     }
 }
@@ -235,12 +312,17 @@ enum EditorAction {
     private var documentSize: CGSize
     /// The edits and their undo manager, which the window returns for Edit › Undo and Redo.
     private let document: UndoableEdits
+    /// The selected mark and every change to marks (ticket 84).
+    private let marks: MarkEditor
+    private var grab: MarkEditor.Grab?
+    private let widthPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private var edits: DocumentEdits { document.edits }
     private let textTool = TextTool()
     private let hintField = NSTextField(labelWithString: "")
     private let tools: [any EditorTool]
     private let labelField = NSTextField(string: "A")
-    private var activeTool: Int = 0
+    /// Solid Redaction; the Select tool is first in the toolbar.
+    private var activeTool: Int = 1
     private var toolButtons: [NSButton] = []
     private let undoButton = NSButton(title: "Undo", target: nil, action: nil)
     private let closeButton = NSButton(title: "Close Without Changes", target: nil, action: nil)
@@ -265,9 +347,10 @@ enum EditorAction {
         guard let edits = DocumentEdits(scale: scale) else { return nil }
         self.preview = preview
         document = UndoableEdits(edits)
+        marks = MarkEditor(document)
         self.finish = finish
         pixelSize = CGSize(width: preview.captureWidth, height: preview.captureHeight)
-        tools = [SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
+        tools = [SelectTool(), SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
         documentSize = CGSize(width: self.pixelSize.width / scale, height: self.pixelSize.height / scale)
         canvas = EditorCanvasView(documentSize: documentSize)
         placementScreen = screen ?? NSScreen.main
@@ -281,6 +364,7 @@ enum EditorAction {
         window.isReleasedWhenClosed = false
         window.delegate = self
         document.onChange = { [weak self] in self?.refresh() }
+        marks.onSelectionChange = { [weak self] in self?.selectionChanged() }
 
         for (index, tool) in tools.enumerated() {
             let button = NSButton(title: "", target: self, action: #selector(selectTool(_:)))
@@ -305,6 +389,17 @@ enum EditorAction {
         labelField.controlSize = .small
         labelField.frame.size = NSSize(width: 140, height: 22)
         labelField.delegate = self
+        // Restyle: the selected shape's or arrow's line width. Colour arrives with the palette (ticket 88).
+        for width in DocumentAnnotation.lineWidths {
+            widthPopUp.addItem(withTitle: "\(Int(width)) pt")
+            widthPopUp.lastItem?.representedObject = width
+        }
+        widthPopUp.controlSize = .small
+        widthPopUp.target = self
+        widthPopUp.action = #selector(changeWidth(_:))
+        widthPopUp.setAccessibilityLabel("Line width of the selected mark")
+        widthPopUp.toolTip = "Line width of the selected shape or arrow"
+        widthPopUp.sizeToFit()
         textTool.text = { [weak labelField] in labelField?.stringValue ?? "" }
         hintField.textColor = .secondaryLabelColor
         hintField.font = .systemFont(ofSize: 12)
@@ -350,6 +445,7 @@ enum EditorAction {
         window.toolKey = { [weak self] letter in self?.selectTool(letter: letter) ?? false }
         window.perform = { [weak self] action in self?.perform(action) }
         window.canPerform = { [weak self] action in self?.canPerform(action) ?? false }
+        window.deselect = { [weak self] in self?.marks.deselect() ?? false }
         let probe = window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 800, height: 400))
         let chromeAbove = probe.height - 400
         let hintHeight: CGFloat = 44
@@ -366,7 +462,9 @@ enum EditorAction {
         bar.autoresizingMask = [.width, .maxYMargin]
         canvas.frame = CGRect(x: 0, y: barHeight, width: size.width, height: max(1, size.height - hintHeight - barHeight))
         canvas.autoresizingMask = [.width, .height]
-        canvas.onDrag = { [weak self] start, end in self?.applyDrag(from: start, to: end) }
+        canvas.onPress = { [weak self] point, tolerance in self?.press(at: point, tolerance: tolerance) ?? false }
+        canvas.onRelease = { [weak self] start, end, tolerance in self?.release(from: start, to: end, tolerance: tolerance) }
+        canvas.onMarkKey = { [weak self] key in self?.markKey(key) ?? false }
         hintField.frame = CGRect(x: 12, y: size.height - hintHeight + 6, width: size.width - 24, height: hintHeight - 10)
         hintField.autoresizingMask = [.width, .minYMargin]
         content.addSubview(canvas)
@@ -375,6 +473,7 @@ enum EditorAction {
         window.contentView = content
         window.setContentSize(size)
         window.initialFirstResponder = toolButtons.first
+        window.autorecalculatesKeyViewLoop = true
         refresh()
     }
 
@@ -445,6 +544,13 @@ enum EditorAction {
             button.isEnabled = !finishing
         }
         labelField.isEnabled = !finishing && tools[activeTool] is TextTool
+        canvas.selection = marks.selectionOutline
+        canvas.accessibleMarks = marks.accessibleMarks.map { ($0.label, $0.box, $0.mark == marks.selection) }
+        let width = marks.selectionWidth
+        widthPopUp.isEnabled = !finishing && width != nil
+        if let width, let index = widthPopUp.itemArray.firstIndex(where: { $0.representedObject as? Double == width }) {
+            widthPopUp.selectItem(at: index)
+        }
         undoButton.isEnabled = canPerform(.undo)
         undoButton.toolTip = "\(document.undoManager.undoMenuItemTitle) (⌘Z)"
         describeActiveTool()
@@ -482,6 +588,10 @@ enum EditorAction {
 
     private func describeActiveTool() {
         switch tools[activeTool] {
+        case is SelectTool:
+            canvas.guide = .box
+            hintField.stringValue = "Click a mark to select it. Drag it to move, drag a handle to resize, Delete removes it. Tab steps through marks; arrow keys move."
+            canvas.setAccessibilityLabel("Capture canvas. Click a mark to select it. Tab steps through marks.")
         case is SolidRedactionTool:
             canvas.guide = .conceal
             hintField.stringValue = "Drag a box. It is painted solid black and stays hidden under blur."
@@ -520,11 +630,56 @@ enum EditorAction {
             : "Done: finish editing and add the redacted capture to History (Return)"
     }
 
-    private func applyDrag(from start: CGPoint, to end: CGPoint) {
+    /// A press takes hold of the selected mark (or, with the Select tool, any mark); otherwise the
+    /// active tool draws on release.
+    private func press(at point: CGPoint, tolerance: Double) -> Bool {
+        guard !finishing else { return false }
+        grab = marks.press(atX: point.x, y: point.y, tolerance: tolerance, anyMark: tools[activeTool] is SelectTool)
+        return grab != nil
+    }
+
+    /// Releasing a held mark moves or resizes it. A click selects the mark under it (or deselects;
+    /// the Text tool then places its label); a drag draws with the active tool.
+    private func release(from start: CGPoint, to end: CGPoint, tolerance: Double) {
         guard !finishing else { return }
+        if let held = grab {
+            grab = nil
+            marks.release(held, fromX: start.x, fromY: start.y, toX: end.x, toY: end.y, slop: tolerance / 2)
+            return
+        }
+        if hypot(end.x - start.x, end.y - start.y) <= tolerance / 2 {
+            if marks.click(atX: end.x, y: end.y, tolerance: tolerance) || !(tools[activeTool] is TextTool) { return }
+        } else {
+            marks.deselect()
+        }
         var next = edits
         guard tools[activeTool].applyDrag(from: start, to: end, to: &next) else { return }
         document.apply(next)
+    }
+
+    private func markKey(_ key: MarkKey) -> Bool {
+        guard !finishing else { return false }
+        switch key {
+        case .next: return marks.selectNext()
+        case .previous: return marks.selectNext(backward: true)
+        case .delete: return marks.deleteSelection()
+        case let .nudge(dx, dy): return marks.nudge(dx: dx, dy: dy)
+        }
+    }
+
+    private func selectionChanged() {
+        refresh()
+        NSAccessibility.post(element: canvas, notification: .selectedChildrenChanged)
+        let edits = edits
+        let announcement = marks.selection.map { "Selected: \(edits.accessibilityLabel(for: $0))" } ?? "No mark selected"
+        NSAccessibility.post(element: window, notification: .announcementRequested,
+                             userInfo: [.announcement: announcement,
+                                        .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+    }
+
+    @objc private func changeWidth(_ sender: NSPopUpButton) {
+        guard !finishing, let width = sender.selectedItem?.representedObject as? Double else { return }
+        marks.rewidthSelection(width)
     }
 
     @objc private func selectTool(_ sender: NSButton) {
@@ -653,7 +808,7 @@ extension EditorWindow: NSToolbarDelegate {
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolButtons.enumerated().map { NSToolbarItem.Identifier("tool-\($0.offset)") }
-            + [.init("label"), .flexibleSpace, .init("undo"), .init("close")]
+            + [.init("label"), .init("width"), .flexibleSpace, .init("undo"), .init("close")]
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
@@ -663,6 +818,7 @@ extension EditorWindow: NSToolbarDelegate {
         case "label":
             item.view = labelField
             item.label = "Label"
+        case "width": item.view = widthPopUp; item.label = "Line Width"
         case "undo": item.view = undoButton; item.label = "Undo"
         case "close": item.view = closeButton; item.label = "Close"
         default:
