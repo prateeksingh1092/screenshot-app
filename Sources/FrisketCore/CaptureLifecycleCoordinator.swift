@@ -635,6 +635,8 @@ actor CaptureLifecycleCoordinator {
         guard revision.number == currentRevision(id), images[id] != nil || finalized.contains(id) else {
             return .rejected(.staleRevision)
         }
+        // D8: no text leaves the clipboard exactly as it was.
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .noTextFound(revision) }
         switch await textClipboard.writeText(text) {
         case let .success(receipt):
             return .recognizedText(RecognizedTextOutcome(revision: revision, characterCount: text.count,

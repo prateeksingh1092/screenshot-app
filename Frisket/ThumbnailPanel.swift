@@ -13,6 +13,8 @@ import FrisketCore
     @Published var dismissFailed = false
     @Published var keptInHistory = false
     @Published var historyCommitted = false
+    /// The last Copy Text result, shown on the status line instead of a modal (D8, DA-5).
+    @Published var textNotice = ""
     @Published var copyFocusRequest = UUID()
 }
 
@@ -53,6 +55,7 @@ private struct ThumbnailCard: View {
 
     private var status: String {
         if model.keptInHistory { return "Kept in History" }
+        if !model.textNotice.isEmpty { return model.textNotice }
         if model.copiedWhilePending { return "Copied. Could not keep in History. Edit, retry Close, or delete." }
         if model.saveFailed {
             return model.historyCommitted

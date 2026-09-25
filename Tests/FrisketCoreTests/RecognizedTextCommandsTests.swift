@@ -140,10 +140,9 @@ private actor RecordingDiagnostics: DiagnosticSink {
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
         #expect(await commands.execute(.done(original, edits)) ==
             .edited(rendered, .notCommitted(.historyUnavailable)))
-        #expect(await commands.execute(.copyRecognizedText(rendered)) ==
-            .recognizedText(RecognizedTextOutcome(revision: rendered, characterCount: 0,
-                                                  delivery: .copied(ClipboardReceipt(changeCount: 2)))))
-        #expect(await clipboard.texts == ["CANARY", ""])
+        // The redacted render has no text left: nothing is written (D8), so the earlier copy stays.
+        #expect(await commands.execute(.copyRecognizedText(rendered)) == .noTextFound(rendered))
+        #expect(await clipboard.texts == ["CANARY"])
     }
 
     @Test func missingRecognizerIsRejectedWithoutWritingText() async throws {
@@ -163,18 +162,31 @@ extension RecognizedTextCommandsTests {
     /// D8 (DA-5, story 89): Copy Text on a capture with no text leaves the clipboard exactly as it
     /// was. Today it writes an empty string over whatever the user had copied.
     @Test func d8CopyTextWithNoTextLeavesTheClipboardUnwritten() async throws {
-        try await knownDefect("D8") {
-            let clipboard = RecordingTextClipboard()
-            let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
-                source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
-                pendingByteLimit: 1024, textRecognizer: FixedRecognizer(text: ""), textClipboard: clipboard)
-            let id = CaptureID()
-            let revision = CaptureRevision(captureID: id, number: 1)
-            #expect(await commands.execute(.capture(id, maximumBytes: 64)) == .pending(revision))
-            _ = await commands.execute(.copyRecognizedText(revision))
-            let written = await clipboard.texts
-            #expect(written.isEmpty, "D8: Copy Text with no text wrote \(written) to the clipboard")
-            #expect(await commands.image(for: revision) != nil, "D8: the capture stays pending")
-        }
+        let clipboard = RecordingTextClipboard()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+            source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
+            pendingByteLimit: 1024, textRecognizer: FixedRecognizer(text: ""), textClipboard: clipboard)
+        let id = CaptureID()
+        let revision = CaptureRevision(captureID: id, number: 1)
+        #expect(await commands.execute(.capture(id, maximumBytes: 64)) == .pending(revision))
+        #expect(await commands.execute(.copyRecognizedText(revision)) == .noTextFound(revision))
+        let written = await clipboard.texts
+        #expect(written.isEmpty, "D8: Copy Text with no text wrote \(written) to the clipboard")
+        #expect(await commands.image(for: revision) != nil, "D8: the capture stays pending")
+    }
+}
+
+extension RecognizedTextCommandsTests {
+    /// Whitespace and line breaks alone count as no text (D8).
+    @Test func copyTextWithOnlyWhitespaceIsNoTextFound() async throws {
+        let clipboard = RecordingTextClipboard()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+            source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
+            pendingByteLimit: 1024, textRecognizer: FixedRecognizer(text: " \n\t "), textClipboard: clipboard)
+        let id = CaptureID()
+        let revision = CaptureRevision(captureID: id, number: 1)
+        #expect(await commands.execute(.capture(id, maximumBytes: 64)) == .pending(revision))
+        #expect(await commands.execute(.copyRecognizedText(revision)) == .noTextFound(revision))
+        #expect(await clipboard.texts.isEmpty)
     }
 }
