@@ -23,7 +23,7 @@ Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82â
 
 ### 2026-09-25: implementer, report
 
-Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62 supersedes the xhigh note above). Choices recorded as decision 67.
+Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62 supersedes the xhigh note above). Choices recorded as decision 68.
 
 - **Renderer:** new `AnnotationPainter` in `Sources/FrisketCore/CaptureRenderer.swift` draws rectangles and arrows with CoreGraphics and labels with CoreText (`HelveticaNeue-Bold`, 18 pt Ã— scale, antialiased, smoothing off). `DocumentRenderer.paint` calls it, so the preview and `flatten` share it: plates, then the redactions again, then ink above them. The per-pixel stroke, ring and bitmap-font code is gone.
 - **Deleted:** `AnnotationFont.swift` and `DocumentRenderer.outputCount`. A label now accepts any non-blank text.

@@ -257,7 +257,7 @@ Research has not yet established buildability or capture reliability on this Mac
 
 Resolve behavior and acceptance criteria, confirm the shared understanding and testing boundaries, publish the specification, then create implementation tickets. Do not treat pending recommendations as requirements.
 
-67. **Native annotations (implementer, 2026-09-25, ticket 66; under decisions 54 and 57):**
+68. **Native annotations (implementer, 2026-09-25, ticket 66; under decisions 54 and 57):**
     - **Where:** `AnnotationPainter` (in `CaptureRenderer.swift`) draws rectangles, arrows and labels with CoreGraphics and CoreText. The editor preview (`DocumentRenderer.render`) and `CaptureRenderer.flatten` both call it on the whole image, so the delivered image stays byte-equal to the preview.
     - **Order:** a white plate (the stroke widened by 1 px each side) for every annotation, then the Solid redactions again, then the ink. No plate pixel lands on a redacted pixel, and ink still draws above redactions.
     - **Labels:** pinned font `HelveticaNeue-Bold` (shipped with every macOS), 18 pt per document point, antialiased, font smoothing off. Any non-blank text is accepted; the 5×7 bitmap font (`AnnotationFont`) and the unused label seam `DocumentRenderer.outputCount` are deleted.
