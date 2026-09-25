@@ -184,13 +184,13 @@ canvas_drag() {  # canvas_drag FX0 FY0 FX1 FY1 as fractions of the image rectang
   nap 0.4
 }
 # Finish an edit through the close sheet: ⌘W, then Return (Finalize, the sheet's default). This path
-# works while the toolbar overflows (D5), when Done, Copy, Save and their key equivalents don't.
+# works whatever has focus, including the label field, where Return is typing and not Done (D5).
 editor_done() {
   drv key 13 cmd; nap 0.8
   editor_up && key 36
   wait_for 6 editor_gone; nap 0.8
 }
-# The edited result, copied from its Thumbnail after Finalize (the editor's own ⌘C dies under D5).
+# The edited result, copied from its Thumbnail after Finalize, so the row reads the finalized revision.
 editor_copy() { editor_done && wait_for 6 card_present && card_copy; }
 close_editor() {  # every open editor; edits are finalized (test captures stay in History)
   local i
@@ -358,9 +358,11 @@ row_editor_crop() {
 row_editor_finish_visible() {
   pattern_up --show && capture_pattern && open_editor || return 1
   local ok=0
-  "$H/drive" axframe frisket "Copy the edited capture" >>"$log" 2>&1 || ok=1
-  "$H/drive" axframe frisket "Save the edited capture" >>"$log" 2>&1 || ok=1
-  { "$H/drive" axframe frisket "Done" || "$H/drive" axframe frisket "Keep this capture in History"; } >>"$log" 2>&1 || ok=1
+  local label
+  # The action bar (D5): each control must exist in the window, not only in a toolbar overflow menu.
+  for label in "Drag the edited capture" "Copy edited capture" "Save edited capture" "Done"; do
+    "$H/drive" axframe frisket "$label" >>"$log" 2>&1 || ok=1
+  done
   return $ok
 }
 

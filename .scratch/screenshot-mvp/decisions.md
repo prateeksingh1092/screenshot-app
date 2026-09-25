@@ -167,6 +167,7 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Phase 1 choices:**
       - Ticket 59: Copy Text takes its own in-progress guard. Every command on that capture waits for it, except Done. Done may overtake Copy Text, because the stale-revision check already drops the old result; rejecting Done would make the user finish the edit twice.
       - Ticket 55: Copy Text with no text, or only whitespace, returns `.noTextFound` and writes nothing.
+      - Ticket 53 (D5): Done, Copy, Save and the drag handle sit in a bar at the bottom of the editor's content area; the toolbar keeps the tools, the label field, Undo and Close. No editor button has a key equivalent. ⌘C (Edit › Copy), ⌘S (a new File › Save) and ⌘Z reach the editor window through the responder chain; Esc arrives as `cancelOperation:`; Return means Done only when the label field isn't editing. Return in the label field ends typing, so a second Return is Done; ⌘C there copies selected label text. Thumbnail and menu text says "add to History" instead of "keep in History".
       - Ticket 54 (DA-3): a drag commits only after the handoff reports an accepted drop. A cancelled or failed drag reports `DragOutcome.commit == nil` unless an earlier delivery already committed. An editor drag sends a new `.render` command instead of `.done`: the edit becomes the next pending revision, so a cancelled editor drag leaves History unchanged too.
     - **Effort level (Prateek, 2026-09-24):**
       - Tickets run at high effort.

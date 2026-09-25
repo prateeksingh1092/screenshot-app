@@ -39,8 +39,8 @@ verification build. Screen Recording must already be granted
 6. Keyboard and VoiceOver, controls only (canvas contents are exempt):
    - Tab and Shift-Tab reach Solid Redaction, Undo, Close Without Changes and
      Done with a visible focus ring. With VoiceOver, confirm "Solid redaction
-     tool", "Undo last redaction", "Close editor without changes" and "Done:
-     keep the redacted capture"; the canvas is announced as one labelled image.
+     tool", "Undo last redaction", "Close editor without changes" and "Done"
+     (its help reads "Done: finish editing and add the redacted capture to History"); the canvas is announced as one labelled image.
    - ⌘Z removes the redaction and redraws the red quadrant; drag again.
    - With a redaction present, **Close Without Changes** is disabled and the
      window's close button shows "Press Done to keep the redacted capture"

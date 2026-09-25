@@ -1,18 +1,93 @@
 import AppKit
 import FrisketCore
 
-/// Letter keys select tools unless the label field is editing.
+/// The editor's finish and undo actions. They reach the editor as menu or responder actions,
+/// never as button key equivalents, so they work however the window is sized (D5).
+enum EditorAction {
+    case done, copy, save, undo, closeUnchanged
+}
+
+/// Letter keys select tools and Return means Done, unless the label field is editing. ⌘C, ⌘S
+/// and ⌘Z arrive from the main menu through the responder chain; Esc arrives as cancelOperation.
 @MainActor final class EditorKeyWindow: NSWindow {
     var toolKey: ((Character) -> Bool)?
+    var perform: ((EditorAction) -> Void)?
+    var canPerform: ((EditorAction) -> Bool)?
 
     override func keyDown(with event: NSEvent) {
-        let blocked = event.modifierFlags.intersection([.command, .control, .option])
-        if blocked.isEmpty, !(firstResponder is NSTextView),
-           let letter = event.charactersIgnoringModifiers?.lowercased().first,
-           toolKey?(letter) == true {
+        let commandLike = !event.modifierFlags.intersection([.command, .control, .option]).isEmpty
+        switch EditorKey.action(characters: event.charactersIgnoringModifiers, commandLike: commandLike,
+                                editingText: firstResponder is NSTextView) {
+        case .done:
+            request(.done)
             return
+        case .tool(let letter):
+            if toolKey?(letter) == true { return }
+        case nil:
+            break
         }
         super.keyDown(with: event)
+    }
+
+    private func request(_ action: EditorAction) {
+        if canPerform?(action) ?? false { perform?(action) }
+    }
+
+    /// Edit › Copy (⌘C) when the label field has no text selection to copy.
+    @objc func copy(_ sender: Any?) { request(.copy) }
+    /// File › Save (⌘S).
+    @objc func saveEditedCapture(_ sender: Any?) { request(.save) }
+    /// Edit › Undo (⌘Z). NSWindow answers `undo:` itself, so the override must live here.
+    @objc func undo(_ sender: Any?) { request(.undo) }
+    /// Esc closes an unchanged editor; with edits it does nothing, and ⌘W asks.
+    override func cancelOperation(_ sender: Any?) { request(.closeUnchanged) }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(copy(_:)): canPerform?(.copy) ?? false
+        case #selector(saveEditedCapture(_:)): canPerform?(.save) ?? false
+        case #selector(undo(_:)): canPerform?(.undo) ?? false
+        default: super.validateMenuItem(menuItem)
+        }
+    }
+}
+
+/// The bar along the bottom of the editor's content area: the drag handle, Copy, Save and Done
+/// (the default action), placed by `EditorWindowLayout.actionBar` at every width (D5).
+@MainActor final class EditorActionBar: NSView {
+    private let dragHandle: NSView
+    private let copyButton: NSButton
+    private let saveButton: NSButton
+    private let doneButton: NSButton
+
+    init(dragHandle: NSView, copy: NSButton, save: NSButton, done: NSButton) {
+        self.dragHandle = dragHandle
+        copyButton = copy
+        saveButton = save
+        doneButton = done
+        super.init(frame: .zero)
+        for view in [dragHandle, copy, save, done] { addSubview(view) }
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Finish editing")
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        bounds.fill()
+        NSColor.separatorColor.setFill()
+        CGRect(x: 0, y: bounds.maxY - 1, width: bounds.width, height: 1).fill()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        let bar = EditorWindowLayout.actionBar(width: newSize.width)
+        dragHandle.frame = bar.dragHandle
+        copyButton.frame = bar.copy
+        saveButton.frame = bar.save
+        doneButton.frame = bar.done
     }
 }
 
@@ -164,7 +239,7 @@ import FrisketCore
     private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
     private let saveButton = NSButton(title: "Save", target: nil, action: nil)
     private let dragWell = HistoryDragView()
-    private let doneButton = NSButton(title: "Keep in History", target: nil, action: nil)
+    private let doneButton = NSButton(title: "Done", target: nil, action: nil)
     var onFileDrag: ((NSView, NSEvent) -> Void)?
     var currentEdits: DocumentEdits { edits }
     var dragPreview: NSImage? { canvas.rendered }
@@ -226,17 +301,11 @@ import FrisketCore
         hintField.lineBreakMode = .byWordWrapping
         hintField.maximumNumberOfLines = 3
         hintField.cell?.truncatesLastVisibleLine = false
-        configure(undoButton, action: #selector(undo), key: "z", modifiers: .command,
-                  label: "Undo last edit", tip: "Undo last edit (⌘Z)")
-        configure(closeButton, action: #selector(closeWithoutChanges), key: "\u{1b}", modifiers: [],
+        // Undo and Close stay in the toolbar; ⌘Z and Esc reach them through the responder chain.
+        configure(undoButton, action: #selector(undo), label: "Undo last edit", tip: "Undo last edit (⌘Z)")
+        configure(closeButton, action: #selector(closeWithoutChanges),
                   label: "Close editor without changes", tip: "Close without changes (Esc)")
-        configure(copyButton, action: #selector(copyRendered), key: "c", modifiers: .command,
-                  label: "Copy the edited capture", tip: "Copy the edited result (⌘C)")
-        configure(saveButton, action: #selector(saveRendered), key: "s", modifiers: .command,
-                  label: "Save the edited capture", tip: "Save the edited result (⌘S)")
-        configure(doneButton, action: #selector(done), key: "\r", modifiers: [],
-                  label: "Keep this capture in History", tip: "Keep this capture in History (Return)")
-        for button in [undoButton, closeButton, copyButton, saveButton, doneButton] {
+        for button in [undoButton, closeButton] {
             if let image = NSImage(systemSymbolName: Self.actionSymbol(button), accessibilityDescription: button.title) {
                 image.isTemplate = true
                 button.image = image
@@ -244,9 +313,17 @@ import FrisketCore
                 button.title = ""
             }
         }
+        // Copy, Save and Done live in the action bar and keep their titles. Their shortcuts come
+        // from the main menu (⌘C, ⌘S) and the window (Return), so they work at any width (D5).
+        configure(copyButton, action: #selector(copyRendered), label: "Copy edited capture",
+                  tip: "Copy the edited result (⌘C)")
+        configure(saveButton, action: #selector(saveRendered), label: "Save edited capture",
+                  tip: "Save the edited result (⌘S)")
+        configure(doneButton, action: #selector(done), label: "Done",
+                  tip: "Done: finish editing and add the capture to History (Return)")
+        doneButton.bezelColor = .controlAccentColor
         dragWell.setAccessibilityLabel("Drag the edited capture")
         dragWell.toolTip = "Drag the edited result"
-        dragWell.setFrameSize(NSSize(width: 56, height: 36))
         dragWell.layer?.cornerRadius = 0
         dragWell.layer?.masksToBounds = false
         dragWell.onDrag = { [weak self] view, event in
@@ -261,25 +338,30 @@ import FrisketCore
         window.toolbar = toolbar
         window.toolbarStyle = .unifiedCompact
         window.toolKey = { [weak self] letter in self?.selectTool(letter: letter) ?? false }
+        window.perform = { [weak self] action in self?.perform(action) }
+        window.canPerform = { [weak self] action in self?.canPerform(action) ?? false }
         let probe = window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 800, height: 400))
         let chromeAbove = probe.height - 400
         let hintHeight: CGFloat = 44
+        let barHeight = EditorWindowLayout.actionBarHeight
         var size = EditorWindowLayout.contentSize(document: documentSize, visible: visible.size,
-            chrome: EditorWindowLayout.Chrome(toolbarHeight: hintHeight, titlebarHeight: chromeAbove))
-        size.width = max(size.width, min(760, visible.width))
-        window.minSize = CGSize(width: min(560, visible.width), height: min(hintHeight + 80, size.height))
+            chrome: EditorWindowLayout.Chrome(toolbarHeight: hintHeight + barHeight, titlebarHeight: chromeAbove))
+        size.width = max(size.width, min(EditorWindowLayout.defaultContentWidth, visible.width))
+        window.contentMinSize = CGSize(width: min(EditorWindowLayout.minimumContentWidth, visible.width),
+                                       height: min(hintHeight + barHeight + 80, size.height))
         window.maxSize = visible.size
         let content = NSView(frame: CGRect(origin: .zero, size: size))
-        canvas.frame = CGRect(x: 0, y: 0, width: size.width, height: max(1, size.height - hintHeight))
+        let bar = EditorActionBar(dragHandle: dragWell, copy: copyButton, save: saveButton, done: doneButton)
+        bar.frame = CGRect(x: 0, y: 0, width: size.width, height: barHeight)
+        bar.autoresizingMask = [.width, .maxYMargin]
+        canvas.frame = CGRect(x: 0, y: barHeight, width: size.width, height: max(1, size.height - hintHeight - barHeight))
         canvas.autoresizingMask = [.width, .height]
         canvas.onDrag = { [weak self] start, end in self?.applyDrag(from: start, to: end) }
-        hintField.frame = CGRect(x: 12, y: size.height - hintHeight + 6, width: size.width - 80, height: hintHeight - 10)
+        hintField.frame = CGRect(x: 12, y: size.height - hintHeight + 6, width: size.width - 24, height: hintHeight - 10)
         hintField.autoresizingMask = [.width, .minYMargin]
-        dragWell.frame = CGRect(x: size.width - 68, y: size.height - hintHeight + 4, width: 56, height: 36)
-        dragWell.autoresizingMask = [.minXMargin, .minYMargin]
         content.addSubview(canvas)
         content.addSubview(hintField)
-        content.addSubview(dragWell)
+        content.addSubview(bar)
         window.contentView = content
         window.setContentSize(size)
         window.initialFirstResponder = toolButtons.first
@@ -290,9 +372,6 @@ import FrisketCore
         switch button.action {
         case #selector(undo): return "arrow.uturn.backward"
         case #selector(closeWithoutChanges): return "xmark"
-        case #selector(copyRendered): return "doc.on.doc"
-        case #selector(saveRendered): return "square.and.arrow.down"
-        case #selector(done): return "checkmark"
         default: return "circle"
         }
     }
@@ -304,14 +383,12 @@ import FrisketCore
         return true
     }
 
-    private func configure(_ button: NSButton, action: Selector, key: String, modifiers: NSEvent.ModifierFlags,
-                           label: String, tip: String) {
+    private func configure(_ button: NSButton, action: Selector, label: String, tip: String) {
         button.target = self
         button.action = action
         button.bezelStyle = .push
         button.controlSize = .regular
-        button.keyEquivalent = key
-        button.keyEquivalentModifierMask = modifiers
+        button.keyEquivalent = ""
         button.setAccessibilityLabel(label)
         button.toolTip = tip
     }
@@ -413,13 +490,9 @@ import FrisketCore
             hintField.stringValue = "Drag on the image."
             canvas.setAccessibilityLabel("Capture canvas. Drag on the image.")
         }
-        let redacted = !edits.redactions.isEmpty
-        doneButton.toolTip = redacted
-            ? "Keep the redacted capture in History (Return)"
-            : "Keep this capture in History (Return)"
-        doneButton.setAccessibilityLabel(redacted
-            ? "Keep the redacted capture in History"
-            : "Keep this capture in History")
+        doneButton.toolTip = edits.redactions.isEmpty
+            ? "Done: finish editing and add the capture to History (Return)"
+            : "Done: finish editing and add the redacted capture to History (Return)"
     }
 
     private func applyDrag(from start: CGPoint, to end: CGPoint) {
@@ -458,6 +531,25 @@ import FrisketCore
 
     @objc private func done() {
         end(.finalize(edits))
+    }
+
+    private func canPerform(_ action: EditorAction) -> Bool {
+        guard !finishing, finish != nil else { return false }
+        switch action {
+        case .done, .copy, .save: return true
+        case .undo: return !undoStack.isEmpty
+        case .closeUnchanged: return unchanged
+        }
+    }
+
+    private func perform(_ action: EditorAction) {
+        switch action {
+        case .done: done()
+        case .copy: copyRendered()
+        case .save: saveRendered()
+        case .undo: undo()
+        case .closeUnchanged: closeWithoutChanges()
+        }
     }
 
     func offerToLeave() {
@@ -528,7 +620,7 @@ extension EditorWindow: NSToolbarDelegate {
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolButtons.enumerated().map { NSToolbarItem.Identifier("tool-\($0.offset)") }
-            + [.init("label"), .flexibleSpace, .init("undo"), .init("close"), .init("copy"), .init("save"), .init("done")]
+            + [.init("label"), .flexibleSpace, .init("undo"), .init("close")]
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
@@ -540,9 +632,6 @@ extension EditorWindow: NSToolbarDelegate {
             item.label = "Label"
         case "undo": item.view = undoButton; item.label = "Undo"
         case "close": item.view = closeButton; item.label = "Close"
-        case "copy": item.view = copyButton; item.label = "Copy"
-        case "save": item.view = saveButton; item.label = "Save"
-        case "done": item.view = doneButton; item.label = "Done"
         default:
             guard identifier.rawValue.hasPrefix("tool-"),
                   let index = Int(identifier.rawValue.dropFirst(5)),
@@ -558,5 +647,20 @@ extension EditorWindow: NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
         guard tools[activeTool] is TextTool else { return }
         canvas.guide = .label(labelField.stringValue)
+    }
+
+    /// Return in the label field ends typing but never means Done; Return again then does.
+    /// Esc there closes an unchanged editor, as it does elsewhere, instead of offering completions.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        switch commandSelector {
+        case #selector(NSResponder.insertNewline(_:)):
+            window.makeFirstResponder(nil)
+            return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            window.cancelOperation(nil)
+            return true
+        default:
+            return false
+        }
     }
 }
