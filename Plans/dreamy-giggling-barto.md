@@ -247,7 +247,17 @@ Every phase is test-first: a failing test that reproduces the defect is written 
 
 1. Record DA-3, DA-5 and DA-9 as numbered decisions, under the coordinator's authority (decision 54).
 2. Ask Prateek to sign off on DA-2, DA-7, DA-10 and DA-11. Until he signs, Phase 1 applies only the D13 interim below. DA-4 and DA-5 wait for DA-10 and DA-11; everything else proceeds.
-3. DONE: spec deltas written (`spec.md` stories 82–101 plus remediation seams). Still to do: tickets for Phases 0–5 (to-tickets).
+3. DONE: spec deltas written (`spec.md` stories 82–101 plus remediation seams). DONE: tickets 42–83 in `.scratch/screenshot-mvp/issues/` (decision 58, which also records four changes to Phase 1):
+
+   | Phase | Tickets |
+   |---|---|
+   | 0 | 42 build graph · 43 CI and known defects · 44–47 red tests (edited output; choosing what to capture; scrolling; lifecycle and History) · 48 live harness |
+   | 1 | 49 window (D2) · 50 overlay clicks (D4, D14) · 51 Loupe (D26) · 52 saved edits interim (D1) · 53 action bar (D5) · 54 drag (D7) · 55 empty Copy Text (D8) · 56 fixed Thumbnails (D9) · 57 History Delete (D10) · 58 Try Again (D19) · 59 reentrancy (D25) · 60 crop (D18) · 61 scrolling keys (D11) · 62 ⌘⇧2 (D12) · 63 macOS shortcuts (D13, full DA-2) · 64 stitch stopgap ◆ A |
+   | 2 | 65 renderer: crop and redaction · 66 annotations (D6) · 67 effects, delete encoder ◆ B · 68 preview parity (D23) · 69 `NSUndoManager` |
+   | 3 | 70 matcher · 71 slow down · 72 pixel cap (D20) |
+   | 4 | 73 Pending capture record · 74 History rows · 75 Region request · 76 notices · 77 adapters product |
+   | 5 | 78 History storage · 79 Restore to Thumbnail · 80 slim checks · 81 polish (D15–D17) · 82 docs |
+   | 6 | 83 acceptance (ready-for-human) |
 4. Rebase or close `.worktrees/ticket-40`: it predates `3d43926`, so acceptance there would test the old stitcher.
 
 **Exit:** the decisions are recorded with their authority; the tickets exist.

@@ -136,6 +136,33 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **DA-9:** the scrolling panel never takes key; ⌘⇧6 pressed again means Done.
     - **DA-10** (consistent with 28): History items can be restored to a Thumbnail that is already committed, with Edit disabled.
     - **DA-11:** see DA-4.
+58. **Remediation tickets and Phase 0 choices (2026-09-24):** the coordinator made these choices under decisions 54 and 57, working from the plan's §1 evidence and the session handoff.
+    - **Tickets:**
+      - Tickets 42–83 in `issues/` implement the plan's Phases 0–6 and stories 82–101. The coordinator answered to-tickets' review step itself (decision 57).
+      - Each Phase 1 fix is blocked by the red-test ticket for its seam. App-layer fixes with no seam are blocked by the live harness (48).
+    - **Changes to the plan's phases:**
+      - D1 keeps a Phase 1 interim (52). The save path renders the whole image with the same function the editor preview uses, for outputs up to 32,768 px tall. This overrides the handoff note "no D1 interim second render path". The interim adds no render algorithm: it reuses the preview's, drops the strip path for most outputs, and fixes a Critical defect before Phase 2. Ticket 65 deletes it.
+      - D6 gets no interim. The interim would only have shown dropped characters, not kept them; CoreText labels (66) fix it.
+      - D5 goes straight to the action bar (53), as D9 goes straight to fixed-size Thumbnails.
+      - D13 goes straight to the full DA-2 (63), because decision 57 recorded it; there is no launch-only interim.
+      - D26, the Loupe, is Phase 1 ticket 51.
+    - **Known defects:**
+      - A red test is wrapped in `knownDefect("Dn")`, a Swift Testing `withKnownIssue` that matches only failed expectations, so a thrown fixture error still fails the test.
+      - The suite stays green while the defect exists and turns red when it is fixed, so the fix must remove the wrapper.
+      - `FRISKET_SHOW_DEFECTS=1` runs the bodies unwrapped to show the reds.
+      - Test names start with the defect ID.
+    - **Build graph (42):**
+      - The app links the package's `FrisketCore` product through a local package reference. The Xcode static-library target and the project's own GRDB pin are removed.
+      - The workspace `Package.resolved` is a symlink to the root one.
+      - `SDKROOT = macosx`.
+      - Signing settings live in an untracked `Config/Signing.xcconfig`, with a tracked example. Without it, the build signs ad hoc, and the Screen Recording grant resets on every rebuild (decision 49).
+    - **CI (43):**
+      - `scripts/ci.sh` runs the static checks, the package tests and the unsigned app build.
+      - A tracked `.githooks/pre-push` runs `ci.sh`.
+      - The input-monitoring check moves from a per-build script phase into `ci.sh`.
+      - A no-network check is added.
+      - `@_silgen_name` is banned, except for the listed D22 uses.
+    - **Live matrix:** the unattended run drives the real screen and clipboard, so it runs only when Prateek says he is away. Until then, the Phase 0 gate reports the harness as built and dry-run only.
 
 ## Evaluation update: Xcode question resolved narrowly
 
