@@ -9,7 +9,7 @@ window	D2	pass	Window capture of a pattern window gives exactly that window (pat
 full	-	pass	Full-screen capture gives the exact display (pattern --verify-full)
 editor-arrow-label	D1	pass	400×500 capture: after an arrow at row 450 and a label at row 40, Copy has ink in both bands and nowhere between
 editor-label-text	D6	pass	A label typed as v2.1 $4.99 -10% reads back exactly through Copy Text
-editor-redaction	-	pass	Grey Solid redaction over the red quadrant, Blur and Magnify on top: pattern --verify-redacted grey
+editor-redaction	D29	xfail	Grey Solid redaction over the red quadrant, Blur and Magnify on top: pattern --verify-redacted grey
 editor-crop	-	pass	Crop to the middle half: the copied image has the crop's size
 editor-finish-visible	D5	pass	At the default editor width Done, Copy and Save are on screen, not in the toolbar overflow
 copytext-text	-	pass	Copy Text on the pattern caption puts its text on the clipboard

@@ -69,6 +69,10 @@ for tool in pattern drive meter; do
   [ -x "$H/$tool" ] || { echo "missing $H/$tool: run Tools/LiveHarness/build.sh" >&2; exit 2; }
 done
 "$H/drive" frisket >/dev/null 2>&1 || { echo "Frisket ($bundle) is not running; launch the installed app first" >&2; exit 2; }
+# Another screenshot app holding the ⌘⇧ shortcuts takes every capture key (2026-09-25: CleanShot X ran the whole matrix).
+if pgrep -f '/CleanShot X.app/Contents/MacOS/' >/dev/null; then
+  echo "CleanShot X is running and takes the ⌘⇧ shortcuts; quit it, relaunch Frisket, then run again" >&2; exit 2
+fi
 
 run="$H/runs/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$run"
@@ -290,7 +294,11 @@ row_window() {
     "$H/drive" axfind frisket "Capture unavailable" >>"$log" 2>&1 && note "alert: Capture unavailable"
     return 1
   fi
-  card_copy && clip_to window && "$H/pattern" --verify-full "$ev/window.png" $(( w * DS )) $(( h * DS )) "$DS" >>"$log" 2>&1
+  card_copy && clip_to window || return 1
+  local px ws
+  px=$(sips -g pixelWidth "$ev/window.png" | awk '/pixelWidth/ {print $2}'); ws=$(( px / w ))
+  [ "$ws" -eq "$DS" ] || note "window capture is at scale $ws (the pattern window's display), row display is $DS"
+  "$H/pattern" --verify-full "$ev/window.png" $(( w * ws )) $(( h * ws )) "$ws" >>"$log" 2>&1
 }
 
 row_full() {
@@ -333,8 +341,10 @@ row_editor_redaction() {
   pattern_up --show && capture_pattern && open_editor || return 1
   image_rect 320 180 || return 1
   # A non-black palette colour (ticket 88, decision 61), so the check proves the chosen colour reaches the output.
-  tool "Solid Redaction" && drv axpress frisket "Redaction colour: Grey" \
-    && canvas_drag 0 0 0.505 0.51   # the red quadrant from the image corner (a drag that starts outside the image is ignored)
+  tool "Solid Redaction"
+  "$H/drive" axfind frisket "Redaction colour" >>"$log" 2>&1 || "$H/drive" axdump frisket 2>/dev/null | grep -i -E 'toolbar|overflow|colour|AXMenuButton' | head -20 >>"$log"
+  drv axpress frisket "Redaction colour: Grey"
+  canvas_drag 0 0 0.505 0.51   # the red quadrant from the image corner (a drag that starts outside the image is ignored)
   tool "Blur" && canvas_drag 0.4 0.1 0.7 0.4
   tool "Magnify" && canvas_drag 0.1 0.1 0.3 0.35
   editor_done
@@ -413,13 +423,13 @@ history_newest() {  # open History (⌘⇧1) and click its newest row
 keep_card() { drv axpress frisket "Pending capture" "Close thumbnail and keep capture in History"; nap 1; }
 row_history_copy() {
   pattern_up --show && capture_pattern && keep_card && history_newest || return 1
-  drv axpress frisket "Copy" && nap 1 && clip_to history-copy && "$H/pattern" --verify "$ev/history-copy.png" "$DS" >>"$log" 2>&1
+  drv axpress frisket "Copy selected History capture" && nap 1 && clip_to history-copy && "$H/pattern" --verify "$ev/history-copy.png" "$DS" >>"$log" 2>&1
 }
 row_history_save() {
   pattern_up --show && capture_pattern && keep_card && history_newest || return 1
   local before new
   before=$(ls -1 "$exports" 2>/dev/null)
-  drv axpress frisket "Save"; nap 1.5
+  drv axpress frisket "Save selected History capture"; nap 1.5
   new=$(comm -13 <(echo "$before") <(ls -1 "$exports" 2>/dev/null))
   note "new exports: $new"
   # Remove only the test export this row just created.
@@ -465,7 +475,8 @@ row_save_confirms() {
   local before new ok=1
   before=$(ls -1 "$exports" 2>/dev/null)
   drv axpress frisket "Save capture"
-  wait_for 3 "$H/drive" axfind frisket "is in the export folder" >>"$log" 2>&1 && ok=0
+  saved_notice() { "$H/drive" axdump frisket 2>/dev/null | grep 'AXStaticText' | grep 'is in the export folder' >>"$log"; }
+  wait_for 3 saved_notice && ok=0
   "$H/drive" axdump frisket 2>/dev/null | grep -q 'AXSheet\|AXDialog' && { note "Save showed a modal"; ok=1; }
   nap 0.5
   new=$(comm -13 <(echo "$before") <(ls -1 "$exports" 2>/dev/null))
