@@ -262,7 +262,7 @@ import FrisketCore
             case let .edited(edited, committed, failure): (revision, commit, clipboardFailure) = (edited, committed, failure)
             case let .rendered(rendered, failure): (revision, commit, clipboardFailure) = (rendered, nil, failure)
             default:
-                notice("Could not finish editing", "Your edits are still open. Keep in History could not prepare the redacted result. Retry Keep in History to finish editing.")
+                notice("Could not finish editing", "Your edits are still open. Done could not prepare the redacted result. Press Done again to finish editing.")
                 return false
             }
             storeEditor(nil, for: id)
@@ -288,7 +288,7 @@ import FrisketCore
                 if case .drag(let outcome) = delivered {
                     if outcome.delivery != .copied { refreshed.model.dragFailed = true }
                     else if case .notCommitted = outcome.commit {
-                        notice("Could not keep in History", "The capture was dragged out, but could not be kept in History.")
+                        notice("Could not add to History", "The capture was dragged out, but could not be added to History.")
                     }
                 }
                 if case .rejected = delivered, delivery == .drag { refreshed.model.dragFailed = true }
@@ -353,7 +353,7 @@ import FrisketCore
                     panel.model.copiedWhilePending = true
                     panel.model.copyFailed = false
                     panel.model.dismissFailed = true
-                    notice("Could not keep in History", "The capture was copied. You can still edit it, retry Close, or delete it.")
+                    notice("Could not add to History", "The capture was copied. You can still edit it, retry Close, or delete it.")
                     settleSoon()
                 } else {
                     remove(id)
@@ -392,7 +392,7 @@ import FrisketCore
             panel.model.historyCommitted = outcome.commit == .committed
             if case .copied = outcome.delivery {
                 if case .notCommitted = outcome.commit {
-                    notice("Could not keep in History", "The capture was dragged out, but could not be kept in History.")
+                    notice("Could not add to History", "The capture was dragged out, but could not be added to History.")
                 }
                 remove(id)
             } else {
@@ -417,7 +417,7 @@ import FrisketCore
             panel.model.historyCommitted = outcome.commit == .committed
             if case .saved = outcome.delivery {
                 if case .notCommitted(let reason) = outcome.commit, reason != .captureExceedsHistoryLimit {
-                    notice("Could not keep in History", "The PNG was saved to the export folder, but could not be kept in History.")
+                    notice("Could not add to History", "The PNG was saved to the export folder, but could not be added to History.")
                 }
                 remove(id)
             } else {

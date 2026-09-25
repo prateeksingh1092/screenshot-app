@@ -66,7 +66,7 @@ private struct ThumbnailCard: View {
     private var status: String {
         if model.keptInHistory { return "Kept in History" }
         if !model.textNotice.isEmpty { return model.textNotice }
-        if model.copiedWhilePending { return "Copied. Could not keep in History. Edit, retry Close, or delete." }
+        if model.copiedWhilePending { return "Copied. Could not add to History. Edit, retry Close, or delete." }
         if model.saveFailed {
             return model.historyCommitted
                 ? "Kept in History. Save failed. Retry Save or Close."
@@ -75,13 +75,13 @@ private struct ThumbnailCard: View {
         if model.dragFailed {
             return model.historyCommitted
                 ? "Kept in History. Drag failed. Drag again or Close."
-                : "Drag failed. Drag again or close to keep in History."
+                : "Drag failed. Drag again or close to add it to History."
         }
-        if model.dismissFailed { return "Could not keep in History. Retry Close or Copy." }
+        if model.dismissFailed { return "Could not add to History. Retry Close or Copy." }
         if model.copyFailed {
             return model.historyCommitted
                 ? "Kept in History. Copy failed. Retry Copy or Close."
-                : "Copy failed. Retry Copy or close to keep in History."
+                : "Copy failed. Retry Copy or close to add it to History."
         }
         return ""
     }

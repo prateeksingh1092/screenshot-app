@@ -138,7 +138,7 @@ import FrisketCore
         add("Delete Latest Capture", action: #selector(deleteLatest), to: menu)
         add("History", action: #selector(showHistory), to: menu)
         menu.addItem(.separator())
-        let history = NSMenuItem(title: "Dismiss captures to keep in History", action: nil, keyEquivalent: "")
+        let history = NSMenuItem(title: "Dismiss captures to add them to History", action: nil, keyEquivalent: "")
         history.isEnabled = false
         menu.addItem(history)
         menu.addItem(.separator())
@@ -230,6 +230,8 @@ import FrisketCore
 
         let file = submenu("File")
         command("Close Window", #selector(NSWindow.performClose(_:)), "w", in: file)
+        // The editor answers Save (⌘S) and Copy (⌘C) through the responder chain (D5).
+        command("Save", #selector(EditorKeyWindow.saveEditedCapture(_:)), "s", in: file)
         let edit = submenu("Edit")
         command("Undo", Selector(("undo:")), "z", in: edit)
         command("Redo", Selector(("redo:")), "z", in: edit, modifiers: [.command, .shift])

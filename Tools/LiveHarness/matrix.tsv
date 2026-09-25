@@ -14,7 +14,7 @@ editor-arrow-label	D1	pass	400×500 capture: after an arrow at row 450 and a lab
 editor-label-text	D6	xfail	A label typed as v2.1 $4.99 -10% reads back exactly through Copy Text
 editor-redaction	-	pass	Solid redaction over the red quadrant, Blur and Magnify on top: pattern --verify-redacted
 editor-crop	-	pass	Crop to the middle half: the copied image has the crop's size
-editor-finish-visible	D5	xfail	At the default editor width Done, Copy and Save are on screen, not in the toolbar overflow
+editor-finish-visible	D5	pass	At the default editor width Done, Copy and Save are on screen, not in the toolbar overflow
 copytext-text	-	pass	Copy Text on the pattern caption puts its text on the clipboard
 copytext-none	D8	pass	Copy Text on a capture with no text leaves the clipboard unchanged, shows no alert, and says "No text found" on the Thumbnail
 stack	D9	pass	Two pending Thumbnails don't overlap
