@@ -4,7 +4,7 @@
 # pattern (Python regex, case-insensitive)	decision	use instead	pending
 \bLoupe\b	60	(no Loupe while selecting)
 \bxhigh\b	62	medium effort
-RGBA\(0, ?0, ?0, ?255\)|opaque black|exact(ly)? black|guaranteed[^.\n]{0,12}black	61	the chosen redaction colour at alpha 255	Sources/=88,Tests/=88,Frisket/=88,Tools/=88,docs/=88
+RGBA\(0, ?0, ?0, ?255\)|opaque black|exact(ly)? black|guaranteed[^.\n]{0,12}black	61	the chosen redaction colour at alpha 255	
 ScrollingCapture|Stitcher|captureScrolling|scrolling capture|⌘⇧6	60	(scrolling capture is removed)
 \bCaptureCommandLayer\b	71	CaptureLifecycleCoordinator (actions) or HistoryStore (History reads)
 \bHistoryRootLock\b|\brootLocked\b	74	(no History lock; HistoryStore sweeps at launch)

@@ -31,16 +31,20 @@ enum EditorToolRole: Equatable {
 
 @MainActor final class SolidRedactionTool: EditorTool {
     let title = "Solid Redaction"
-    let accessibilityLabel = "Solid redaction. Hides pixels with opaque black."
+    let accessibilityLabel = "Solid redaction. Hides pixels with an opaque colour, black by default."
     let keyEquivalent = "r"
     let symbolName = "square.fill"
     let role = EditorToolRole.conceal
+    /// The fill for new redactions: a palette colour, black until the user picks another (decision 61).
+    var colour = SolidRedaction.fill
+    var colourName: String { SolidRedaction.palette.first { $0.pixel == colour }?.name ?? "Black" }
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
         let originX = edits.crop?.x ?? 0
         let originY = edits.crop?.y ?? 0
         guard let redaction = SolidRedaction(x: min(start.x, end.x) + originX, y: min(start.y, end.y) + originY,
-                                             width: abs(end.x - start.x), height: abs(end.y - start.y)) else { return false }
+                                             width: abs(end.x - start.x), height: abs(end.y - start.y),
+                                             colour: colour) else { return false }
         edits.redactions.append(redaction)
         return true
     }

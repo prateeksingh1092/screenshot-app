@@ -12,15 +12,19 @@ private let background = RGBA(r: 0x30, g: 0x50, b: 0x70, a: 0xff)
 private let opaqueBlack = RGBA(r: 0, g: 0, b: 0, a: 0xff)
 
 /// Synthetic canary fixture: unique colours fill exactly the output pixels each redaction must cover.
+/// Every case runs in black (the default) and in two other palette colours (ticket 88, decision 61).
 private struct CanaryCase: Sendable, CustomTestStringConvertible {
     let scale: Double
     let width: Int, height: Int
     /// Rectangles in document points, and the hand-computed covered output pixels (inclusive ranges).
     let redactions: [(x: Double, y: Double, width: Double, height: Double)]
     let covered: [(columns: ClosedRange<Int>, rows: ClosedRange<Int>, canary: UInt32)]
-    var testDescription: String { "\(Int(scale))x" }
+    /// The chosen Solid redaction colour; every covered pixel must be exactly it.
+    var colour = RedactionColour(name: "Black", pixel: SolidRedaction.fill)
+    var fill: RGBA { RGBA(r: colour.pixel.red, g: colour.pixel.green, b: colour.pixel.blue, a: colour.pixel.alpha) }
+    var testDescription: String { "\(Int(scale))x \(colour.name)" }
 
-    static let all = [
+    static let black = [
         CanaryCase(scale: 1, width: 40, height: 30,
                    redactions: [(4.5, 3.25, 10, 6.5), (20, 15, 8.25, 5.5)],
                    covered: [(4...14, 3...9, 0xc17a3e), (20...28, 15...20, 0x3ec17a)]),
@@ -28,16 +32,27 @@ private struct CanaryCase: Sendable, CustomTestStringConvertible {
                    redactions: [(4.5, 3.25, 10, 6.5), (20, 15, 8.25, 5.5)],
                    covered: [(9...28, 6...19, 0xc17a3e), (40...56, 30...40, 0x3ec17a)])
     ]
+    /// Black first, so `all[0]` and `all[1]` stay the black 1× and 2× cases.
+    static let all = black + otherColours.flatMap { colour in black.map { $0.in(colour) } }
+    static let otherColours = SolidRedaction.palette.filter { ["White", "Grey"].contains($0.name) }
+
+    func `in`(_ colour: RedactionColour) -> CanaryCase {
+        var copy = self
+        copy.colour = colour
+        return copy
+    }
 
     var canaries: Set<RGBA> { Set(covered.map { rgba($0.canary) }) }
     func isCovered(x: Int, y: Int) -> Bool { covered.contains { $0.columns.contains(x) && $0.rows.contains(y) } }
     func edits() throws -> DocumentEdits {
-        let redactions = try redactions.map { try #require(SolidRedaction(x: $0.x, y: $0.y, width: $0.width, height: $0.height)) }
+        let redactions = try redactions.map { try #require(SolidRedaction(x: $0.x, y: $0.y, width: $0.width, height: $0.height,
+                                                                          colour: colour.pixel)) }
         return try #require(DocumentEdits(scale: scale, redactions: redactions))
     }
 
     func cropped(_ crop: (x: Double, y: Double, width: Double, height: Double)) throws -> DocumentEdits {
-        let redactions = try redactions.map { try #require(SolidRedaction(x: $0.x, y: $0.y, width: $0.width, height: $0.height)) }
+        let redactions = try redactions.map { try #require(SolidRedaction(x: $0.x, y: $0.y, width: $0.width, height: $0.height,
+                                                                          colour: colour.pixel)) }
         return try #require(DocumentEdits(scale: scale,
             crop: DocumentCrop(x: crop.x, y: crop.y, width: crop.width, height: crop.height), redactions: redactions))
     }
@@ -102,7 +117,7 @@ private func expectRedacted(_ output: (width: Int, height: Int, pixels: [RGBA]),
         for x in 0..<fixture.width {
             let pixel = output.pixels[y * fixture.width + x]
             if fixture.canaries.contains(pixel) { canaries += 1 }
-            if fixture.isCovered(x: x, y: y) { coveredMismatches += pixel == opaqueBlack ? 0 : 1 }
+            if fixture.isCovered(x: x, y: y) { coveredMismatches += pixel == fixture.fill ? 0 : 1 }
             else { uncoveredMismatches += pixel == background ? 0 : 1 }
         }
     }
@@ -136,9 +151,9 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
     let outputWidth: Int
     let outputHeight: Int
     let covered: [(columns: ClosedRange<Int>, rows: ClosedRange<Int>)]
-    var testDescription: String { "crop \(Int(scale))x at \(crop.x),\(crop.y)" }
+    var testDescription: String { "crop \(Int(scale))x at \(crop.x),\(crop.y) \(source.colour.name)" }
 
-    static let all = [
+    static let black = [
         CropCanary(scale: 1, source: CanaryCase.all[0], crop: (10, 8, 18, 14),
                    outputWidth: 18, outputHeight: 14, covered: [(0...4, 0...1), (10...17, 7...12)]),
         CropCanary(scale: 2, source: CanaryCase.all[1], crop: (10, 8, 18, 14),
@@ -150,6 +165,10 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         CropCanary(scale: 2, source: CanaryCase.all[1], crop: (10.25, 8.25, 17.75, 13.5),
                    outputWidth: 36, outputHeight: 28, covered: [(0...8, 0...3), (20...35, 14...24)])
     ]
+    static let all = black + CanaryCase.otherColours.flatMap { colour in
+        black.map { CropCanary(scale: $0.scale, source: $0.source.in(colour), crop: $0.crop,
+                               outputWidth: $0.outputWidth, outputHeight: $0.outputHeight, covered: $0.covered) }
+    }
 
     func edits() throws -> DocumentEdits { try source.cropped(crop) }
 
@@ -163,7 +182,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
                 let pixel = output.pixels[y * outputWidth + x]
                 if source.canaries.contains(pixel) { canaries += 1 }
                 if covered.contains(where: { $0.columns.contains(x) && $0.rows.contains(y) }) {
-                    coveredMismatches += pixel == opaqueBlack ? 0 : 1
+                    coveredMismatches += pixel == source.fill ? 0 : 1
                 } else {
                     uncoveredMismatches += pixel == background ? 0 : 1
                 }
@@ -658,7 +677,7 @@ private struct AnnotationCanary: Sendable, CustomTestStringConvertible {
                 if isOutline(x: x, y: y) {
                     strokeMismatches += pixel == annotationStroke ? 0 : 1
                 } else if source.isCovered(x: x, y: y) {
-                    coveredMismatches += pixel == opaqueBlack ? 0 : 1
+                    coveredMismatches += pixel == source.fill ? 0 : 1
                 }
             }
         }
@@ -817,7 +836,7 @@ extension EditorRedactionCommandsTests {
 
 private struct EffectCanary: Sendable, CustomTestStringConvertible {
     let source: CanaryCase
-    var testDescription: String { "effect \(Int(source.scale))x" }
+    var testDescription: String { "effect \(Int(source.scale))x \(source.colour.name)" }
 
     static let all = CanaryCase.all.map(EffectCanary.init)
 
@@ -875,9 +894,13 @@ extension EditorRedactionCommandsTests {
     }
 }
 
-private struct CanaryColorRecognizer: TextRecognizer {
+private final class CanaryColorRecognizer: TextRecognizer, Sendable {
     let canaries: Set<RGBA>
+    /// Every image text recognition was given: the OCR input.
+    let inputs = Mutex<[Data]>([])
+    init(canaries: Set<RGBA>) { self.canaries = canaries }
     func recognize(_ image: CaptureImage) async -> String {
+        inputs.withLock { $0.append(image.pngData) }
         guard let decoded = try? decodeSRGB(image.pngData) else { return "" }
         return decoded.pixels.contains(where: canaries.contains) ? "CANARY" : ""
     }
@@ -895,9 +918,10 @@ extension EditorRedactionCommandsTests {
     @Test(arguments: CanaryCase.all)
     private func copyRecognizedTextStandInSeesCanaryUntilRedactionCoversIt(fixture: CanaryCase) async throws {
         let clipboard = RecordingTextClipboard()
+        let recognizer = CanaryColorRecognizer(canaries: fixture.canaries)
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, flattener: CaptureRenderer(),
-            textRecognizer: CanaryColorRecognizer(canaries: fixture.canaries), textClipboard: clipboard)
+            textRecognizer: recognizer, textClipboard: clipboard)
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)
@@ -911,6 +935,10 @@ extension EditorRedactionCommandsTests {
         // Redaction hid the canary, so no text is left: nothing is written (D8).
         #expect(await commands.execute(.copyRecognizedText(rendered)) == .noTextFound(rendered))
         #expect(await clipboard.texts == ["CANARY"])
+        // The OCR input for the rendered revision is exactly the chosen colour under each redaction.
+        let inputs = recognizer.inputs.withLock { $0 }
+        #expect(inputs.count == 2)
+        if let last = inputs.last { expectRedacted(try decodeSRGB(last), fixture) }
     }
 
     @Test func doneOnATallCaptureRedactsThroughStripEncode() async throws {

@@ -394,6 +394,12 @@ extension AnnotationPainter {
         return change(mark, .rewidth(width), verb: "Restyle")
     }
 
+    /// The selected Solid redaction's fill colour; nil when no redaction is selected.
+    public var selectionFill: RGBAPixel? {
+        guard case .redaction(let index)? = selection else { return nil }
+        return edits.redactions[index].colour
+    }
+
     /// The selected mark's line width, when it has one to change.
     public var selectionWidth: Double? {
         guard case .annotation(let index)? = selection else { return nil }

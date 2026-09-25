@@ -330,12 +330,14 @@ row_editor_label_text() {
 row_editor_redaction() {
   pattern_up --show && capture_pattern && open_editor || return 1
   image_rect 320 180 || return 1
-  tool "Solid Redaction" && canvas_drag 0 0 0.505 0.51   # the red quadrant from the image corner (a drag that starts outside the image is ignored)
+  # A non-black palette colour (ticket 88, decision 61), so the check proves the chosen colour reaches the output.
+  tool "Solid Redaction" && drv axpress frisket "Redaction colour: Grey" \
+    && canvas_drag 0 0 0.505 0.51   # the red quadrant from the image corner (a drag that starts outside the image is ignored)
   tool "Blur" && canvas_drag 0.4 0.1 0.7 0.4
   tool "Magnify" && canvas_drag 0.1 0.1 0.3 0.35
   editor_done
   wait_for 6 card_present && card_copy && clip_to editor-redaction \
-    && "$H/pattern" --verify-redacted "$ev/editor-redaction.png" "$DS" >>"$log" 2>&1
+    && "$H/pattern" --verify-redacted "$ev/editor-redaction.png" "$DS" grey >>"$log" 2>&1
 }
 
 row_editor_crop() {

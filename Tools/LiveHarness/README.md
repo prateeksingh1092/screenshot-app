@@ -18,7 +18,7 @@ Tools/LiveHarness/build.sh      # → .build/live-harness/{pattern,drive,meter,s
 
 | Tool | Source | What it does |
 |---|---|---|
-| `pattern` | `Tools/FrisketTestPattern.swift` | Synthetic windows: `--show`, `--show-all`, `--show-window`, `--show-full-screen`, each with `[--display ID\|main\|builtin\|external]` (or `FRISKET_PATTERN_DISPLAY`). Verifiers: `--verify`, `--verify-full`, `--verify-redacted` |
+| `pattern` | `Tools/FrisketTestPattern.swift` | Synthetic windows: `--show`, `--show-all`, `--show-window`, `--show-full-screen`, each with `[--display ID\|main\|builtin\|external]` (or `FRISKET_PATTERN_DISPLAY`). Verifiers: `--verify`, `--verify-full`, `--verify-redacted PATH 1\|2 [colour]` (a palette name or `RRGGBB`; black by default) |
 | `drive` | `drive.swift` | Keys, typing, pointer, AX reads and presses, window lists, clipboard save/restore, raw pixel reads. Run `drive` with no arguments for usage, or read the `switch` in `main` |
 | `meter` | `meter.swift` | Pixel meters: `px`, `scan` (red/blue runs and markers), `redink` and `band` (annotation ink) |
 | `sckwins` | `sckwins.swift` | ScreenCaptureKit's list of small windows, with bundle IDs (D2: the cursor window has an empty bundle ID) |
