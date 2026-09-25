@@ -174,3 +174,11 @@ func shortcutFailedRemapNeverChangesActiveOrSavedBinding(failure: ShortcutFailur
     #expect(ShortcutAction.savedBindings(from: try ShortcutAction.encoded(bindings)) == bindings)
     #expect(ShortcutAction.savedBindings(from: Data("not json".utf8)).isEmpty)
 }
+
+/// Story 101 / D17: Frisket writes Command before Shift everywhere it spells a shortcut (ticket 81).
+@Test func shortcutsAreWrittenCommandShift() {
+    #expect(ShortcutBinding(keyCode: 21, modifiers: 768).modifierSymbols == "⌘⇧")
+    #expect(ShortcutBinding(keyCode: 21, modifiers: 4864).modifierSymbols == "⌃⌘⇧")
+    #expect(ShortcutBinding(keyCode: 21, modifiers: 0x0100 | 0x0800).modifierSymbols == "⌥⌘")
+    #expect(ShortcutBinding(keyCode: 21, modifiers: 0x1000 | 0x0800 | 0x0200).modifierSymbols == "⌃⌥⇧")
+}

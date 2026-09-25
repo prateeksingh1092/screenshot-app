@@ -28,10 +28,15 @@ public struct SaveOutcome: Equatable, Sendable {
     }
 }
 
+/// Export names follow macOS screenshots: `Frisket 2026-09-25 at 14.03.07.png`, in local time at the
+/// moment of the save, with ` (2)`, ` (3)` … on collisions (ticket 81). Dots, not colons: Finder shows a colon as a slash.
 public enum ExportFilenamePolicy {
-    /// Stable base per rendered revision; suffixes begin at 2 on collisions.
-    public static func filename(for revision: CaptureRevision, collisionIndex: UInt = 0) -> String {
-        let suffix = collisionIndex == 0 ? "" : "-\(collisionIndex + 1)"
-        return "Frisket-\(revision.captureID.rawValue.uuidString)-r\(revision.number)\(suffix).png"
+    public static func filename(at date: Date, in timeZone: TimeZone, collisionIndex: UInt = 0) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        func two(_ value: Int?) -> String { value.map { $0 < 10 ? "0\($0)" : "\($0)" } ?? "00" }
+        let suffix = collisionIndex == 0 ? "" : " (\(collisionIndex + 1))"
+        return "Frisket \(c.year ?? 0)-\(two(c.month))-\(two(c.day)) at \(two(c.hour)).\(two(c.minute)).\(two(c.second))\(suffix).png"
     }
 }

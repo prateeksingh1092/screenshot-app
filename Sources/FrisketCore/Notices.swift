@@ -25,7 +25,7 @@ public enum Confirmation: CaseIterable, Sendable {
 }
 
 extension Notice {
-    /// The notice, if any, that follows a command's outcome. A success returns nil: the Thumbnail's
+    /// The notice, if any, that follows a command's outcome. A success returns nil, except Save: the Thumbnail's
     /// status and its leaving say it. A failure the Thumbnail already shows as a Retry control also returns nil.
     public static func after(_ command: CaptureCommand, _ outcome: CaptureCommandOutcome) -> Notice? {
         switch outcome {
@@ -42,9 +42,10 @@ extension Notice {
             guard case .copied = copy.delivery else { return limitNotice(copy.commit) }
             return copy.commit == .notCommitted(.recoveryRequired) ? .historyNeedsRecovery : limitNotice(copy.commit)
         case let .save(save):
-            guard case .saved = save.delivery else { return limitNotice(save.commit) }
+            guard case let .saved(receipt) = save.delivery else { return limitNotice(save.commit) }
             if case .notCommitted(let reason) = save.commit, reason != .captureExceedsHistoryLimit { return .savedButNotInHistory }
-            return limitNotice(save.commit)
+            // The file lands out of sight, so Save confirms (D17, ticket 81).
+            return limitNotice(save.commit) ?? .saved(receipt.filename)
         case let .drag(drag):
             guard drag.delivery == .copied, let commit = drag.commit else { return nil }
             if case .notCommitted(let reason) = commit, reason != .captureExceedsHistoryLimit { return .draggedButNotInHistory }
@@ -87,6 +88,9 @@ extension Notice {
         message: "The clipboard may still contain the original capture. Use Copy on the redacted thumbnail to replace it.")
     public static let historyNeedsRecovery = Notice(title: "History needs recovery",
         message: "The capture was copied, but History could not finish keeping it. This capture cannot be edited.")
+    public static func saved(_ filename: String) -> Notice {
+        Notice(title: "Saved", message: "\(filename) is in the export folder.")
+    }
     public static let savedButNotInHistory = Notice(title: "Could not add to History",
         message: "The PNG was saved to the export folder, but could not be added to History.")
     public static let draggedButNotInHistory = Notice(title: "Could not add to History",

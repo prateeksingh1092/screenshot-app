@@ -76,6 +76,15 @@ public struct ShortcutBinding: Hashable, Codable, Sendable {
     }
 }
 
+extension ShortcutBinding {
+    /// The modifiers as Frisket writes them: Control, Option, Command, then Shift, so Command–Shift reads ⌘⇧
+    /// everywhere (story 101, ticket 81). Carbon masks: cmdKey 0x100, shiftKey 0x200, optionKey 0x800, controlKey 0x1000.
+    public var modifierSymbols: String {
+        [(UInt32(0x1000), "⌃"), (0x0800, "⌥"), (0x0100, "⌘"), (0x0200, "⇧")]
+            .filter { modifiers & $0.0 != 0 }.map(\.1).joined()
+    }
+}
+
 /// OS registration, symbolic shortcuts and preferences are the external boundary.
 @MainActor public protocol ShortcutSystem: AnyObject {
     func enabledShortcuts() throws -> [ShortcutBinding]

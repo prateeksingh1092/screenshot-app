@@ -117,6 +117,24 @@ private struct ExportSettingsView: View {
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
+        window.moveToActiveDisplay()
         window.makeKeyAndOrderFront(nil)
+        // AppKit gives first focus to the first text field, the auto-dismiss delay (D15). Start with no field
+        // focused instead, so typing changes nothing and Tab starts at the first control (ticket 81).
+        window.makeFirstResponder(nil)
+        DispatchQueue.main.async { [window] in window.makeFirstResponder(nil) }
+    }
+}
+
+extension NSWindow {
+    /// History and Settings open on the display under the pointer, as the notice line does (D15, ticket 81).
+    /// A window already open on that display stays where the user put it.
+    func moveToActiveDisplay() {
+        let pointer = NSEvent.mouseLocation
+        guard let active = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main else { return }
+        if isVisible, screen == active { return }
+        let area = active.visibleFrame
+        let size = frame.size
+        setFrameOrigin(NSPoint(x: area.midX - size.width / 2, y: max(area.minY, area.midY - size.height / 2)))
     }
 }

@@ -343,6 +343,9 @@ private final class ThumbnailCardPanel: NSPanel {
         let name = finalized ? "Capture kept in History" : "Pending capture"
         panel.setAccessibilityTitle(name)
         panel.setAccessibilityLabel(name)
+        // The picture is its own element (D16, ticket 81); a plain NSView is not one by default.
+        imageWell?.setAccessibilityElement(true)
+        imageWell?.setAccessibilityRole(.image)
         imageWell?.setAccessibilityLabel("\(name) preview")
         let actions = actions
         var custom = [

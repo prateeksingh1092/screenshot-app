@@ -74,6 +74,20 @@ private let repository = URL(fileURLWithPath: #filePath)
             "Matt Pocock skills — MIT",
         ])
         #expect(about.notices == notices)
+        // D17: About shows formatted text, not Markdown source (ticket 81).
+        #expect(about.noticeBlocks.compactMap { if case let .heading(text) = $0 { text } else { nil } } == about.noticeHeadings)
+        #expect(about.noticeBlocks.contains { if case let .preformatted(text) = $0 { text.contains("Permission is hereby granted") } else { false } })
+        for block in about.noticeBlocks {
+            let shown: String
+            switch block {
+            case let .heading(text), let .preformatted(text): shown = text
+            case let .paragraph(text): shown = String(text.characters)
+            }
+            #expect(!shown.contains("```") && !shown.hasPrefix("#"), "\(shown)")
+            if case .paragraph = block { #expect(!shown.contains("**") && !shown.contains("`") && !shown.contains("]("), "\(shown)") }
+        }
+        #expect(!about.noticeBlocks.contains { if case let .paragraph(text) = $0 { String(text.characters).contains("decision") } else { false } })
+
         #expect(!about.noticesAccessibilityLabel.isEmpty)
         #expect(!about.closeAccessibilityLabel.isEmpty)
         let plist = try Data(contentsOf: repository.appendingPathComponent("Frisket/Info.plist"))

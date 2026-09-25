@@ -62,15 +62,14 @@ import Testing
         #expect(shown > 0)
     }
 
-    /// A success is never announced as a notice: the Thumbnail's own status and removal say it.
+    /// A success is not announced as a notice: the Thumbnail's own status and removal say it.
+    /// Save is the exception: its file lands out of sight, so it confirms (below).
     @Test func successOutcomesShowNoNotice() throws {
         let edits = try #require(DocumentEdits(scale: 1))
         let successes: [(CaptureCommand, CaptureCommandOutcome)] = [
             (.capture(Self.id, maximumBytes: 1), .pending(Self.revision)),
             (.captureWindow(Self.id, maximumBytes: 1), .captureFailed(.cancelled)),
             (.copy(Self.revision), .copy(CopyOutcome(revision: Self.revision, commit: .committed, delivery: .copied(Self.receipt)))),
-            (.save(Self.revision), .save(SaveOutcome(revision: Self.revision, commit: .committed,
-                                                     delivery: .saved(ExportReceipt(filename: "a.png"))))),
             (.drag(Self.revision, .copy), .drag(DragOutcome(revision: Self.revision, commit: .committed, delivery: .copied))),
             (.dismiss(Self.revision), .finalized(Self.revision, .committed)),
             (.exitThumbnail(Self.revision, .close), .finalized(Self.revision, .committed)),
@@ -81,6 +80,20 @@ import Testing
         for (command, outcome) in successes {
             #expect(Notice.after(command, outcome) == nil, "\(outcome)")
         }
+    }
+
+    /// D17: Save confirms on the notice line, not with a modal, and names the file (ticket 81).
+    @Test func saveConfirmsWithTheExportName() {
+        let saved = SaveOutcome(revision: Self.revision, commit: .committed,
+                                delivery: .saved(ExportReceipt(filename: "Frisket 2026-09-25 at 14.03.07.png")))
+        for command in [CaptureCommand.save(Self.revision), .retrySave(Self.revision)] {
+            let notice = Notice.after(command, .save(saved))
+            #expect(notice == .saved("Frisket 2026-09-25 at 14.03.07.png"))
+            #expect(notice?.announcement.contains("Frisket 2026-09-25 at 14.03.07.png") == true)
+        }
+        // A save History could not keep still says so instead.
+        let unkept = SaveOutcome(revision: Self.revision, commit: .notCommitted(.historyUnavailable), delivery: saved.delivery)
+        #expect(Notice.after(.save(Self.revision), .save(unkept)) == .savedButNotInHistory)
     }
 
     @Test func failuresTheUserMustKnowAboutShowANotice() throws {

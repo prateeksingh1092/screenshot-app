@@ -757,3 +757,25 @@ extension ThumbnailStackCommandsTests {
         #expect(try await fixture.historyIDs().isEmpty)
     }
 }
+
+extension ThumbnailStackCommandsTests {
+    /// D17: Copy Latest and Delete Latest have nothing to act on without a Thumbnail, and Delete Latest
+    /// skips a card History already keeps (ticket 81).
+    @Test func copyAndDeleteLatestActOnlyWhenThereIsSomethingToActOn() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        #expect(await fixture.commands.thumbnails().latestToCopy == nil)
+        #expect(await fixture.commands.thumbnails().latestToDelete == nil)
+        let older = try await fixture.capture()
+        fixture.clock.advance(by: .milliseconds(10))
+        let newer = try await fixture.capture()
+        #expect(await fixture.commands.thumbnails().latestToCopy?.revision == newer)
+        #expect(await fixture.commands.thumbnails().latestToDelete?.revision == newer)
+        guard case .copy = await fixture.commands.execute(.copy(newer)) else { Issue.record("Copy should run"); return }
+        // The kept card still copies again from History, but it can't be deleted from the stack.
+        #expect(await fixture.commands.thumbnails().latestToCopy?.revision == newer)
+        #expect(await fixture.commands.thumbnails().latestToDelete?.revision == older)
+        #expect(await fixture.commands.execute(.exitThumbnail(older, .delete)) == .discarded(older.captureID))
+        #expect(await fixture.commands.thumbnails().latestToDelete == nil)
+    }
+}

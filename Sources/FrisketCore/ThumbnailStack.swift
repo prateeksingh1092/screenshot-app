@@ -150,6 +150,10 @@ public struct Thumbnails: RandomAccessCollection, Equatable, Sendable {
     public var startIndex: Int { cards.startIndex }
     public var endIndex: Int { cards.endIndex }
     public subscript(position: Int) -> ThumbnailCard { cards[position] }
+    /// What Copy Latest acts on: the newest card, pending or kept in History. Nil disables it (D17).
+    public var latestToCopy: ThumbnailCard? { cards.first }
+    /// What Delete Latest acts on: the newest pending card; a kept card is already in History. Nil disables it (D17).
+    public var latestToDelete: ThumbnailCard? { cards.first { $0.status == .pending } }
 }
 
 /// Pure ordering and exit policy for the cards of Pending captures and of finalized ones still shown.

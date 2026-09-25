@@ -80,6 +80,7 @@ import FrisketCore
             let historyWindow = HistoryWindow()
             historyWindow.model.connect(historyStore, commands: commands)
             historyWindow.model.onRevealHistory = { [weak self] in self?.revealHistoryFolder() }
+            historyWindow.model.onNotice = { [weak self] notice in self?.notices.show(notice) }
             historyWindow.startDrag = { [weak self] row, view, event in
                 self?.startHistoryDrag(row, from: view, event: event)
             }
@@ -449,6 +450,17 @@ import FrisketCore
             try preparedRelaunch?.openDuringTermination()
         } catch {
             notices.show(.cannotReopenWhileQuitting)
+        }
+    }
+}
+
+/// Copy Latest and Delete Latest are disabled when there is nothing to act on (D17, ticket 81).
+extension AppController: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(copyLatest): captures?.canCopyLatest ?? false
+        case #selector(deleteLatest): captures?.canDeleteLatest ?? false
+        default: true
         }
     }
 }

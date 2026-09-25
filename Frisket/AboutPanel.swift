@@ -60,12 +60,23 @@ private struct AboutView: View {
                 .accessibilityLabel(content.versionAccessibilityLabel)
             Text(content.noticesHeading).font(.headline).accessibilityAddTraits(.isHeader)
             ScrollView {
-                Text(content.notices)
-                    .font(.body)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel(content.noticesAccessibilityLabel)
-                    .accessibilityValue(content.notices)
+                // Formatted blocks, not Markdown source (D17, ticket 81).
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(content.noticeBlocks.enumerated()), id: \.offset) { _, block in
+                        switch block {
+                        case let .heading(text):
+                            Text(text).font(.headline).accessibilityAddTraits(.isHeader)
+                        case let .paragraph(text):
+                            Text(text).font(.body)
+                        case let .preformatted(text):
+                            Text(text).font(.system(.caption, design: .monospaced))
+                        }
+                    }
+                }
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(content.noticesAccessibilityLabel)
             }
             .frame(maxHeight: 320)
             HStack {
