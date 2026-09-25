@@ -1,3 +1,11 @@
+> **Session of 2026-09-25 (day), Claude Code, Opus 5.5, medium effort:** every agent-ready ticket is merged. `main` is at `fe7fa6e`, with `ci.sh` green (415 tests, 7 known issues).
+> - **Merged, in order:** 91 (decision 76), 69 (77), 79 (78), 81 (79), 77 (80), 84 (81), 88 (82), 85 (83), 86 (84), 80 (85) and 82 (docs).
+> - **Merge fix:** a ticket-85 test comment used "exactly black", which 88 retired; it was reworded in `3adee66`.
+> - **Not yet live-checked:** everything since the installed build `c8c85bb`. Next: a signed install of `main` (needs Prateek's approval), then the live matrix on each display, 9 minutes at most per run. Include the new rows from 81 (`history-display`, `settings-focus`, `thumbnail-picture`, `save-confirms`, `menu-latest`), which are uncalibrated. Also cover 79's History restore row, 88's Grey `editor-redaction` row, and 86's label rows.
+> - **Live checks each implementer asked for:** 69 (⌘Z/⌘⇧Z menu names, the close sheet), 84 (handles, Tab/arrows/Delete, VoiceOver), 85 (the tapered and curved arrows, the bend handle), 86 (caret alignment, input methods, size/style while typing), 81 (the Settings first focus, the About layout).
+> - **Then:** ticket 83, Prateek's acceptance test (15 minutes per part).
+> - **Product choices made by agents, which Prateek may revisit:** the redaction palette is neutral only (Black, Dark Grey, Grey, Light Grey, White) and resets to black in each editor. Delete Latest acts on the newest pending Thumbnail. Export names are `Frisket <date> at <time>.png`.
+>
 > **Next session starts here.** Prateek will say "continue from Plans/2026-09-24-session-handoff.md". Do these steps in order.
 >
 > **Effort:** medium for every ticket (decision 62). There are no xhigh steps.
