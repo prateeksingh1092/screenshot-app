@@ -72,3 +72,45 @@ private func canaryTextPNG() throws -> Data {
     try #require(CGImageDestinationFinalize(destination))
     return data as Data
 }
+
+/// A system clipboard stand-in whose change count moves on every replacement, as NSPasteboard's does.
+@MainActor private final class CountingPasteboard: PasteboardDestination {
+    private(set) var changeCount = 11
+    private(set) var replacements = 0
+    func replace(with items: [NSPasteboardItem], options: NSPasteboard.ContentsOptions) -> Int? {
+        replacements += 1
+        changeCount += 1
+        return changeCount
+    }
+}
+
+private struct SyntheticPixels: CapturePixelSource {
+    func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
+        .success(CaptureImage(pngData: Data([1, 2, 3])))
+    }
+}
+
+private struct NoTextRecognizer: TextRecognizer {
+    func recognize(_ image: CaptureImage) async -> String { "" }
+}
+
+@Suite struct RecognizedTextClipboardTests {
+    /// D8 (DA-5, story 89), through the real pasteboard adapter: an empty recognition result must
+    /// not change the system clipboard's change count or contents.
+    @Test func d8CopyTextWithNoTextLeavesTheSystemClipboardUnchanged() async throws {
+        try await knownDefect("D8") {
+            let destination = await CountingPasteboard()
+            let adapter = await PasteboardAdapter(destination: destination)
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SyntheticPixels(),
+                clipboard: adapter, pendingByteLimit: 1024, textRecognizer: NoTextRecognizer(), textClipboard: adapter)
+            let id = CaptureID()
+            let revision = CaptureRevision(captureID: id, number: 1)
+            #expect(await commands.execute(.capture(id, maximumBytes: 64)) == .pending(revision))
+            _ = await commands.execute(.copyRecognizedText(revision))
+            let changeCount = await destination.changeCount
+            #expect(changeCount == 11, "D8: the clipboard's change count moved")
+            let replacements = await destination.replacements
+            #expect(replacements == 0, "D8: the clipboard's contents were replaced")
+        }
+    }
+}

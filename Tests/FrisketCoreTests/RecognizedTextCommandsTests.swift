@@ -158,3 +158,23 @@ private actor RecordingDiagnostics: DiagnosticSink {
         #expect(await clipboard.texts.isEmpty)
     }
 }
+
+extension RecognizedTextCommandsTests {
+    /// D8 (DA-5, story 89): Copy Text on a capture with no text leaves the clipboard exactly as it
+    /// was. Today it writes an empty string over whatever the user had copied.
+    @Test func d8CopyTextWithNoTextLeavesTheClipboardUnwritten() async throws {
+        try await knownDefect("D8") {
+            let clipboard = RecordingTextClipboard()
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+                source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
+                pendingByteLimit: 1024, textRecognizer: FixedRecognizer(text: ""), textClipboard: clipboard)
+            let id = CaptureID()
+            let revision = CaptureRevision(captureID: id, number: 1)
+            #expect(await commands.execute(.capture(id, maximumBytes: 64)) == .pending(revision))
+            _ = await commands.execute(.copyRecognizedText(revision))
+            let written = await clipboard.texts
+            #expect(written.isEmpty, "D8: Copy Text with no text wrote \(written) to the clipboard")
+            #expect(await commands.image(for: revision) != nil, "D8: the capture stays pending")
+        }
+    }
+}

@@ -479,3 +479,125 @@ extension HistoryCommandsTests {
         return revision
     }
 }
+
+/// Stands in for the editor renderer: Done always yields a valid synthetic PNG History accepts.
+private struct RenderedPNGCodec: BitmapCodec {
+    func decode(_ pngData: Data) -> Bitmap? {
+        Bitmap(width: 2, height: 1, pixels: Array(repeating: RGBAPixel(red: 255, green: 0, blue: 0, alpha: 255), count: 2))
+    }
+    func encode(_ bitmap: Bitmap) -> Data? { HistoryPixels().bytes }
+}
+
+/// The two ways a capture is already in History while its Thumbnail is still open.
+private enum FinalizedWithOpenThumbnail: CaseIterable, Sendable {
+    /// Done commits the rendered revision and leaves its Thumbnail open.
+    case afterDone
+    /// Copy commits, the clipboard write fails, and the Thumbnail stays open for Retry.
+    case afterFailedCopy
+}
+
+extension HistoryCommandsTests {
+    /// D10 (DA-4, story 91): deleting a History item whose Thumbnail is open closes that Thumbnail
+    /// and deletes. Today the core refuses (`alreadyFinalized`) and the UI says "Delete failed. Try again.",
+    /// which retrying can never fix.
+    @Test(arguments: FinalizedWithOpenThumbnail.allCases)
+    private func d10DeletingAHistoryItemClosesItsOpenThumbnailAndDeletes(state: FinalizedWithOpenThumbnail) async throws {
+        try await knownDefect("D10") {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let clipboard: any ImageClipboard = state == .afterFailedCopy ? RetryHistoryClipboard() : HistoryClipboard()
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), clipboard: clipboard,
+                pendingByteLimit: 1024, history: HistoryStore(root: root), codec: RenderedPNGCodec())
+            let id = CaptureID()
+            let original = CaptureRevision(captureID: id, number: 1)
+            #expect(await commands.execute(.capture(id, maximumBytes: 1024)) == .pending(original))
+            let open: CaptureRevision
+            switch state {
+            case .afterDone:
+                let edits = try #require(DocumentEdits(scale: 1))
+                open = CaptureRevision(captureID: id, number: 2)
+                #expect(await commands.execute(.done(original, edits)) == .edited(open, .committed))
+            case .afterFailedCopy:
+                open = original
+                #expect(await commands.execute(.copy(original)) == .copy(CopyOutcome(revision: original,
+                    commit: .committed, delivery: .failed(.unavailable))))
+            }
+            let before = try await commands.historyEntries().get()
+            #expect(before.map(\.captureID) == [id])
+            #expect(await commands.thumbnails().map(\.revision) == [open])
+
+            let deleted = await commands.execute(.deleteHistory(id))
+            #expect(deleted == .historyDeleted(id), "D10: History Delete was refused while the Thumbnail is open")
+            let after = try await commands.historyEntries().get()
+            #expect(after.isEmpty, "D10: the History item survived Delete")
+            let thumbnails = await commands.thumbnails().map(\.revision)
+            #expect(thumbnails.isEmpty, "D10: the capture's Thumbnail stayed open after Delete")
+            let held = await commands.image(for: open)
+            #expect(held == nil, "D10: the deleted capture's pixels are still held")
+        }
+    }
+}
+
+extension HistoryCommandsTests {
+    /// D19 (story 97): after "Try Again" recovery succeeds, History row actions (open the image,
+    /// Copy, Delete) work at once. Today recovery closes the writer and they fail until the next commit.
+    @Test func d19HistoryRowActionsWorkRightAfterRecovery() async throws {
+        try await knownDefect("D19") {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let source = HistoryPixels()
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: HistoryClipboard(),
+                pendingByteLimit: 1024, history: HistoryStore(root: root))
+            let id = CaptureID()
+            let revision = CaptureRevision(captureID: id, number: 1)
+            #expect(await commands.execute(.capture(id, maximumBytes: 1024)) == .pending(revision))
+            #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
+            let recovered = await commands.recoverHistory()
+            #expect((try? recovered.get()) != nil)
+            let items = try await commands.historyItems().get()
+            #expect(items.map(\.captureID) == [id])
+
+            let image = await commands.historyImage(id)
+            #expect(image?.pngData == source.bytes, "D19: the History image is unavailable after recovery")
+            let copied = await commands.execute(.copy(revision))
+            #expect(copied == .copy(CopyOutcome(revision: revision, commit: .committed,
+                delivery: .copied(ClipboardReceipt(changeCount: 1)))), "D19: History Copy fails after recovery")
+            let deleted = await commands.execute(.deleteHistory(id))
+            #expect(deleted == .historyDeleted(id), "D19: History Delete fails after recovery")
+        }
+    }
+
+    /// D19, same cause at launch: the launch sweep also leaves the writer closed, so a History row
+    /// can't be opened, copied or deleted after relaunch until something new is committed.
+    @Test func d19HistoryRowActionsWorkAfterRelaunch() async throws {
+        try await knownDefect("D19") {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let source = HistoryPixels()
+            let id = CaptureID()
+            let revision = CaptureRevision(captureID: id, number: 1)
+            do {
+                let firstStore = HistoryStore(root: root)
+                let first = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: HistoryClipboard(),
+                    pendingByteLimit: 1024, history: firstStore)
+                #expect(await first.execute(.capture(id, maximumBytes: 1024)) == .pending(revision))
+                #expect(await first.execute(.dismiss(revision)) == .finalized(revision, .committed))
+                let closed = await firstStore.close()
+                #expect((try? closed.get()) != nil)
+            }
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: HistoryClipboard(),
+                pendingByteLimit: 1024, history: HistoryStore.launch(root: root))
+            #expect(await commands.historyAvailability() == nil)
+            let items = try await commands.historyItems().get()
+            #expect(items.map(\.captureID) == [id])
+
+            let image = await commands.historyImage(id)
+            #expect(image?.pngData == source.bytes, "D19: the History image is unavailable after relaunch")
+            let copied = await commands.execute(.copy(revision))
+            #expect(copied == .copy(CopyOutcome(revision: revision, commit: .committed,
+                delivery: .copied(ClipboardReceipt(changeCount: 1)))), "D19: History Copy fails after relaunch")
+            let deleted = await commands.execute(.deleteHistory(id))
+            #expect(deleted == .historyDeleted(id), "D19: History Delete fails after relaunch")
+        }
+    }
+}
