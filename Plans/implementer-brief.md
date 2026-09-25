@@ -1,4 +1,4 @@
-# Implementer brief: Frisket Phase 1 tickets
+# Implementer brief: Frisket tickets
 
 You fix one or more tickets in Frisket, a Swift 6 menu-bar screenshot app for macOS 26. For each ticket named in your task:
 
@@ -12,7 +12,7 @@ Work only inside that worktree: absolute paths, and `cd` into it for commands. N
 1. `CLAUDE.md` (the project rules and invariants).
 2. The ticket file, including its Comments.
 3. `CONTEXT.md` (the domain terms).
-4. Decisions 57 and 58 at the end of `.scratch/screenshot-mvp/decisions.md`.
+4. Decisions 57–62 at the end of `.scratch/screenshot-mvp/decisions.md`.
 
 ## How to work (test first)
 
@@ -35,14 +35,14 @@ Work only inside that worktree: absolute paths, and `cd` into it for commands. N
 ## Finish
 
 1. Tick the criteria you met in the ticket file, and leave live-matrix criteria unticked.
-2. Append `### 2026-09-24: implementer, report` to the ticket file. It records the model and effort (Claude Opus 5.5, high), what changed and why, the tests, and anything left open.
+2. Append `### <date>: implementer, report` to the ticket file. It records the model and effort (Claude Opus 5.5, medium; decision 62), what changed and why, the tests, and anything left open.
 3. Commit on the ticket branch. The message ends with this line and the trailers:
 
    ```
-   Model: Claude Opus 5.5 (1M context), Claude Code, high effort.
+   Model: Claude Opus 5.5 (1M context), Claude Code, medium effort.
 
    Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
-   Claude-Session: https://claude.ai/code/session_01SsxjzzJbhgsFqwBv3tvTfP
+   Claude-Session: https://claude.ai/code/session_01Y5n3GFD6LnFvKFsw6qkTKY
    ```
 
 4. Reply in under 200 words: files changed, tests (red → green), the `ci.sh` result, and anything the coordinator must check live.

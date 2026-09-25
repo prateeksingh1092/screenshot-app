@@ -1,23 +1,21 @@
 > **Next session starts here.** Prateek will say "continue from Plans/2026-09-24-session-handoff.md". Do these steps in order.
 >
-> **Effort rule (Prateek's request).**
-> - Before any step that needs xhigh, stop and ask him explicitly to switch Claude Code to xhigh. He changes the setting himself.
-> - When that work is done, tell him explicitly to move it back to high.
-> - xhigh is for tickets 64, 65, 66, 67, 68 and 70 only (decision 58). Everything else runs at high.
-> - He said he would switch to xhigh right after `/clear`. So at the start of the session, tell him steps 1–2 need only high, and let him choose whether to switch back now or keep xhigh until step 3.
+> **Effort:** medium for every ticket (decision 62). There are no xhigh steps.
 >
-> **Steps:**
-> 1. **Install and check Phase 1 live** (high).
->    - Decision 59 approves installing a new signed Development build of `main`.
->    - Follow `docs/app-build.md`: the signed build, then quit the running Frisket and copy it to `~/Applications/Frisket.app`. The `codesign` keychain prompt once hung a build, so run it in the background with a log and a watchdog.
->    - Then run `Tools/LiveHarness/beta-matrix.sh --live` on both displays. Prateek must be away, or say it is fine.
->    - Fix the calibration of the 3 unclear rows (ticket 48), and record each Phase 1 ticket's live result.
-> 2. **Check the candidate findings live:**
->    - D28: a second drag doesn't replace the Selection;
->    - pressing the selected tool deselects it;
->    - a redaction drag that starts outside the image is ignored.
-> 3. **Ticket 64:** the scrolling stitch stopgap and Gate A (xhigh; ask first). Stop at Gate A and report the numbers. Then tell Prateek to move effort back to high.
-> 4. **Phase 2** (tickets 65–69) and the editor tickets 84–86 (decision 59) come next. Ask for xhigh before each of 65–68.
+> **State on 2026-09-25:**
+> - Steps 1–2 of the old list are done, and ticket 56 is verified live.
+> - Decisions 60–62 changed the plan:
+>   - scrolling capture is removed (ticket 87);
+>   - the Loupe is gone;
+>   - Thumbnail controls sit on one row;
+>   - the redaction colour comes from a palette (ticket 88);
+>   - effort is medium throughout.
+>
+> **Next:**
+> 1. Merge ticket 87 and live-check it on one display, in 15 minutes at most.
+> 2. Retire story 100 and the Loupe term in `CONTEXT.md` (decision 60).
+> 3. Then the "Tickets left" table below, in its order.
+> 4. Post a plain-language table of what is done and what has started after each ticket.
 >
 > **How to run tickets:**
 > - Use fresh helper agents, not forks, with the brief `Plans/implementer-brief.md`, at most two at a time.
@@ -27,13 +25,13 @@
 
 ## Tickets left (2026-09-25): 26 open, grouped by what they do
 
-Every live check lasts 15 minutes at most, on one display per run (`beta-matrix.sh --minutes`, `CLAUDE.md`). **xhigh** marks the tickets that need xhigh effort (decision 58). Run at most two agents at a time.
+Every live check lasts 15 minutes at most, on one display per run (`beta-matrix.sh --minutes`, `CLAUDE.md`). Run at most two agents at a time.
 
 | Group | Tickets, in order | What it delivers | Live check |
 |---|---|---|---|
 | 0. Finish Phase 1 | 56 (D9, fix in `main` working tree), 48 (2 harness rows, History-window leak) | Thumbnails stack; the harness is trustworthy | stack row, then one display per run |
 | 1. Remove scrolling capture (decision 60) | 87 (64, 70, 71 and 72 are withdrawn) | ⌘⇧6, the stitcher and all its tests, checks, rows and docs are gone | area, window and full rows |
-| 2. One Capture renderer | 65 **xhigh** → 66 **xhigh** → 67 **xhigh** (Gate B) → 68 **xhigh** → 69 | What you see in the editor is what you get (D1, D6, D18, D23); native Blur/Magnify; `@_silgen_name` zlib gone; ⌘Z/⌘⇧Z everywhere | editor rows |
+| 2. One Capture renderer | 65 → 66 → 67 (Gate B) → 68 → 69 | What you see in the editor is what you get (D1, D6, D18, D23); native Blur/Magnify; `@_silgen_name` zlib gone; ⌘Z/⌘⇧Z everywhere | editor rows |
 | 3. Editor features (decisions 59, 61) | 84 → 85, 86, 88 | Editable marks; arrow styles and Line; text typed on the image; a chosen Solid redaction colour | editor rows + a short user test |
 | 4. Lifecycle and History inside | 73 → 74, 76 → 78 → 79; 75 (after 72); 77 (after 74, 75, 76) | One Pending capture record; fast History; notices never block; simpler storage; Restore to Thumbnail; one Region request; adapters tested as a package | history rows |
 | 5. Polish | 81 (after 76) | History/Settings on the active display; accessible Thumbnail picture; dated export names (D15–D17) | history-save row |
@@ -55,8 +53,8 @@ Decision 60:
 - **Not checked:** the two minor editor candidates. They are deferred to tickets 84–86.
 - **Details:** ticket 48, comment of 2026-09-25.
 - **Next:**
-  1. Fix ticket 56 at high effort.
-  2. Ticket 64, which needs xhigh: ask first.
+  1. Done: ticket 56 was fixed and verified live.
+  2. Superseded: decision 60 withdrew ticket 64.
 
 ## Phase 1 progress (2026-09-25)
 
@@ -67,7 +65,7 @@ Decision 60:
   - 52 (D1 interim; peak 1.41 GB at 5,120 × 32,768), 54 (D7/DA-3; `.render` for editor drags), 56 (D9).
   - At the last batch, `ci.sh` showed 335 tests and 52 known issues.
 - **Also merged:** 51 (Loupe, D26) and 53 (editor action bar, D5). At `b6233e9`, `ci.sh` shows 354 tests.
-- **Left:** 64 (xhigh, Gate A).
+- **Left:** none. Ticket 64 was withdrawn by decision 60.
 - **Live checks, not yet run:** every live row of the fixes above. The harness drives the *installed* build 8, and a new install needs Prateek's approval.
 - **The harness was calibrated in its first live run:** 6 rows pass and 12 fail as expected on both displays, and 3 rows fail for reasons not yet clear. See ticket 48.
 - **Candidates to verify after install:**
