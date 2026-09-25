@@ -159,6 +159,43 @@ import Testing
         #expect(differing == 0, "effect output depends on pixels under a redaction or outside the effect box")
     }
 
+    /// Ticket 67: a Solid redaction under Blur and Magnify stays exactly its colour at alpha 255,
+    /// whatever the colour (decision 61), including where Magnify enlarges the redacted pixels.
+    @Test(arguments: [SolidRedaction.fill, RGBAPixel(red: 0xff, green: 0xff, blue: 0xff, alpha: 0xff),
+                      RGBAPixel(red: 0x80, green: 0x80, blue: 0x80, alpha: 0xff)])
+    func redactionUnderBlurAndMagnifyStaysItsExactColour(colour: RGBAPixel) throws {
+        let width = 40, height = 40
+        let redaction = try #require(SolidRedaction(x: 8, y: 8, width: 12, height: 10, colour: colour))
+        let blur = try #require(DocumentEffect(.blur(x: 4, y: 4, width: 24, height: 20)))
+        let magnify = try #require(DocumentEffect(.magnify(x: 6, y: 6, width: 30, height: 30)))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], effects: [blur, magnify]))
+        let output = try Self.decode(try CaptureRenderer().flatten(
+            try Self.encode(Self.pattern(width: width, height: height), width: width, height: height), edits: edits))
+        for y in 8..<18 {
+            for x in 8..<20 {
+                let i = (y * width + x) * 4
+                #expect(Array(output.bytes[i..<(i + 4)]) == [colour.red, colour.green, colour.blue, 0xff],
+                        "redacted pixel (\(x), \(y)) is not exactly the redaction colour")
+            }
+        }
+    }
+
+    /// Ticket 67: Blur (vImage) and Magnify (CoreGraphics) are deterministic. The golden is the
+    /// FNV-1a hash of the decoded pixels, measured on x86_64; arm64 must match it too (decision 56).
+    @Test func effectOutputHashIsStable() throws {
+        let width = 96, height = 80, scale = 2.0
+        let redaction = try #require(SolidRedaction(x: 10, y: 10, width: 6, height: 5))
+        let blur = try #require(DocumentEffect(.blur(x: 2.25, y: 3.5, width: 30, height: 20.5)))
+        let magnify = try #require(DocumentEffect(.magnify(x: 20, y: 15, width: 21.5, height: 17)))
+        let crop = try #require(DocumentCrop(x: 0.5, y: 1, width: 45, height: 37))
+        let edits = try #require(DocumentEdits(scale: scale, crop: crop, redactions: [redaction], effects: [blur, magnify]))
+        let output = try Self.decode(try CaptureRenderer().flatten(
+            try Self.encode(Self.pattern(width: width, height: height), width: width, height: height), edits: edits))
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in output.bytes { hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3 }
+        #expect(String(hash, radix: 16) == "758bcf3ed5875618", "Blur and Magnify output changed")
+    }
+
     // 4. A fixed sRGB working space.
     @Test func outputIsInSRGBWhateverTheCaptureSpace() throws {
         let width = 8, height = 4

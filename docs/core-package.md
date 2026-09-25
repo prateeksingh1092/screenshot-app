@@ -372,8 +372,9 @@ the drag finalizes it only on an accepted drop. The launch sweep removes any
   (output pixels per document point), an optional `crop` in original document
   points, and the ordered `redactions`.
   `SolidRedaction(x:y:width:height:)` is in document points from the top-left
-  and fails for non-finite or non-positive geometry. It has no colour, opacity,
-  radius or stroke to set; `SolidRedaction.fill` is opaque black.
+  and fails for non-finite or non-positive geometry. It carries its `colour`
+  (decision 61), which must have alpha 255; the default, `SolidRedaction.fill`,
+  is black. It has no opacity, radius or stroke to set.
 - **Renderer (seam 2):** `DocumentRenderer.render(_:) -> Bitmap` is pure Swift
   (Foundation only). Crop is applied first (outward snap to output pixels).
   Each redaction is then shifted into the cropped document, multiplied by
@@ -622,19 +623,22 @@ build and requires CANARY before redaction and its absence after. See
 ## Ticket 36 editing a tall capture
 
 Scrolling capture was removed (decision 60), so no capture is taller than one
-display. The strip path below stays until ticket 67 replaces it.
+display. Done renders the whole image once with `CaptureRenderer.flatten`
+(ticket 65) and encodes it with ImageIO; the strip PNG encoder and its zlib
+bindings were deleted by ticket 67.
 
-`DocumentRenderer.forEachStrip` paints 256-row output windows (plus a one-row
-halo when effects are present) and never retains the full rendered bitmap.
-`StripPNGEncoder` writes a PNG as those strips arrive. Done calls
-`BitmapCodec.encode(pngData:edits:)` so History, Copy, and Save see the
-full-resolution result. Seam 1 canaries include a tall 16×96 case.
+`DocumentRenderer.forEachStrip` remains only as a test oracle and the Gate B
+fallback: it paints 256-row output windows, widened to the whole rows of any
+Blur or Magnify box a window meets, so its strips equal the whole-image render
+(D1). Blur is a vImage 3×3 box convolution, edge-extended at its box and run
+six times; Magnify draws the box's top-left quarter at 2× over the whole box
+with CoreGraphics and no interpolation. Both read only their own box of the
+redacted composite, and the redactions are stamped again after them.
 
 The editor canvas uses `EditorProxy` (max edge **2048**) built from an
 ImageIO thumbnail. Edits stay in document points at the capture scale; Done
 re-renders the pending PNG at full resolution.
 
-The opt-in peak is `sh scripts/editor-memory-run.sh`. Coordinator release run:
-**5120×57,600**, 225 strips, PNG 1,180,425,795 bytes, peak physical
-footprint **586,006,528** bytes, under 2 GB. That size came from a scrolling
-capture, which decision 60 removed; tickets 65 and 67 resize this budget.
+The opt-in peak is `sh scripts/editor-memory-run.sh` (one display, 6,016 ×
+3,384, every edit kind) or `sh scripts/editor-memory-run.sh cap` (5,120 ×
+32,768). Gate B results are in decision 72.

@@ -24,9 +24,9 @@ public protocol CaptureFlattening: Sendable {
 /// in each redaction's colour, and the result is encoded as PNG in memory with no metadata.
 /// Nothing touches the disk.
 ///
-/// Effects are still painted by `DocumentRenderer`'s pixel code (ticket 67 replaces them);
-/// annotations are drawn by `AnnotationPainter` with CoreGraphics and CoreText. Both use the same
-/// snapping as the editor preview, so the delivered image equals the preview's render at full size.
+/// Blur (vImage) and Magnify (CoreGraphics) run in `DocumentRenderer.paintEdits` over the redacted
+/// composite; annotations are drawn by `AnnotationPainter` with CoreGraphics and CoreText. All use the
+/// same snapping as the editor preview, so the delivered image equals the preview's render at full size.
 public struct CaptureRenderer: CaptureFlattening {
     /// DA-6: edited output is capped at this many pixels tall.
     public static let maximumOutputHeight = 32_768
