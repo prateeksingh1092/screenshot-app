@@ -198,6 +198,16 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Thumbnail controls sit on one row.** Copy, Save, Edit, Copy Text and Delete share a single row.
     - **Ticket 40 (v1 final acceptance) is closed.** Ticket 83 (remediation acceptance) replaces it.
 
+61. **Solid redaction colour is the user's choice (Prateek, 2026-09-25; first stated in spec story 42, 2026-09-22):**
+    - **The choice:** the user picks the Solid redaction fill colour. It is not only black.
+    - **The invariant:** every redacted pixel is exactly the chosen colour at full opacity (alpha 255), in every output: clipboard, file, drag, History, Thumbnail and OCR input. The default colour is black.
+    - **What had drifted:** this choice was never recorded here. `CLAUDE.md`, the remediation plan, the CleanShot study and decision 59 all narrowed it to "exact black". This entry corrects them.
+    - **Decision 59's filled-rectangle rule:** it assumed black redaction, so it has to be restated.
+    - **Open for Prateek:**
+      - how a filled shape stays distinguishable from a redaction;
+      - whether the colours are a palette or free.
+    - **Ticket:** 88.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

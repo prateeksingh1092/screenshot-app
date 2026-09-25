@@ -24,7 +24,7 @@ The working set is everything outside `archive/`. `archive/` holds provenance on
 Every change keeps these true:
 
 - **Pending capture:** its pixels stay in memory until an authorized finalization. Nothing about it reaches disk earlier.
-- **Solid redaction:** every redacted pixel is exactly RGBA(0,0,0,255) in every output: clipboard, file, drag, History, Thumbnail and OCR input.
+- **Solid redaction:** every redacted pixel is exactly the user's chosen colour at alpha 255 (default black, decision 61), in every output: clipboard, file, drag, History, Thumbnail and OCR input.
 - **Delivered image:** it matches the editor preview; what the user saw is what they get.
 - **The core:** FrisketCore does no disk I/O and imports only what `Checks/check_repository.py` allows. No module uses network APIs.
 - **Clipboard:** writes are marked concealed and current-host-only.
