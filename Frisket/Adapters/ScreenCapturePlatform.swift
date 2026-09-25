@@ -14,7 +14,6 @@ import UniformTypeIdentifiers
     private var areaLayout: DisplaySelectionSession?
     private var selectionPointer: CGPoint = .zero
     private var selectionDisplays: [SelectionDisplay] = []
-    private(set) var captureDisplayID: UInt32?
 
     private let loadContent: @MainActor () async throws -> any ScreenCaptureContent
     private let connectedDisplays: @MainActor () -> [SelectionDisplay]
@@ -41,7 +40,6 @@ import UniformTypeIdentifiers
             applicationNotifications.addObserver(self, selector: #selector(applicationsChanged), name: name, object: nil)
         }
         areaLayout = nil
-        captureDisplayID = nil
         content = nil
         let state = permission.refresh()
         guard state == .granted else { throw CaptureSourceFailure.permissionRequired(state) }
@@ -73,21 +71,12 @@ import UniformTypeIdentifiers
         // A change on ANY display during preparation invalidates the whole layout.
         areaLayout?.updateDisplays(connectedDisplays())
         guard areaLayout?.isCancelled == false else { return nil }
-        let selection = await overlay.select(displays: selectionDisplays, pointer: selectionPointer,
-                                             spaceGeneration: { self.spaceGeneration })
-        captureDisplayID = selection?.displayID
-        return selection
+        return await overlay.select(displays: selectionDisplays, pointer: selectionPointer,
+                                    spaceGeneration: { self.spaceGeneration })
     }
 
-    func displayUnderPointer() -> FullScreenDisplay? {
-        let pointer = NSEvent.mouseLocation
-        captureDisplayID = nil
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) }),   // D14: top row included
-              let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
-            return nil
-        }
-        captureDisplayID = number.uint32Value
-        return FullScreenDisplay(displayID: number.uint32Value, frame: screen.frame, scale: screen.backingScaleFactor)
+    func displayUnderPointer() -> SelectionDisplay? {
+        CaptureDisplays(connectedDisplays()).display(at: NSEvent.mouseLocation)   // D14: top row included
     }
 
     func hideSelection() {

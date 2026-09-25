@@ -15,8 +15,8 @@ import Testing
         AreaSelection(displayID: 1, displayFrame: CGRect(x: 0, y: 0, width: 10, height: 10),
                       rect: CGRect(x: 0, y: 0, width: 10, height: 10), scale: 1, spaceGeneration: 0)
     }
-    func displayUnderPointer() -> FullScreenDisplay? {
-        FullScreenDisplay(displayID: 1, frame: CGRect(x: 0, y: 0, width: 10, height: 10), scale: 1)
+    func displayUnderPointer() -> SelectionDisplay? {
+        SelectionDisplay(id: 1, frame: CGRect(x: 0, y: 0, width: 10, height: 10), scale: 1)
     }
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
         requests.append(request)

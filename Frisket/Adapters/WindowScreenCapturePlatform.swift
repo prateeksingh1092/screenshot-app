@@ -13,7 +13,6 @@ import FrisketCore
     private var content: SCShareableContent?
     private var environmentGeneration = 0
     private var selectionGeneration = 0
-    private(set) var captureDisplayID: UInt32?
 
     init(permission: ScreenCapturePermissionAdapter, bundleIdentifier: String,
          exclusions: @escaping @MainActor () -> Set<String> = { [] }) {
@@ -27,17 +26,18 @@ import FrisketCore
             name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
     }
 
-    func prepareWindows() async throws -> [WindowCandidate] {
-        captureDisplayID = nil
+    func prepareWindows() async throws -> WindowRows {
         selectionGeneration = environmentGeneration
         let windows = try await loadWindows()
         guard selectionGeneration == environmentGeneration else { throw CaptureSourceFailure.cancelled }
         return windows
     }
 
-    /// ScreenCaptureKit is authoritative for shareability; CG supplies metadata-only
-    /// front-to-back order. Never infer z-order from SCShareableContent.windows.
-    private func loadWindows() async throws -> [WindowCandidate] {
+    func displays() -> [SelectionDisplay] { NSScreen.screens.compactMap(\.selectionDisplay) }
+
+    /// Fetches both listings; `WindowSelection(rows:)` joins them. ScreenCaptureKit is authoritative
+    /// for shareability; CG supplies metadata-only front-to-back order.
+    private func loadWindows() async throws -> WindowRows {
         content = nil
         try requirePermission()
         let available: SCShareableContent
@@ -50,22 +50,20 @@ import FrisketCore
             throw CaptureSourceFailure.unavailable
         }
         content = available
-        let byID = Dictionary(available.windows.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
-        return ordered.compactMap { entry in
-            guard let id = (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
-                  let window = byID[id], let owner = window.owningApplication,
-                  !exclusions().contains(owner.bundleIdentifier),
-                  (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == owner.processID,
-                  let layer = (entry[kCGWindowLayer as String] as? NSNumber)?.intValue,
-                  layer == window.windowLayer else { return nil }
-            let onScreen = window.isOnScreen && (entry[kCGWindowIsOnscreen as String] as? Bool == true)
-            // Public SCK has no minimized flag. The intersection of its on-screen
-            // query and CG's ordered-on-screen list excludes minimized windows;
-            // do not use isActive (off-screen Stage Manager windows can be active).
-            return WindowCandidate(id: id, ownerProcessID: owner.processID,
-                bundleIdentifier: owner.bundleIdentifier, frame: window.frame, layer: layer,
-                isOnScreen: onScreen, isMinimized: !onScreen)
-        }
+        // Do not use isActive: off-screen Stage Manager windows can be active.
+        return WindowRows(
+            ordered: ordered.compactMap { entry in
+                guard let id = (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value else { return nil }
+                return WindowListRow(id: id,
+                    ownerProcessID: (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                    layer: (entry[kCGWindowLayer as String] as? NSNumber)?.intValue,
+                    isOnScreen: entry[kCGWindowIsOnscreen as String] as? Bool == true)
+            },
+            shareable: available.windows.map { window in
+                ShareableWindowRow(id: window.windowID, ownerProcessID: window.owningApplication?.processID,
+                    bundleIdentifier: window.owningApplication?.bundleIdentifier, frame: window.frame,
+                    layer: window.windowLayer, isOnScreen: window.isOnScreen)
+            })
     }
 
     func selectWindow(from selection: WindowSelection) async -> UInt32? {
@@ -89,7 +87,7 @@ import FrisketCore
         guard selectionGeneration == environmentGeneration else { throw CaptureSourceFailure.cancelled }
         let current = try await loadWindows()
         guard selectionGeneration == environmentGeneration else { throw CaptureSourceFailure.cancelled }
-        let selection = WindowSelection(windows: current,
+        let selection = WindowSelection(rows: current, excluding: exclusions(),
             ownProcessID: ProcessInfo.processInfo.processIdentifier, ownBundleIdentifier: bundleIdentifier)
         guard let candidate = selection.candidates.first(where: { $0.id == selected.id }),
               candidate.ownerProcessID == selected.ownerProcessID,
@@ -131,16 +129,6 @@ import FrisketCore
         CGImageDestinationAddImage(encoder, image, nil)
         guard CGImageDestinationFinalize(encoder) else { throw CaptureSourceFailure.window(.systemRefused) }
         guard bytes.length <= maximumBytes else { throw CaptureSourceFailure.window(.tooLarge) }
-        // Put the thumbnail on the display containing the largest part of the window.
-        if let top = NSScreen.screens.first?.frame.maxY {
-            let frame = CGRect(x: candidate.frame.minX, y: top - candidate.frame.maxY,
-                               width: candidate.frame.width, height: candidate.frame.height)
-            let screen = NSScreen.screens.max { left, right in
-                let a = left.frame.intersection(frame), b = right.frame.intersection(frame)
-                return (a.isNull ? 0 : a.width * a.height) < (b.isNull ? 0 : b.width * b.height)
-            }
-            captureDisplayID = (screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
-        }
         return bytes as Data
     }
 

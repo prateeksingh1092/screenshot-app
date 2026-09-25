@@ -89,6 +89,7 @@ extension AreaCaptureCommandsTests {
         #expect(platform.events == ["prefetch", "select", "hide", "pixels", "finish"])
         let request = try #require(platform.request)
         #expect(request.displayID == 7)
+        #expect(await commands.thumbnails().map(\.displayID) == [7], "Ticket 75: the Thumbnail goes to the Origin display")
         #expect(request.sourceRect == CGRect(x: 0, y: 350, width: 200, height: 150))
         #expect(request.pixelWidth == 400)
         #expect(request.pixelHeight == 300)

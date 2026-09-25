@@ -117,7 +117,7 @@ extension ScreenCapturePermissionTests {
     var finished = false
     func prefetchShareableContent() async throws { throw CaptureSourceFailure.permissionRequired(.needsRelaunch) }
     func selectArea() async -> AreaSelection? { selectionShown = true; return nil }
-    func displayUnderPointer() -> FullScreenDisplay? { nil }
+    func displayUnderPointer() -> SelectionDisplay? { nil }
     func hideSelection() {}
     func finishCapture() { finished = true }
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {

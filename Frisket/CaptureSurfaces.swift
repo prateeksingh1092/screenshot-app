@@ -6,8 +6,6 @@ import FrisketCore
     private let commands: CaptureCommandLayer
     private let dragAdapter: FilePromiseDragAdapter
     private let latency: CaptureLatencyLog
-    private let areaDisplayID: () -> UInt32?
-    private let windowDisplayID: () -> UInt32?
     private let notify: (String, String) -> Void
     private let refreshHistory: () async -> Void
     /// Recovery, onboarding, and an in-flight permission prompt. Return false to skip the capture.
@@ -27,14 +25,11 @@ import FrisketCore
     var hasThumbnail: Bool { !panels.isEmpty }
 
     init(commands: CaptureCommandLayer, drag: FilePromiseDragAdapter, latency: CaptureLatencyLog,
-         areaDisplayID: @escaping () -> UInt32?,
-         windowDisplayID: @escaping () -> UInt32?, notify: @escaping (String, String) -> Void,
+         notify: @escaping (String, String) -> Void,
          refreshHistory: @escaping () async -> Void) {
         self.commands = commands
         self.dragAdapter = drag
         self.latency = latency
-        self.areaDisplayID = areaDisplayID
-        self.windowDisplayID = windowDisplayID
         self.notify = notify
         self.refreshHistory = refreshHistory
     }
@@ -59,7 +54,7 @@ import FrisketCore
             let result = await commands.execute(command)
             switch result {
             case let .pending(revision):
-                await showThumbnail(revision, command: command)
+                await showThumbnail(revision)
             case .captureFailed(.cancelled): break
             case let .permissionRequired(state):
                 permissionRequired?(state)
@@ -145,13 +140,11 @@ import FrisketCore
 
     private func notice(_ title: String, _ message: String) { notify(title, message) }
 
-    private func showThumbnail(_ revision: CaptureRevision, command: CaptureCommand) async {
-        let captureDisplayID: UInt32? = if case .captureWindow = command { windowDisplayID() } else { areaDisplayID() }
+    private func showThumbnail(_ revision: CaptureRevision) async {
+        // The capture names its display (ticket 75); an unknown or unplugged one falls back to the main screen.
         guard let image = await commands.image(for: revision),
               let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480),
-              let screen = NSScreen.screens.first(where: {
-                  ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == captureDisplayID
-              }) ?? NSScreen.main else {
+              let screen = screen(for: image.displayID) ?? NSScreen.main else {
             _ = await commands.execute(.discard(revision.captureID))
             notice("Preview unavailable", "The capture could not be displayed and was deleted.")
             return
@@ -516,15 +509,18 @@ import FrisketCore
             if let panel = panels[id] { stacks[panel.displayID, default: []].append(panel) }
         }
         for (displayID, stack) in stacks {
-            guard let screen = NSScreen.screens.first(where: { self.displayID(of: $0) == displayID }) else { continue }
+            guard let screen = screen(for: displayID) else { continue }
             // Fixed-size Thumbnails (D9): the core computes non-overlapping slots.
             let origins = ThumbnailStackLayout.origins(count: stack.count, in: screen.visibleFrame)
             for (panel, origin) in zip(stack, origins) { panel.place(at: origin) }
         }
     }
 
-    private func displayID(of screen: NSScreen) -> UInt32? {
-        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    private func displayID(of screen: NSScreen) -> UInt32? { screen.selectionDisplay?.id }
+
+    private func screen(for displayID: UInt32?) -> NSScreen? {
+        guard let displayID else { return nil }
+        return NSScreen.screens.first { self.displayID(of: $0) == displayID }
     }
 
     private func storeEditor(_ editor: EditorWindow?, for id: CaptureID) {
@@ -548,7 +544,7 @@ import FrisketCore
             let id = card.revision.captureID
             guard let panel = panels[id], let display = card.displayID else { continue }
             panel.displayID = display
-            screens[id] = NSScreen.screens.first { displayID(of: $0) == display }
+            screens[id] = screen(for: display)
         }
         await settleThumbnails()
     }

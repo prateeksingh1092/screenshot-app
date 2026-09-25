@@ -70,3 +70,67 @@ import Testing
         #expect(selection.window(at: Self.pointer)?.id == utility.id)
     }
 }
+
+/// `WindowSelection(rows:)` owns the join of the window list with ScreenCaptureKit's shareable
+/// windows, and the filter (ticket 75). Rows are shaped like the live listings behind D2.
+@Suite struct WindowSelectionRowsTests {
+    private static let ownBundle = "io.github.prateeksingh1092.frisket.debug"
+    private static let pointer = CGPoint(x: 500, y: 300)
+    private static let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+
+    private static func listed(_ id: UInt32, pid: Int32, layer: Int? = 0, onScreen: Bool = true) -> WindowListRow {
+        WindowListRow(id: id, ownerProcessID: pid, layer: layer, isOnScreen: onScreen)
+    }
+    private static func shareable(_ id: UInt32, pid: Int32?, bundle: String?, frame: CGRect = frame,
+                                  layer: Int = 0, onScreen: Bool = true) -> ShareableWindowRow {
+        ShareableWindowRow(id: id, ownerProcessID: pid, bundleIdentifier: bundle, frame: frame,
+                           layer: layer, isOnScreen: onScreen)
+    }
+    private static func selection(_ rows: WindowRows, excluding: Set<String> = []) -> WindowSelection {
+        WindowSelection(rows: rows, excluding: excluding, ownProcessID: 42, ownBundleIdentifier: ownBundle)
+    }
+    private static let pattern = (listed(10, pid: 501), shareable(10, pid: 501, bundle: "fixture.pattern"))
+
+    @Test func d2CursorListedByBothSourcesIsNeverPicked() {
+        // Live listing: the cursor (id 4) is front-most in both the window list and ScreenCaptureKit.
+        let rows = WindowRows(
+            ordered: [Self.listed(4, pid: 380, layer: 2_147_483_630), Self.pattern.0],
+            shareable: [Self.shareable(4, pid: 380, bundle: "", frame: CGRect(x: 496, y: 296, width: 20, height: 26),
+                                       layer: 2_147_483_630), Self.pattern.1])
+        #expect(Self.selection(rows).window(at: Self.pointer)?.id == 10)
+        #expect(Self.selection(rows).candidates.map(\.id) == [10])
+    }
+
+    @Test func orderComesFromTheWindowListNotScreenCaptureKit() {
+        let front = (Self.listed(20, pid: 600), Self.shareable(20, pid: 600, bundle: "fixture.front"))
+        let rows = WindowRows(ordered: [front.0, Self.pattern.0], shareable: [Self.pattern.1, front.1])
+        #expect(Self.selection(rows).candidates.map(\.id) == [20, 10])
+    }
+
+    @Test(arguments: ["not shareable", "no owning app", "owner changed", "layer changed", "no layer",
+                      "off screen in the window list", "off screen in ScreenCaptureKit", "on the exclusion list"])
+    func joinDropsWindowsThatDoNotMatch(_ kind: String) {
+        let front: (WindowListRow, ShareableWindowRow?) = switch kind {
+        case "not shareable": (Self.listed(20, pid: 600), nil)
+        case "no owning app": (Self.listed(20, pid: 600), Self.shareable(20, pid: nil, bundle: nil))
+        case "owner changed": (Self.listed(20, pid: 600), Self.shareable(20, pid: 601, bundle: "fixture.front"))
+        case "layer changed": (Self.listed(20, pid: 600, layer: 3), Self.shareable(20, pid: 600, bundle: "fixture.front"))
+        case "no layer": (Self.listed(20, pid: 600, layer: nil), Self.shareable(20, pid: 600, bundle: "fixture.front"))
+        case "off screen in the window list":
+            (Self.listed(20, pid: 600, onScreen: false), Self.shareable(20, pid: 600, bundle: "fixture.front"))
+        case "off screen in ScreenCaptureKit":
+            (Self.listed(20, pid: 600), Self.shareable(20, pid: 600, bundle: "fixture.front", onScreen: false))
+        default: (Self.listed(20, pid: 600), Self.shareable(20, pid: 600, bundle: "test.synthetic-vault"))
+        }
+        let rows = WindowRows(ordered: [front.0, Self.pattern.0], shareable: [front.1, Self.pattern.1].compactMap { $0 })
+        let selection = Self.selection(rows, excluding: ["test.synthetic-vault"])
+        #expect(selection.candidates.map(\.id) == [10], "\(kind): the window joined as a capture target")
+        #expect(selection.window(at: Self.pointer)?.id == 10)
+    }
+
+    @Test func frisketsOwnWindowsAreNotCandidates() {
+        let own = (Self.listed(30, pid: 42, layer: 3), Self.shareable(30, pid: 42, bundle: Self.ownBundle, layer: 3))
+        let rows = WindowRows(ordered: [own.0, Self.pattern.0], shareable: [own.1, Self.pattern.1])
+        #expect(Self.selection(rows).candidates.map(\.id) == [10])
+    }
+}

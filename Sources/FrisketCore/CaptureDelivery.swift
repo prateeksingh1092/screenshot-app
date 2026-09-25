@@ -3,7 +3,12 @@ import Foundation
 /// Encoded PNG bytes supplied by the capture adapter; no file location or text payload.
 public struct CaptureImage: Sendable {
     public let pngData: Data
-    public init(pngData: Data) { self.pngData = pngData }
+    /// The display the pixels came from, where the Thumbnail appears. Nil when unknown.
+    public let displayID: UInt32?
+    public init(pngData: Data, displayID: UInt32? = nil) {
+        self.pngData = pngData
+        self.displayID = displayID
+    }
 }
 
 public enum CaptureSourceFailure: Error, Equatable, Sendable {
