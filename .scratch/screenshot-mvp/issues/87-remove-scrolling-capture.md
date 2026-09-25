@@ -6,14 +6,14 @@
 
 **Phase:** 1b
 
-**Status:** ready-for-agent (high effort)
+**Status:** resolved 2026-09-25 (merged, verified live)
 
 - [x] Tag `scrolling-capture-last` on the last commit that has scrolling.
 - [x] No menu item, no ⌘⇧6 hotkey, no `ManualScrollingCapture`.
 - [x] No `.captureScrolling` command, no scrolling outcomes or budgets, no `Sources/FrisketCore/Stitcher/`.
 - [x] Scrolling tests, fixtures, check rules and harness rows are removed. `ci.sh` is green.
 - [x] The stories are marked retired, and `CLAUDE.md`, the ADR, the docs and the plan are updated. Tickets 75 and 80 are unblocked.
-- [ ] Live check, at most 15 minutes on one display: the area, window and full rows pass; ⌘⇧6 does nothing.
+- [x] Live check, at most 15 minutes on one display: the area, window and full rows pass; ⌘⇧6 does nothing.
 
 ### 2026-09-25: implementer, report
 
@@ -30,3 +30,10 @@ Model and effort: Claude Opus 5.5 (1M context), Claude Code, medium effort (deci
 - **Result:** `scripts/ci.sh` prints `ci: green`: repository checks, 304 package tests in 45 suites (39 known issues), unsigned app build, harness compile.
 - **Open:** the tolerant shortcut decoding is a technical choice not yet recorded in `decisions.md`. The only remaining grep hit in live code is the `captureScrolling` string inside that migration test, on purpose.
 - **Live (coordinator):** area, window and full rows on one display; ⌘⇧6 does nothing; the menu has no scrolling item.
+
+### 2026-09-25: coordinator, merged and verified live
+
+- **Build:** `b25c354` installed and run on the external display.
+- **Rows:** area PASS, window XFAIL (D2, as expected), full PASS.
+- **⌘⇧6:** with the pattern frontmost, ⌘⇧6 opens no overlay and no window. The control, ⌘⇧4, opens both overlays.
+- **Menu:** no item mentions scrolling.
