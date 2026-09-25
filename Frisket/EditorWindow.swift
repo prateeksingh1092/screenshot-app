@@ -108,8 +108,19 @@ enum EditorAction {
 /// labelled element whose children are the marks (ticket 84); it takes Tab, the arrow keys and
 /// Delete for the selected mark. What those do is `MarkEditor`'s, in the core.
 @MainActor final class EditorCanvasView: NSView {
+    /// What the canvas draws over a drag. A drawn mark itself is rendered live from the drag's
+    /// provisional edits (ticket 97); the guide only adds what the render cannot show.
     enum DragGuide {
-        case box, line, crop, conceal, soften, none
+        /// The Select tool's marquee. A drag on empty canvas draws nothing.
+        case box
+        /// Only the rendered mark: shapes, arrows and lines, in their real width, style and ink.
+        case live
+        case crop
+        /// The rendered redaction in its chosen fill, edged in white one output pixel wide.
+        case conceal
+        /// The rendered effect with a thin outline, so a flat area still shows its box.
+        case soften
+        case none
     }
 
     var rendered: NSImage? { didSet { needsDisplay = true } }
@@ -119,6 +130,10 @@ enum EditorAction {
     var onPress: ((CGPoint, Double) -> Bool)?
     /// The end of a press: start, end and tolerance.
     var onRelease: ((CGPoint, CGPoint, Double) -> Void)?
+    /// Every drag event: start, pointer and tolerance, so the editor can render the drag live (ticket 97).
+    var onDrag: ((CGPoint, CGPoint, Double) -> Void)?
+    /// Output pixels per document point (the capture's scale), for the one-output-pixel guide edge.
+    var outputScale: Double = 1 { didSet { needsDisplay = true } }
     /// A canvas key for marks; true when handled.
     var onMarkKey: ((MarkKey) -> Bool)?
     /// The selected mark's outline and handles, in canvas points.
@@ -224,17 +239,7 @@ enum EditorAction {
         let startView = CGPoint(x: imageRect.minX + start.x * zoom, y: imageRect.minY + start.y * zoom)
         let currentView = CGPoint(x: imageRect.minX + current.x * zoom, y: imageRect.minY + current.y * zoom)
         switch guide {
-        case .line:
-            let line = NSBezierPath()
-            line.move(to: startView)
-            line.line(to: currentView)
-            line.lineWidth = 4
-            NSColor.white.setStroke()
-            line.stroke()
-            line.lineWidth = 2
-            NSColor(srgbRed: 1, green: 59 / 255, blue: 48 / 255, alpha: 1).setStroke()
-            line.stroke()
-        case .none:
+        case .live, .none:
             break
         case .crop:
             let kept = CGRect(x: min(startView.x, currentView.x), y: min(startView.y, currentView.y),
@@ -253,12 +258,13 @@ enum EditorAction {
                                                     width: abs(currentView.x - startView.x), height: abs(currentView.y - startView.y)))
             switch guide {
             case .conceal:
-                outline.lineWidth = 4
+                // The fill is the rendered redaction; the white edge lies just outside it, one output
+                // pixel wide (at least one screen pixel), so it never covers the chosen colour.
+                let edge = max(zoom / CGFloat(max(outputScale, 1)), 1 / (window?.backingScaleFactor ?? 2))
+                let ring = NSBezierPath(rect: outline.bounds.insetBy(dx: -edge / 2, dy: -edge / 2))
+                ring.lineWidth = edge
                 NSColor.white.setStroke()
-                outline.stroke()
-                outline.lineWidth = 2
-                NSColor.black.setStroke()
-                outline.stroke()
+                ring.stroke()
             case .soften:
                 outline.lineWidth = 2
                 NSColor.labelColor.setStroke()
@@ -274,15 +280,12 @@ enum EditorAction {
         }
     }
 
-    /// A blue outline with square handles; while the mark is dragged, the outline follows the pointer.
+    /// A blue outline with square handles. While the mark is dragged, the editor sets `selection` to
+    /// the drag's provisional mark, so the outline and handles follow it (ticket 97).
     private func drawSelection() {
         guard let selection else { return }
-        var offset = CGPoint.zero
-        if grabbing, let start = dragStart, let current = dragCurrent {
-            offset = CGPoint(x: (current.x - start.x) * zoom, y: (current.y - start.y) * zoom)
-        }
         NSColor.controlAccentColor.setStroke()
-        let outline = NSBezierPath(rect: viewRect(selection.box).insetBy(dx: -3, dy: -3).offsetBy(dx: offset.x, dy: offset.y))
+        let outline = NSBezierPath(rect: viewRect(selection.box).insetBy(dx: -3, dy: -3))
         outline.lineWidth = 1
         outline.setLineDash([4, 3], count: 2, phase: 0)
         outline.stroke()
@@ -307,6 +310,7 @@ enum EditorAction {
     override func mouseDragged(with event: NSEvent) {
         dragCurrent = documentPoint(event)
         needsDisplay = true
+        if let start = dragStart, let current = dragCurrent { onDrag?(start, current, tolerance) }
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -369,6 +373,9 @@ enum EditorAction {
     private var finishing = false
     /// The edits the canvas shows, or is rendering now; the main actor only swaps finished images.
     private var renderedEdits: DocumentEdits?
+    /// The edits mouse-up would commit for the drag in progress, rendered live (ticket 97). They are
+    /// not in the undo history; the drag is committed once, on mouse-up (decision 77).
+    private var provisional: DocumentEdits?
     private var rendering = false
     /// Close only after the command accepts the edits (or the unchanged close).
     private var finish: ((EditorLeave) async -> Bool)?
@@ -552,6 +559,8 @@ enum EditorAction {
         canvas.autoresizingMask = [.width, .height]
         canvas.onPress = { [weak self] point, tolerance in self?.press(at: point, tolerance: tolerance) ?? false }
         canvas.onRelease = { [weak self] start, end, tolerance in self?.release(from: start, to: end, tolerance: tolerance) }
+        canvas.onDrag = { [weak self] start, current, tolerance in self?.drag(from: start, to: current, tolerance: tolerance) }
+        canvas.outputScale = scale
         canvas.onMarkKey = { [weak self] key in self?.markKey(key) ?? false }
         canvas.onResize = { [weak self] in self?.placeLabelView() }
         styleBar.frame = CGRect(x: 0, y: size.height - styleHeight, width: size.width, height: styleHeight)
@@ -661,7 +670,7 @@ enum EditorAction {
                 labelStylePopUp.selectItem(at: index)
             }
         }
-        canvas.selection = marks.selectionOutline
+        canvas.selection = provisional.flatMap { marks.selectionOutline(in: $0) } ?? marks.selectionOutline
         canvas.accessibleMarks = marks.accessibleMarks.map { ($0.label, $0.box, $0.mark == marks.selection) }
         let fill = marks.selectionFill
         let shownFill = fill ?? redactionTool.colour
@@ -698,13 +707,15 @@ enum EditorAction {
         dragWell.alphaValue = finishing ? 0.4 : 1
     }
 
-    /// Renders the current edits off the main actor with the same renderer Done uses. At most one
-    /// render runs; edits made meanwhile are rendered next, and older results are still shown
-    /// until then. The main actor only swaps the finished image in.
+    /// Renders the current edits, or the drag's provisional edits, off the main actor with the same
+    /// renderer Done uses. At most one render runs; edits made meanwhile are rendered next, and
+    /// older results are still shown until then, so drag events never queue renders (ticket 97).
+    /// The main actor only swaps the finished image in.
     private func renderLatestEdits() {
-        guard !rendering, edits != renderedEdits else { return }
+        let target = provisional ?? edits
+        guard !rendering, target != renderedEdits else { return }
         rendering = true
-        let target = edits, size = currentDocumentSize, preview = preview
+        let size = currentDocumentSize, preview = preview
         renderedEdits = target
         Task { [weak self] in
             let image = await Self.render(preview, target)
@@ -738,17 +749,17 @@ enum EditorAction {
             hintField.stringValue = "Drag the area to keep. Everything outside it is removed."
             canvas.setAccessibilityLabel("Capture canvas. Drag the area to keep.")
         case is LineTool:
-            canvas.guide = .line
+            canvas.guide = .live
             hintField.stringValue = "Drag from one end to the other. Drawing does not hide pixels."
             canvas.setAccessibilityLabel("Capture canvas. Drag to draw a line. Drawing does not hide pixels.")
         case let arrow as ArrowTool:
-            canvas.guide = .line
+            canvas.guide = .live
             hintField.stringValue = arrow.style == .curved
                 ? "Drag from the tail to the point, then drag the middle handle to bend it. Drawing does not hide pixels."
                 : "Drag from the tail to the point. Drawing does not hide pixels."
             canvas.setAccessibilityLabel("Capture canvas. Drag to draw. Drawing does not hide pixels.")
         case is RectangleTool:
-            canvas.guide = .box
+            canvas.guide = .live
             hintField.stringValue = "Drag a rectangle outline. Drawing does not hide pixels."
             canvas.setAccessibilityLabel("Capture canvas. Drag to draw. Drawing does not hide pixels.")
         case is TextTool:
@@ -783,10 +794,43 @@ enum EditorAction {
         return grab != nil
     }
 
+    /// Each drag event: the edits mouse-up would commit here, rendered through the preview (ticket 97).
+    /// A held mark moves or resizes; a drawing tool draws its mark. Crop keeps its dimming guide, and
+    /// the Text tool draws nothing. Mouse-up still makes the one commit and undo step.
+    private func drag(from start: CGPoint, to current: CGPoint, tolerance: Double) {
+        guard !finishing else { return }
+        let next: DocumentEdits?
+        if let held = grab {
+            next = marks.provisional(held, fromX: start.x, fromY: start.y, toX: current.x, toY: current.y,
+                                     slop: tolerance / 2)
+        } else if hypot(current.x - start.x, current.y - start.y) > tolerance / 2,
+                  !(tools[activeTool] is CropTool) {
+            var drawn = edits
+            next = tools[activeTool].applyDrag(from: start, to: current, to: &drawn) ? drawn : nil
+        } else {
+            next = nil
+        }
+        guard next != provisional else { return }
+        provisional = next
+        canvas.selection = provisional.flatMap { marks.selectionOutline(in: $0) } ?? marks.selectionOutline
+        renderLatestEdits()
+    }
+
     /// Releasing a held mark moves or resizes it. A click selects the mark under it (or deselects;
     /// the Text tool then places its label); a drag draws with the active tool.
     private func release(from start: CGPoint, to end: CGPoint, tolerance: Double) {
         guard !finishing else { return }
+        // The live drag ends; whatever mouse-up commits (or nothing) is rendered next.
+        if provisional != nil {
+            provisional = nil
+            defer { refresh() }
+            commitRelease(from: start, to: end, tolerance: tolerance)
+            return
+        }
+        commitRelease(from: start, to: end, tolerance: tolerance)
+    }
+
+    private func commitRelease(from start: CGPoint, to end: CGPoint, tolerance: Double) {
         let isClick = hypot(end.x - start.x, end.y - start.y) <= tolerance / 2
         if let held = grab {
             grab = nil

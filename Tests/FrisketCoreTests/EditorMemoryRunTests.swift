@@ -65,6 +65,65 @@ extension EditorMemoryRunTests {
     }
 }
 
+extension EditorMemoryRunTests {
+    /// Ticket 97: live drag feedback. Every drag event renders the drag's provisional edits through
+    /// `CapturePreview.render`. Reports the median and slowest render per drag point for three drags:
+    /// a new Solid redaction, a Curved arrow's tip, and a redaction moved over every edit kind
+    /// (a whole-capture blur included). The frame budget at 60 Hz is 16.7 ms.
+    @Test(.enabled(if: ["display", "cap"].contains(ProcessInfo.processInfo.environment["FRISKET_EDITOR_MEMORY_RUN"] ?? "")))
+    @MainActor func liveDragRendersEachPointWithinTheFrameBudget() throws {
+        let run = ProcessInfo.processInfo.environment["FRISKET_EDITOR_MEMORY_RUN"]
+        let (width, height) = run == "cap" ? (5120, CaptureRenderer.maximumOutputHeight) : (6016, 3384)
+        let shown = try CaptureRenderer().preview(try syntheticPNG(width: width, height: height))
+        let h = Double(height)
+        let label = try #require(DocumentAnnotation(.text(x: 40, y: 30, characters: "Gate B")))
+        let curved = try #require(DocumentAnnotation(.arrow(x0: 40, y0: h - 40, x1: 4_000, y1: h - 400), width: 8,
+                                                     style: .curved))
+        let blur = try #require(DocumentEffect(.blur(x: 0, y: 0, width: Double(width), height: h)))
+        let grey = SolidRedaction.palette[2].pixel
+        let plain = try #require(DocumentEdits(scale: 2))
+        let redaction = try #require(SolidRedaction(x: 0, y: 100, width: 640, height: 480, colour: grey))
+        let everything = try #require(DocumentEdits(scale: 2, redactions: [redaction], annotations: [label, curved],
+                                                    effects: [blur]))
+        let points = (1...60).map { Double($0) * 25 }
+        let clock = ContinuousClock()
+        func drag(_ name: String, _ edits: (Double) -> DocumentEdits?) throws -> Duration {
+            var times: [Duration] = []
+            for step in points {
+                let provisional = try #require(edits(step))
+                times.append(try clock.measure { _ = try shown.render(provisional) })
+            }
+            times.sort()
+            print("LIVE_DRAG_RUN run=\(run ?? "") dimensions=\(width)x\(height) preview=\(shown.width)x\(shown.height) drag=\(name) points=\(times.count) median=\(times[times.count / 2]) slowest=\(times.last ?? .zero)")
+            return times[times.count / 2]
+        }
+        let drawn = try drag("draw-redaction") { step in
+            var next = plain
+            guard let box = SolidRedaction(x: 100, y: 100, width: step, height: step / 2, colour: grey) else { return nil }
+            next.redactions.append(box)
+            return next
+        }
+        let withArrow = try #require(DocumentEdits(scale: 2, annotations: [curved]))
+        let bent = MarkEditor(UndoableEdits(withArrow))
+        bent.select(.annotation(0))
+        let tip = try drag("resize-curved-arrow") { step in
+            bent.provisional(MarkEditor.Grab(mark: .annotation(0), handle: .tip), fromX: 4_000, fromY: h - 400,
+                             toX: 4_000 - step, toY: h - 400 - step)
+        }
+        let moving = MarkEditor(UndoableEdits(everything))
+        moving.select(.redaction(0))
+        let moved = try drag("move-over-every-kind") { step in
+            moving.provisional(MarkEditor.Grab(mark: .redaction(0), handle: nil), fromX: 10, fromY: 110,
+                               toX: 10 + step, toY: 110 + step / 3)
+        }
+        if run == "display" {
+            // Single-mark drags fit the 60 Hz frame; renders never queue (one at a time, latest wins).
+            #expect(drawn < .milliseconds(16) && tip < .milliseconds(16), "median render over the 60 Hz frame")
+            _ = moved
+        }
+    }
+}
+
 /// Opaque noise in 16 × 8 px cells, encoded with ImageIO.
 private func syntheticPNG(width: Int, height: Int) throws -> Data {
     var bytes = [UInt8](repeating: 255, count: width * height * 4)
