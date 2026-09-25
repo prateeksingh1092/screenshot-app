@@ -62,3 +62,26 @@ import Testing
         #expect(session.rect == nil)
     }
 }
+
+extension DisplaySelectionSessionTests {
+    /// D14: with the pointer on a display's top pixel row, AppKit reports y == frame.maxY, which the
+    /// half-open lookup gives to no display, so no Selection can start (story 86).
+    @Test func d14PointerOnATopPixelRowHasAnOriginDisplay() async throws {
+        try await knownDefect("D14") {
+            for (pointer, owner) in [(CGPoint(x: 720, y: 900), retina), (CGPoint(x: 0, y: 900), retina),
+                                     (CGPoint(x: -960, y: 900), external), (CGPoint(x: -1920, y: 900), external)] {
+                var session = DisplaySelectionSession(displays: [retina, external], pointer: pointer)
+                #expect(session.originDisplay == owner, "D14: no Origin display for a pointer at \(pointer)")
+                let began = session.begin(at: pointer)
+                #expect(began, "D14: a Selection cannot start at \(pointer)")
+            }
+        }
+    }
+
+    /// A pointer on a display's minimum x already has an Origin display; the D14 fix must keep it.
+    @Test func pointerOnALeftmostPixelColumnHasAnOriginDisplay() {
+        let session = DisplaySelectionSession(displays: [retina, external], pointer: CGPoint(x: -1920, y: 400))
+        #expect(session.originDisplay == external)
+        #expect(session.display(at: CGPoint(x: 0, y: 400)) == retina)
+    }
+}

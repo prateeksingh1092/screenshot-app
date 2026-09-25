@@ -11,19 +11,23 @@ import Testing
 /// failed expectation that doesn't name `id`, is never treated as the defect: a broken fixture
 /// still fails the test. Name the test function after the defect (`d1…`) so
 /// `scripts/ci.sh --defects` can find it. Set `FRISKET_SHOW_DEFECTS=1` to run bodies unwrapped.
-func knownDefect(_ id: String, sourceLocation: SourceLocation = #_sourceLocation,
+/// The body runs on the caller's actor, so `@MainActor` suites can use it.
+func knownDefect(_ id: String, isolation: isolated (any Actor)? = #isolation,
+                 sourceLocation: SourceLocation = #_sourceLocation,
                  _ body: () async throws -> Void) async throws {
     try await knownDefect(id, showDefects: ProcessInfo.processInfo.environment["FRISKET_SHOW_DEFECTS"] == "1",
-                          sourceLocation: sourceLocation, body)
+                          isolation: isolation, sourceLocation: sourceLocation, body)
 }
 
-func knownDefect(_ id: String, showDefects: Bool, sourceLocation: SourceLocation = #_sourceLocation,
+func knownDefect(_ id: String, showDefects: Bool, isolation: isolated (any Actor)? = #isolation,
+                 sourceLocation: SourceLocation = #_sourceLocation,
                  _ body: () async throws -> Void) async throws {
     if showDefects {
         try await body()
         return
     }
-    try await withKnownIssue(Comment(rawValue: "Known defect \(id)"), sourceLocation: sourceLocation) {
+    try await withKnownIssue(Comment(rawValue: "Known defect \(id)"), isolation: isolation,
+                             sourceLocation: sourceLocation) {
         try await body()
     } matching: { issue in
         guard case .expectationFailed = issue.kind else { return false }
