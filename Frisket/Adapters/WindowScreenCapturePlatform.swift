@@ -95,7 +95,7 @@ import FrisketCore
               candidate.ownerProcessID == selected.ownerProcessID,
               candidate.bundleIdentifier == selected.bundleIdentifier,
               let window = content?.windows.first(where: { $0.windowID == candidate.id }) else {
-            throw CaptureSourceFailure.unavailable
+            throw CaptureSourceFailure.window(.windowChanged)
         }
         // An allowlist containing exactly one foreign window excludes every Frisket
         // window, including panels created after enumeration. No sharing flags.
@@ -103,8 +103,10 @@ import FrisketCore
         let width = (filter.contentRect.width * CGFloat(filter.pointPixelScale)).rounded(.up)
         let height = (filter.contentRect.height * CGFloat(filter.pointPixelScale)).rounded(.up)
         guard width.isFinite, height.isFinite, width > 0, height > 0,
-              width < Double(Int.max), height < Double(Int.max),
-              width * height * 4 <= Double(decodedByteCeiling ?? maximumBytes) else { throw CaptureSourceFailure.unavailable }
+              width < Double(Int.max), height < Double(Int.max) else { throw CaptureSourceFailure.window(.windowChanged) }
+        guard width * height * 4 <= Double(decodedByteCeiling ?? maximumBytes) else {
+            throw CaptureSourceFailure.window(.tooLarge)
+        }
         let configuration = SCStreamConfiguration()
         configuration.width = Int(width)
         configuration.height = Int(height)
@@ -127,9 +129,8 @@ import FrisketCore
             throw CaptureSourceFailure.unavailable
         }
         CGImageDestinationAddImage(encoder, image, nil)
-        guard CGImageDestinationFinalize(encoder), bytes.length <= maximumBytes else {
-            throw CaptureSourceFailure.unavailable
-        }
+        guard CGImageDestinationFinalize(encoder) else { throw CaptureSourceFailure.window(.systemRefused) }
+        guard bytes.length <= maximumBytes else { throw CaptureSourceFailure.window(.tooLarge) }
         // Put the thumbnail on the display containing the largest part of the window.
         if let top = NSScreen.screens.first?.frame.maxY {
             let frame = CGRect(x: candidate.frame.minX, y: top - candidate.frame.maxY,

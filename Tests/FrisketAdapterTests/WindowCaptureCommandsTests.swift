@@ -143,7 +143,7 @@ extension WindowCaptureCommandsTests {
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID()
-        #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .captureFailed(.unavailable))
+        #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .captureFailed(.window(.noWindow)))
         #expect(platform.captured.isEmpty)
         #expect(platform.selections == 0)
         platform.windows = [window(7)]
@@ -288,20 +288,63 @@ extension WindowCaptureCommandsTests {
     /// D2 as seen live: ⌘⇧5 over the pattern window captured the cursor, which ScreenCaptureKit
     /// lists with an empty owning-app bundle ID at layer 2147483630.
     @Test func d2WindowCaptureTakesTheWindowUnderTheCursorNotTheCursor() async throws {
-        try await knownDefect("D2") {
-            let platform = FixtureWindowPlatform()
-            let pointer = try #require(platform.pointer)
-            let cursor = WindowCandidate(id: 4, ownerProcessID: 380, bundleIdentifier: "",
-                frame: CGRect(x: pointer.x - 4, y: pointer.y - 4, width: 20, height: 26),
-                layer: 2_147_483_630, isOnScreen: true, isMinimized: false)
-            platform.windows = [cursor, window(7)]
-            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
-                windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
-                clipboard: WindowClipboard(), pendingByteLimit: 1024)
-            let id = CaptureID()
-            #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(CaptureRevision(captureID: id, number: 1)))
-            #expect(platform.offered == [7], "D2: the cursor window is offered as a capture target")
-            #expect(platform.captured == [7], "D2: the cursor was captured instead of the window under it")
-        }
+        let platform = FixtureWindowPlatform()
+        let pointer = try #require(platform.pointer)
+        let cursor = WindowCandidate(id: 4, ownerProcessID: 380, bundleIdentifier: "",
+            frame: CGRect(x: pointer.x - 4, y: pointer.y - 4, width: 20, height: 26),
+            layer: 2_147_483_630, isOnScreen: true, isMinimized: false)
+        platform.windows = [cursor, window(7)]
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+            windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
+            clipboard: WindowClipboard(), pendingByteLimit: 1024)
+        let id = CaptureID()
+        #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(CaptureRevision(captureID: id, number: 1)))
+        #expect(platform.offered == [7], "D2: the cursor window is offered as a capture target")
+        #expect(platform.captured == [7], "D2: the cursor was captured instead of the window under it")
+    }
+}
+
+extension WindowCaptureCommandsTests {
+    /// Story 84: with only the cursor, the Dock, a menu and Frisket on screen, the failure names that cause.
+    @Test func onlySystemChromeOnScreenFailsAsNoWindowWithoutOpeningSelection() async {
+        let platform = FixtureWindowPlatform()
+        platform.windows = [
+            window(4, bundle: "", layer: 2_147_483_630), // The cursor.
+            window(5, bundle: "fixture.menu", layer: 101), // A pop-up menu.
+            window(6, bundle: "com.apple.dock", layer: 20), // The Dock.
+            window(1, owner: 42, layer: 3) // Frisket's own panel.
+        ]
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+            windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
+            clipboard: WindowClipboard(), pendingByteLimit: 1024)
+        #expect(await commands.execute(.captureWindow(CaptureID(), maximumBytes: 1024)) == .captureFailed(.window(.noWindow)))
+        #expect(platform.selections == 0)
+        #expect(platform.captured.isEmpty)
+    }
+
+    /// A platform failure during window capture is reported as a window failure, never as "smaller area".
+    @Test(arguments: [false, true])
+    func platformFailureIsReportedAsAWindowFailure(duringPixels: Bool) async {
+        let platform = FixtureWindowPlatform()
+        if duringPixels { platform.captureFailure = .unavailable } else { platform.prepareFailure = .unavailable }
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+            windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
+            clipboard: WindowClipboard(), pendingByteLimit: 1024)
+        #expect(await commands.execute(.captureWindow(CaptureID(), maximumBytes: 1024)) == .captureFailed(.window(.systemRefused)))
+        #expect(!platform.selectionVisible)
+    }
+
+    /// Causes the platform names itself (a window that closed, or one too large) reach the caller unchanged.
+    @Test(arguments: [WindowCaptureFailure.windowChanged, .tooLarge])
+    func platformWindowCauseReachesTheCaller(_ cause: WindowCaptureFailure) async {
+        let platform = FixtureWindowPlatform()
+        platform.captureFailure = .window(cause)
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+            windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
+            clipboard: WindowClipboard(), pendingByteLimit: 1024)
+        let id = CaptureID()
+        #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .captureFailed(.window(cause)))
+        platform.captureFailure = nil
+        #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(CaptureRevision(captureID: id, number: 1)))
     }
 }

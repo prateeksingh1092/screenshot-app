@@ -10,6 +10,35 @@ public enum CaptureSourceFailure: Error, Equatable, Sendable {
     case unavailable, emptyImage, cancelled
     case rejectedAlignment(ScrollingCaptureAlignment)
     case permissionRequired(CapturePermissionState)
+    case window(WindowCaptureFailure)
+}
+
+/// Why a window capture failed. Each case names its own cause (D2, story 84).
+public enum WindowCaptureFailure: Equatable, Sendable, CaseIterable {
+    /// No on-screen window can be captured once Frisket, system chrome, minimized
+    /// windows and the Capture exclusion list are left out.
+    case noWindow
+    /// The chosen window closed, moved to another Space or changed before its pixels were taken.
+    case windowChanged
+    /// The window has more pixels than one capture may hold.
+    case tooLarge
+    /// macOS did not return the window's pixels.
+    case systemRefused
+
+    public var title: String { "Window not captured" }
+
+    public var message: String {
+        switch self {
+        case .noWindow:
+            return "There is no window Frisket can capture. It leaves out its own windows, minimized windows, the Dock, menus and apps on the Capture exclusion list."
+        case .windowChanged:
+            return "The window closed, moved to another Space or changed before Frisket could capture it. Try again."
+        case .tooLarge:
+            return "This window is too large to capture. Make the window smaller and try again."
+        case .systemRefused:
+            return "macOS did not return the window's pixels. Try again, or capture an area instead."
+        }
+    }
 }
 
 /// The source must bound its work to the allowance and return encoded PNG data.
