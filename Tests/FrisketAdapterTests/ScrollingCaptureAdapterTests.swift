@@ -82,6 +82,25 @@ extension ScrollingCaptureAdapterTests {
     }
 }
 
+extension ScrollingCaptureAdapterTests {
+    /// DA-9: ⌘⇧6 during a scrolling capture calls `finish()`, which means Done.
+    @Test func finishDuringASessionMeansDoneAndDoesNothingOtherwise() async throws {
+        let platform = RecordingScrollingRegion()
+        let capture = ManualScrollingCapture(platform: platform, bundleIdentifier: "fixture.bundle")
+        defer { capture.hide() }
+        #expect(!capture.isRunning)
+        capture.finish()   // no session yet: nothing to finish
+        guard case .viewport = await capture.nextFrame() else {
+            Issue.record("Expected the first sampled viewport")
+            return
+        }
+        #expect(capture.isRunning)
+        capture.finish()
+        #expect(!capture.isRunning)
+        #expect(await capture.nextFrame() == .done)
+    }
+}
+
 @MainActor private final class SuspendedRegion {
     private var pending: CheckedContinuation<Void, Never>?
     private var observer: CheckedContinuation<Void, Never>?

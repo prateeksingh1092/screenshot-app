@@ -326,6 +326,11 @@ import FrisketCore
     }
 
     @objc private func captureScrolling() {
+        // DA-9: pressing ⌘⇧6 again while a scrolling capture runs finishes it.
+        if let scrolling, scrolling.isRunning {
+            scrolling.finish()
+            return
+        }
         captures?.start(.captureScrolling(CaptureID(), maximumBytes: CaptureBudgets.v1.scrollingEncodedBytes))
     }
 
