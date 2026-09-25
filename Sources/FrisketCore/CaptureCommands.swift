@@ -33,6 +33,9 @@ public enum CaptureCommand: Sendable {
     case render(CaptureRevision, DocumentEdits)
     /// Removes a finalized History item. Pending Delete capture stays `.discard`.
     case deleteHistory(CaptureID)
+    /// Puts a History item back in the stack as a finalized Thumbnail: Copy, Save, drag and Copy Text,
+    /// no Edit, and leaving it never commits again (ticket 79, DA-10, decision 28).
+    case restoreFromHistory(CaptureID)
     /// Copies text recognized from this revision's current image. The text is not stored.
     case copyRecognizedText(CaptureRevision)
 }
@@ -94,6 +97,8 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case permissionRequired(CapturePermissionState)
     case rejected(CommandRejection)
     case historyDeleted(CaptureID)
+    /// The History item is listed as a finalized Thumbnail at History's revision (ticket 79).
+    case restored(CaptureRevision)
     case recognizedText(RecognizedTextOutcome)
     /// Copy Text found no text. Nothing was written to the clipboard (D8, story 89).
     case noTextFound(CaptureRevision)

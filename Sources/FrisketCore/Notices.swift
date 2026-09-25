@@ -29,7 +29,7 @@ extension Notice {
     /// status and its leaving say it. A failure the Thumbnail already shows as a Retry control also returns nil.
     public static func after(_ command: CaptureCommand, _ outcome: CaptureCommandOutcome) -> Notice? {
         switch outcome {
-        case .pending, .discarded, .historyDeleted, .finalized(_, .committed), .permissionRequired,
+        case .pending, .discarded, .historyDeleted, .restored, .finalized(_, .committed), .permissionRequired,
              .recognizedText, .noTextFound:
             return nil
         case .captureFailed(.cancelled), .captureFailed(.permissionRequired):

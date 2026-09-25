@@ -95,6 +95,19 @@ import FrisketCore
         }
     }
 
+    /// Puts a History item back as a finalized Thumbnail (ticket 79); false when it could not.
+    var onRestore: ((CaptureID) async -> Bool)?
+
+    func restore() {
+        guard !busy, let onRestore, let row = selectedRow else { return }
+        busy = true
+        Task {
+            let restored = await onRestore(row.item.captureID)
+            busy = false
+            message = restored ? nil : "Could not restore this capture to a Thumbnail. Try again."
+        }
+    }
+
     /// Called after a History item is deleted, so its open Thumbnail closes on screen too (D10).
     var onHistoryDeleted: ((CaptureID) -> Void)?
 
@@ -168,6 +181,10 @@ private struct HistoryWindowView: View {
                     .keyboardShortcut("s", modifiers: [])
                     .disabled(model.busy || model.selected == nil)
                     .accessibilityLabel("Save selected History capture")
+                Button("Restore to Thumbnail", action: model.restore)
+                    .keyboardShortcut(.return, modifiers: [])
+                    .disabled(model.busy || model.selected == nil)
+                    .accessibilityLabel("Restore selected History capture to a Thumbnail")
                 Button("Delete", action: model.delete)
                     .keyboardShortcut(.delete, modifiers: [])
                     .disabled(model.busy || model.selected == nil)

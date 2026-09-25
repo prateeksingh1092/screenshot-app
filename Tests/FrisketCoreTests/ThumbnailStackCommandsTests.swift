@@ -664,4 +664,96 @@ extension ThumbnailStackCommandsTests {
         #expect(await fixture.commands.handleSystemEvent(.quit) == [.finalized(quitting, .committed)])
         #expect(await fixture.commands.thumbnails().isEmpty)
     }
+
+    // Ticket 79 (story 98, DA-10, decision 28): History restores an item to a kept, finalized Thumbnail.
+    @Test func aRestoredHistoryItemIsAFinalizedThumbnailWithoutEdit() async throws {
+        let fixture = StackFixture(flattener: ScriptedFlattener(always: StackPixels.bytes))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let delay = ThumbnailStackPolicy().autoDismissDelay
+        let revision = try await fixture.capture()
+        let edits = try #require(DocumentEdits(scale: 1))
+        let edited = CaptureRevision(captureID: revision.captureID, number: 2)
+        #expect(await fixture.commands.execute(.done(revision, edits)) == .edited(edited, .committed))
+        #expect(await fixture.commands.execute(.exitThumbnail(edited, .close)) == .finalized(edited, .committed))
+        #expect(await fixture.commands.thumbnails().isEmpty)
+
+        #expect(await fixture.commands.execute(.restoreFromHistory(revision.captureID)) == .restored(edited))
+        let cards = await fixture.commands.thumbnails()
+        #expect(cards.map(\.revision) == [edited])
+        #expect(cards.first?.status == .finalized)
+        #expect(cards.first?.editable == false)
+        #expect(cards.first?.expiresAt == fixture.clock.now + delay)
+        #expect(cards.nextDueAt == fixture.clock.now + delay)
+        // Nothing comes back into memory: the card delivers from History, and Edit is refused.
+        #expect(await fixture.commands.image(for: edited) == nil)
+        #expect(await fixture.commands.execute(.done(edited, edits)) == .rejected(.alreadyFinalized))
+        #expect(await fixture.commands.execute(.copy(edited)) == .copy(CopyOutcome(revision: edited,
+            commit: .committed, delivery: .copied(ClipboardReceipt(changeCount: 1)))))
+        #expect(await fixture.commands.execute(.dismiss(edited)) == .rejected(.alreadyFinalized))
+
+        fixture.clock.advance(by: delay)
+        #expect(await fixture.commands.thumbnails().first?.dueExit == .timeout)
+        #expect(await fixture.commands.execute(.exitThumbnail(edited, .timeout)) == .finalized(edited, .committed))
+        #expect(await fixture.commands.thumbnails().isEmpty)
+        #expect(try await fixture.historyIDs() == [revision.captureID])
+    }
+
+    @Test(arguments: [ThumbnailExit.close, .swipe, .escape, .overflow])
+    func leavingARestoredThumbnailNeverAddsASecondHistoryRow(exit: ThumbnailExit) async throws {
+        let fixture = StackFixture(policy: ThumbnailStackPolicy(maximumCount: 1))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .close)) == .finalized(revision, .committed))
+        // A new session (say, after a relaunch) restores an item it never captured.
+        let session = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: StackPixels(),
+            clipboard: StackClipboard(), pendingByteLimit: 1024, history: fixture.history,
+            thumbnailPolicy: ThumbnailStackPolicy(maximumCount: 1), clock: { fixture.clock.now })
+        #expect(await session.execute(.restoreFromHistory(revision.captureID)) == .restored(revision))
+        if exit == .overflow {
+            let newer = CaptureID()
+            #expect(await session.execute(.capture(newer, maximumBytes: 128)) == .pending(CaptureRevision(captureID: newer, number: 1)))
+            #expect(await session.thumbnails().first { $0.revision == revision }?.dueExit == .overflow)
+        }
+        #expect(await session.execute(.exitThumbnail(revision, exit)) == .finalized(revision, .committed))
+        #expect(await session.thumbnails().allSatisfy { $0.revision != revision })
+        #expect(try await fixture.historyIDs() == [revision.captureID])
+        #expect(await session.handleSystemEvent(.quit).allSatisfy { $0 != .finalized(revision, .committed) })
+        #expect(try await fixture.historyIDs().filter { $0 == revision.captureID }.count == 1)
+    }
+
+    @Test func restoringTwiceKeepsOneThumbnailAndRestartsItsTimeout() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let delay = ThumbnailStackPolicy().autoDismissDelay
+        let revision = try await fixture.capture()
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .close)) == .finalized(revision, .committed))
+        #expect(await fixture.commands.execute(.restoreFromHistory(revision.captureID)) == .restored(revision))
+        fixture.clock.advance(by: .seconds(3))
+        #expect(await fixture.commands.execute(.restoreFromHistory(revision.captureID)) == .restored(revision))
+        let cards = await fixture.commands.thumbnails()
+        #expect(cards.map(\.revision) == [revision])
+        #expect(cards.first?.expiresAt == fixture.clock.now + delay)
+    }
+
+    @Test func deletingARestoredHistoryItemClosesItsThumbnail() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .close)) == .finalized(revision, .committed))
+        #expect(await fixture.commands.execute(.restoreFromHistory(revision.captureID)) == .restored(revision))
+        #expect(await fixture.commands.execute(.deleteHistory(revision.captureID)) == .historyDeleted(revision.captureID))
+        #expect(await fixture.commands.thumbnails().isEmpty)
+        #expect(await fixture.commands.execute(.copy(revision)) == .rejected(.unknownCapture))
+        #expect(await fixture.commands.execute(.restoreFromHistory(revision.captureID)) == .rejected(.unknownCapture))
+    }
+
+    @Test func aPendingCaptureCannotBeRestored() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        #expect(await fixture.commands.execute(.restoreFromHistory(revision.captureID)) == .rejected(.unknownCapture))
+        #expect(await fixture.commands.execute(.restoreFromHistory(CaptureID())) == .rejected(.unknownCapture))
+        #expect(await fixture.commands.thumbnails().map(\.revision) == [revision])
+        #expect(try await fixture.historyIDs().isEmpty)
+    }
 }

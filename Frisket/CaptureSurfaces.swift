@@ -461,6 +461,27 @@ import FrisketCore
         }
     }
 
+    /// Ticket 79 (DA-10): a History item comes back as a finalized Thumbnail on the pointer's display.
+    /// The core lists it; its preview is decoded from History's image, which `image` reads.
+    func restoreFromHistory(_ id: CaptureID, image: () async -> Data?) async -> Bool {
+        guard !isTerminating, panels[id]?.model.busy != true else { return false }
+        guard case let .restored(revision) = await commands.execute(.restoreFromHistory(id)) else { return false }
+        if panels[id] == nil {
+            guard let png = await image(), let preview = await ThumbnailImage.decode(png, maximumPixelSize: 480) else {
+                _ = await commands.execute(.exitThumbnail(revision, .close))   // unlist it; History keeps the item
+                return false
+            }
+            let panel = makePanel(id, revision: revision, preview: preview)
+            panel.model.status = .finalized
+            panel.model.editable = false
+            panels[id] = panel
+            let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+            if let display = screen.flatMap(displayID(of:)) { await commands.assignThumbnailDisplay(id, displayID: display) }
+        }
+        await settleThumbnails()
+        return true
+    }
+
     /// History deleted this capture, and the core already released its Thumbnail (D10).
     func historyDeleted(_ id: CaptureID) {
         guard panels[id] != nil else { return }
