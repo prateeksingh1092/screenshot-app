@@ -913,6 +913,10 @@ enum EditorAction {
         view.isAutomaticSpellingCorrectionEnabled = false
         view.isContinuousSpellCheckingEnabled = false
         view.isAutomaticTextCompletionEnabled = false
+        // No predicted text and no Writing Tools: the label holds only what the user typed, and its
+        // text never leaves the device (ticket 95).
+        view.inlinePredictionType = .no
+        view.writingToolsBehavior = .none
         view.setAccessibilityLabel("Label text. Return ends the label.")
         view.delegate = self
         labelView = view

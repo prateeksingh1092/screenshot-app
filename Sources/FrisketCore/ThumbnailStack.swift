@@ -203,9 +203,21 @@ struct ThumbnailStack: Sendable {
     /// Oldest first, matching quit finalization order.
     func arrivalOrder() -> [CaptureRevision] { newestFirst.reversed().map(\.revision) }
 
-    func cards(at now: ContinuousClock.Instant) -> [ThumbnailCard] {
-        newestFirst.enumerated().map { index, card in
-            let overflowing = index >= policy.maximumCount
+    /// The oldest cards beyond the maximum, skipping `spared` (the captures being edited, ticket 95).
+    private func overflowing(sparing spared: Set<CaptureID>) -> Set<CaptureID> {
+        var excess = newestFirst.count - policy.maximumCount
+        var result: Set<CaptureID> = []
+        for card in newestFirst.reversed() where excess > 0 && !spared.contains(card.revision.captureID) {
+            result.insert(card.revision.captureID)
+            excess -= 1
+        }
+        return result
+    }
+
+    func cards(at now: ContinuousClock.Instant, sparing spared: Set<CaptureID> = []) -> [ThumbnailCard] {
+        let overflow = overflowing(sparing: spared)
+        return newestFirst.map { card in
+            let overflowing = overflow.contains(card.revision.captureID)
             let expiresAt: ContinuousClock.Instant?
             let expired: Bool
             switch policy.autoDismiss {
@@ -223,10 +235,11 @@ struct ThumbnailStack: Sendable {
     }
 
     /// Pointer and keyboard exits are always admitted; policy exits only when due.
-    func admits(_ exit: ThumbnailExit, for id: CaptureID, at now: ContinuousClock.Instant) -> Bool {
+    func admits(_ exit: ThumbnailExit, for id: CaptureID, at now: ContinuousClock.Instant,
+                sparing spared: Set<CaptureID> = []) -> Bool {
         guard let index = newestFirst.firstIndex(where: { $0.revision.captureID == id }) else { return false }
         switch exit {
-        case .overflow: return index >= policy.maximumCount
+        case .overflow: return overflowing(sparing: spared).contains(id)
         case .timeout:
             guard case .after(let delay) = policy.autoDismiss else { return false }
             return now >= newestFirst[index].arrivedAt + delay

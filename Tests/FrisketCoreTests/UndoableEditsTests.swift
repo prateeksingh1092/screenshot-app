@@ -89,6 +89,36 @@ import Testing
         }
     }
 
+    /// Ticket 95: the name is the mark that changed, not the newest mark of its family.
+    @Test func anEditNamesTheMarkItChangedNotTheNewestMark() throws {
+        let arrow = try #require(DocumentAnnotation(.arrow(x0: 0, y0: 0, x1: 9, y1: 9)))
+        let movedArrow = try #require(DocumentAnnotation(.arrow(x0: 1, y0: 1, x1: 10, y1: 10)))
+        let label = try #require(DocumentAnnotation(.text(x: 3, y: 3, characters: "A1")))
+        let blur = try #require(DocumentEffect(.blur(x: 2, y: 2, width: 5, height: 5)))
+        let movedBlur = try #require(DocumentEffect(.blur(x: 3, y: 3, width: 5, height: 5)))
+        let magnify = try #require(DocumentEffect(.magnify(x: 2, y: 2, width: 5, height: 5)))
+        var start = try Self.base()
+        start.annotations = [arrow, label]
+        start.effects = [blur, magnify]
+        let changes: [(name: String, edit: (inout DocumentEdits) -> Void)] = [
+            ("Arrow", { $0.annotations[0] = movedArrow }),
+            ("Arrow", { $0.annotations.remove(at: 0) }),
+            ("Label", { $0.annotations.remove(at: 1) }),
+            ("Blur", { $0.effects[0] = movedBlur }),
+            ("Blur", { $0.effects.remove(at: 0) }),
+            ("Magnify", { $0.effects.append(magnify) })
+        ]
+        for change in changes {
+            let undoManager = UndoManager()
+            let document = UndoableEdits(start, undoManager: undoManager)
+            var next = document.edits
+            change.edit(&next)
+            document.apply(next)
+            Self.endEvent(undoManager)
+            #expect(undoManager.undoActionName == change.name)
+        }
+    }
+
     @Test func aNewEditAfterUndoClearsRedo() throws {
         let undoManager = UndoManager()
         let document = UndoableEdits(try Self.base(), undoManager: undoManager)

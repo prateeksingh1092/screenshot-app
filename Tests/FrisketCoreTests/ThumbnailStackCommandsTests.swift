@@ -649,6 +649,36 @@ extension ThumbnailStackCommandsTests {
         #expect(await fixture.commands.thumbnails().map(\.revision) == [edited])
     }
 
+    /// Ticket 95: overflow exits the oldest other card while the editor is open for a capture.
+    @Test func overflowSparesTheCaptureBeingEditedAndExitsTheOldestOtherCard() async throws {
+        let fixture = StackFixture(flattener: ScriptedFlattener(always: StackPixels.bytes))
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let maximum = ThumbnailStackPolicy().maximumCount
+        let delay = ThumbnailStackPolicy().autoDismissDelay
+        let editing = try await fixture.capture()
+        await fixture.commands.setEditorOpen(true, for: editing.captureID)
+        var others: [CaptureRevision] = []
+        for _ in 0..<maximum { others.append(try await fixture.capture()) }
+
+        let cards = await fixture.commands.thumbnails()
+        #expect(cards.map(\.revision) == others.reversed() + [editing])
+        #expect(cards.map(\.dueExit) == Array(repeating: nil, count: maximum - 1) + [.overflow, nil])
+        #expect(await fixture.commands.execute(.exitThumbnail(editing, .overflow)) == .rejected(.thumbnailExitNotDue))
+        #expect(await fixture.commands.execute(.exitThumbnail(others[0], .overflow)) == .finalized(others[0], .committed))
+        #expect(await fixture.commands.thumbnails().allSatisfy { $0.dueExit == nil })
+
+        // Done then leaving the editor: the card stays and its timeout restarts in full (decision 76).
+        fixture.clock.advance(by: .seconds(1))
+        let edited = CaptureRevision(captureID: editing.captureID, number: 2)
+        #expect(await fixture.commands.execute(.done(editing, try #require(DocumentEdits(scale: 1))))
+                == .edited(edited, .committed))
+        await fixture.commands.setEditorOpen(false, for: editing.captureID)
+        let after = await fixture.commands.thumbnails()
+        #expect(after.map(\.revision) == others.dropFirst().reversed() + [edited])
+        #expect(after.allSatisfy { $0.dueExit == nil })
+        #expect(after.last?.expiresAt == fixture.clock.now + delay)
+    }
+
     @Test func quitAndHistoryDeleteCloseAKeptThumbnail() async throws {
         let fixture = StackFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
