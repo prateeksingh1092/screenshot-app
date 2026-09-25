@@ -163,6 +163,7 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
       - A no-network check is added.
       - `@_silgen_name` is banned, except for the listed D22 uses.
     - **Live matrix:** the unattended run drives the real screen and clipboard, so it runs only when Prateek says he is away. Until then, the Phase 0 gate reports the harness as built and dry-run only.
+    - **D27, a CI reliability fix (a product change during Phase 0):** `HistoryRootLock.acquire` retries a busy lock for up to 250 ms before reporting `.rootLocked`. Without it, `ci.sh` failed at random: 2 of 8 runs when History tests ran beside tests that start child processes. A live second owner still gets `.rootLocked`. Ticket 78 deletes the lock and the retry.
     - **Effort level (Prateek, 2026-09-24):**
       - Tickets run at high effort.
       - Tickets 64, 65, 66, 67, 68 and 70 (the scrolling matcher and the native renderer) need xhigh. Before starting one, the coordinator stops and asks Prateek to switch; he changes the setting himself.

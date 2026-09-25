@@ -87,6 +87,7 @@ A same-harness comparison with the installed CleanShot X 5.0.1 showed that the f
 | D23 | The downscaled editor preview draws redactions larger than the saved output (outward rounding), and floors stroke and glyph cells at 2 px | Medium | Static | `EditorWindow.swift:357-360`; `DocumentRenderer.swift:277`, `:315` | Preview path |
 | D24 | Recovery and drag staging share `staging/` with no lock, and quota can double-count after a finalize crash | Low-Med | Static | `HistoryStore.swift:122`, `:141-148`, `:518-546` | Storage |
 | D25 | Coordinator reentrancy: `.deleteHistory` and `copyRecognizedText` don't set `inProgress`, and quit stops at the first capture it cannot finalize | Low | Static | `CaptureLifecycleCoordinator.swift:166-170`, `:294-300`, `:621-646` | Concurrency |
+| D27 | A fresh History store sometimes gets `.rootLocked` just after the previous owner closed the same root. It fails CI at random. Found 2026-09-24: 2 of 8 runs when History tests run beside tests that start child processes, 0 of 15 alone | Low (CI reliability) | Probe | `HistoryStore.swift` `HistoryRootLock.acquire` (flock on the root directory). Unverified hypothesis: a child process that another thread is starting briefly shares the closed owner's descriptor | Lock mechanism |
 
 ### 1.3 CleanShot X 5.0.1 benchmark (same harness, same display pair)
 

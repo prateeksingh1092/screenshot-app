@@ -881,15 +881,23 @@ private struct FinalizationRecord: Codable {
 private final class HistoryRootLock: Sendable {
     private let descriptor: Int32
     private init(descriptor: Int32) { self.descriptor = descriptor }
+    // D27: while another thread starts a child process, the child can briefly share a just-closed
+    // owner's descriptor, so the lock looks held for a moment. Retrying for up to 250 ms rides that
+    // out; a live second owner still gets `.rootLocked`. Ticket 78 removes the lock and this retry.
     static func acquire(_ root: URL) throws -> HistoryRootLock {
         let descriptor = Darwin.open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else { throw HistoryFailure.unavailable }
-        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+        for attempt in 0...25 {
+            if flock(descriptor, LOCK_EX | LOCK_NB) == 0 { return HistoryRootLock(descriptor: descriptor) }
             let code = errno
-            Darwin.close(descriptor)
-            throw code == EWOULDBLOCK ? HistoryFailure.rootLocked : HistoryFailure.unavailable
+            guard code == EWOULDBLOCK, attempt < 25 else {
+                Darwin.close(descriptor)
+                throw code == EWOULDBLOCK ? HistoryFailure.rootLocked : HistoryFailure.unavailable
+            }
+            usleep(10_000)
         }
-        return HistoryRootLock(descriptor: descriptor)
+        Darwin.close(descriptor)
+        throw HistoryFailure.rootLocked
     }
     deinit { Darwin.close(descriptor) }
 }

@@ -13,6 +13,7 @@
 - [ ] Tests cover orphan adoption and a row whose file is missing.
 - [ ] The retention and quota tests stay green, and eviction takes one checkpoint per batch.
 - [ ] Recovery and drag staging no longer share a directory (D24).
+- [ ] The flock and its 250 ms D27 retry are deleted. Reopening a root right after a close never reports `.rootLocked`, even while other tests start child processes.
 
 ## Comments
 
