@@ -34,30 +34,56 @@ private func interruptedCommit(at root: URL, point: HistoryCommitPoint, id: Capt
 }
 
 @Suite struct HistoryRecoveryTests {
-    @Test func launchAdoptsAnAuthorizedRowlessImage() async throws {
+    /// A crash between the atomic PNG write and the row leaves a UUID-named PNG and no row.
+    /// The launch sweep adopts it: its size and dimensions come from the file, its date from the
+    /// file's modification date, and its revision is 1 (DA-4; ticket 78).
+    @Test func launchAdoptsAnOrphanPNG() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let id = CaptureID()
-        try await interruptedCommit(at: root, point: .recordRenamed, id: id)
-        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("images/\(id.rawValue.uuidString).finalization.json").path))
+        try await interruptedCommit(at: root, point: .imageWritten, id: id)
+        let image = root.appendingPathComponent("images/\(id.rawValue.uuidString).png")
+        let written = Date(timeIntervalSince1970: 1_700_000_000)
+        try FileManager.default.setAttributes([.modificationDate: written], ofItemAtPath: image.path)
         let history = HistoryStore(root: root)
-        let commands = recoveryCommands(history)
         _ = try await history.recover().get()
         let entries = try await history.entries().get()
+        let entry = try #require(entries.first)
         #expect(entries.map(\.captureID) == [id])
-        #expect(entries.first?.width == 2)
-        #expect(entries.first?.height == 1)
-        #expect(entries.first?.finalizedAt == Date(timeIntervalSince1970: 1234))
-        #expect(try Data(contentsOf: root.appendingPathComponent(try #require(entries.first).imageLocation)) == RecoveryPixels().bytes)
+        #expect(entry.revision == 1)
+        #expect(entry.width == 2 && entry.height == 1)
+        #expect(entry.imageBytes == Int64(RecoveryPixels().bytes.count))
+        #expect(entry.finalizedAt == written)
+        #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == RecoveryPixels().bytes)
+        #expect(try await history.finalizedImage(id).get().pngData == RecoveryPixels().bytes)
+    }
+
+    /// The other half of the contract: a row whose image is gone is dropped, with a diagnostic,
+    /// and the row actions no longer offer it.
+    @Test func launchDropsARowWhoseImageIsMissing() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let ids = [CaptureID(), CaptureID()]
+        let before = try await committedEntries(root, ids: ids)
+        try FileManager.default.removeItem(at: root.appendingPathComponent(before[0].imageLocation))
+        let log = LocalDiagnosticLog()
+        let history = HistoryStore(root: root, diagnostics: log)
+        let report = try await history.recover().get()
+        #expect(report.removedMissingImages == 1)
+        #expect(try await history.entries().get().map(\.captureID) == [ids[1]])
+        #expect((try? await history.finalizedImage(ids[0]).get()) == nil)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent(try #require(before[0].thumbnailLocation)).path))
+        #expect(await log.entries().map(\.event) == [
+            DiagnosticEvent(name: .historyImageMissing, operation: .launchRecovery,
+                error: DiagnosticError(domain: .history, code: .missingHistoryImage)),
+            DiagnosticEvent(name: .historyRecovered, operation: .launchRecovery)
+        ])
     }
 }
 
 // Explicit cases are intentional: additions to the production enum must extend
 // these expectations and the independent subprocess tier.
-private let tierOnePoints: [HistoryCommitPoint] = [
-    .pngStaged, .pngSynced, .recordStaged, .recordSynced, .imageRenamed,
-    .recordRenamed, .directorySynced, .rowCommitted, .thumbnailCached
-]
+private let tierOnePoints: [HistoryCommitPoint] = [.imageStaged, .imageWritten, .rowCommitted, .thumbnailCached]
 
 private func recoverySnapshot(_ root: URL) throws -> [String: Data] {
     var files: [String: Data] = [:]
@@ -73,21 +99,19 @@ private func recoverySnapshot(_ root: URL) throws -> [String: Data] {
 
 private func verifyRecoveredRoot(_ root: URL, point: HistoryCommitPoint, id: CaptureID) async throws {
     let history = HistoryStore(root: root)
-    let commands = recoveryCommands(history)
     let first = try await history.recover().get()
     let entries = try await history.entries().get()
-    let survives = [.recordRenamed, .directorySynced, .rowCommitted, .thumbnailCached].contains(point)
+    // Only a crash before the rename loses the write; from the rename on, the capture is kept.
+    let survives = point != .imageStaged
     #expect(entries.map(\.captureID) == (survives ? [id] : []))
     let snapshot = try recoverySnapshot(root)
     #expect(first.logicalBytes == snapshot.values.reduce(Int64(0)) { $0 + Int64($1.count) })
-    #expect(!snapshot.keys.contains { $0.hasPrefix("staging/") })
+    #expect(!snapshot.keys.contains { $0.hasPrefix("staging/") || $0.hasSuffix(".partial") || $0.hasSuffix(".json") })
     var expectedFiles = Set<String>()
     for entry in entries {
         expectedFiles.insert(entry.imageLocation)
-        expectedFiles.insert(entry.recordLocation)
         #expect(snapshot[entry.imageLocation] == RecoveryPixels().bytes)
         #expect(entry.imageBytes == Int64(try #require(snapshot[entry.imageLocation]).count))
-        #expect(entry.recordBytes == Int64(try #require(snapshot[entry.recordLocation]).count))
         if let thumbnail = entry.thumbnailLocation {
             expectedFiles.insert(thumbnail)
             #expect(entry.thumbnailBytes == Int64(try #require(snapshot[thumbnail]).count))
@@ -100,6 +124,18 @@ private func verifyRecoveredRoot(_ root: URL, point: HistoryCommitPoint, id: Cap
     let after = try recoverySnapshot(root)
     #expect(Set(after.keys) == Set(snapshot.keys))
     for name in snapshot.keys { #expect(after[name] == snapshot[name], Comment(rawValue: name)) }
+    // History usage counts the adopted image once (D24's double count is gone).
+    let usage = try await history.maintain(limits: HistoryLimits(retentionDays: 40_000)).get().usageBytes
+    var disk: Int64 = 0
+    for entry in entries {
+        disk += Int64(try #require(snapshot[entry.imageLocation]).count)
+        if let thumbnail = entry.thumbnailLocation { disk += Int64(try #require(snapshot[thumbnail]).count) }
+    }
+    for suffix in ["", "-wal", "-shm"] {
+        let file = root.appendingPathComponent("history.sqlite" + suffix)
+        if FileManager.default.fileExists(atPath: file.path) { disk += Int64(try Data(contentsOf: file).count) }
+    }
+    #expect(usage == disk)
 }
 
 extension HistoryRecoveryTests {
@@ -113,34 +149,7 @@ extension HistoryRecoveryTests {
     }
 }
 
-extension HistoryRecoveryTests {
-    @Test func anotherInstanceCannotRecoverReadOrCommitWhileTheRootIsOwned() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let ownerHistory = HistoryStore(root: root, commitPoint: { if $0 == .recordRenamed { throw RecoveryStop.stop } })
-        let owner = recoveryCommands(ownerHistory)
-        let id = CaptureID()
-        _ = await owner.execute(.capture(id, maximumBytes: 1024))
-        _ = await owner.execute(.dismiss(CaptureRevision(captureID: id, number: 1)))
-        let before = try recoverySnapshot(root)
-        let contenderHistory = HistoryStore(root: root)
-        let contender = recoveryCommands(contenderHistory)
-        #expect(await contenderHistory.recover() == .failure(.rootLocked))
-        #expect(await contenderHistory.entries() == .failure(.rootLocked))
-        let second = CaptureRevision(captureID: CaptureID(), number: 1)
-        _ = await contender.execute(.capture(second.captureID, maximumBytes: 1024))
-        #expect(await contender.execute(.copy(second)) == .copy(CopyOutcome(revision: second,
-            commit: .notCommitted(.historyUnavailable), delivery: .copied(ClipboardReceipt(changeCount: 1)))))
-        #expect(try recoverySnapshot(root) == before)
-        _ = try await ownerHistory.recover().get()
-        #expect(try await ownerHistory.entries().get().map(\.captureID) == [id])
-    }
-}
-
-private let tierTwoPoints: [HistoryCommitPoint] = [
-    .pngStaged, .pngSynced, .recordStaged, .recordSynced, .imageRenamed,
-    .recordRenamed, .directorySynced, .rowCommitted, .thumbnailCached
-]
+private let tierTwoPoints: [HistoryCommitPoint] = [.imageStaged, .imageWritten, .rowCommitted, .thumbnailCached]
 
 private func killAtCommitPoint(_ point: HistoryCommitPoint, root: URL, id: CaptureID) throws {
     let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -201,45 +210,36 @@ private func recoverySQL(_ sql: String, root: URL) throws {
 }
 
 extension HistoryRecoveryTests {
-    @Test func recoveryFinishesDeletionsRemovesMissingImagesAndReconcilesAllSizes() async throws {
+    @Test func recoveryRemovesMissingImagesStrayFilesAndReconcilesAllSizes() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
-        let ids = [CaptureID(), CaptureID(), CaptureID()]
+        let ids = [CaptureID(), CaptureID()]
         let before = try await committedEntries(root, ids: ids)
         try FileManager.default.removeItem(at: root.appendingPathComponent(before[0].imageLocation))
-        try recoverySQL("UPDATE history SET state = 'deleting' WHERE id = \(before[1].key); UPDATE history SET image_bytes = 1, record_bytes = 1, thumbnail_bytes = 1 WHERE id = \(before[2].key)", root: root)
+        try recoverySQL("UPDATE history SET image_bytes = 1, thumbnail_bytes = 1 WHERE id = \(before[1].key)", root: root)
         let orphan = "thumbnails/\(UUID().uuidString).png"
         try RecoveryPixels().bytes.write(to: root.appendingPathComponent(orphan))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("staging"), withIntermediateDirectories: false)
         try Data([1, 2, 3]).write(to: root.appendingPathComponent("staging/interrupted"))
+        try Data([1, 2, 3]).write(to: root.appendingPathComponent("images/\(UUID().uuidString).partial"))
         try FileManager.default.createDirectory(at: root.appendingPathComponent("archives"), withIntermediateDirectories: false)
         try Data(repeating: 42, count: 117).write(to: root.appendingPathComponent("archives/recovery.sqlite"))
         let log = LocalDiagnosticLog()
         let history = HistoryStore(root: root, diagnostics: log)
-        let commands = recoveryCommands(history)
         let report = try await history.recover().get()
         let after = try await history.entries().get()
-        #expect(after.map(\.captureID) == [ids[2]])
+        #expect(after.map(\.captureID) == [ids[1]])
         let survivor = try #require(after.first)
         let snapshot = try recoverySnapshot(root)
         #expect(survivor.imageBytes == 70)
-        #expect(survivor.recordBytes == Int64(try #require(snapshot[survivor.recordLocation]).count))
         let thumbnailLocation = try #require(survivor.thumbnailLocation)
         #expect(survivor.thumbnailBytes == Int64(try #require(snapshot[thumbnailLocation]).count))
         #expect(report.removedMissingImages == 1)
         #expect(report.logicalBytes == snapshot.values.reduce(Int64(0)) { $0 + Int64($1.count) })
         #expect(snapshot["archives/recovery.sqlite"]?.count == 117)
-        for entry in before.prefix(2) {
-            #expect(snapshot[entry.imageLocation] == nil)
-            #expect(snapshot[entry.recordLocation] == nil)
-            #expect(snapshot[try #require(entry.thumbnailLocation)] == nil)
-        }
+        #expect(snapshot[try #require(before[0].thumbnailLocation)] == nil)
         #expect(snapshot[orphan] == nil)
-        #expect(snapshot["staging/interrupted"] == nil)
-        #expect(await log.entries().map(\.event) == [
-            DiagnosticEvent(name: .historyImageMissing, operation: .launchRecovery,
-                error: DiagnosticError(domain: .history, code: .missingHistoryImage)),
-            DiagnosticEvent(name: .historyRecovered, operation: .launchRecovery)
-        ])
+        #expect(!snapshot.keys.contains { $0.hasPrefix("staging/") || $0.hasSuffix(".partial") })
         _ = try await history.recover().get()
         #expect(try recoverySnapshot(root) == snapshot)
         #expect(try await history.entries().get() == after)
@@ -247,42 +247,27 @@ extension HistoryRecoveryTests {
 }
 
 extension HistoryRecoveryTests {
-    @Test(arguments: ["marker", "identifier", "dimensions", "revision", "size", "json", "png", "missingRecord", "missingImage", "fileName", "compressedPixels"])
-    func rowlessImagesRequireAValidMatchingFinalizationRecord(damage: String) async throws {
+    /// Only a whole, decodable PNG named by a canonical capture identifier is adopted. Anything
+    /// else in `images/` is not a capture and is removed.
+    @Test(arguments: ["notPNG", "compressedPixels", "fileName", "partial"])
+    func rowlessFilesThatAreNotCapturesAreRemoved(damage: String) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let id = CaptureID()
-        try await interruptedCommit(at: root, point: .recordRenamed, id: id)
+        try await interruptedCommit(at: root, point: .imageWritten, id: id)
         let image = root.appendingPathComponent("images/\(id.rawValue.uuidString).png")
-        let record = root.appendingPathComponent("images/\(id.rawValue.uuidString).finalization.json")
-        var json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: record)) as? [String: Any])
         switch damage {
-        case "marker": json["marker"] = "not-finalized"
-        case "identifier": json["captureIdentifier"] = UUID().uuidString
-        case "dimensions": json["width"] = 3
-        case "revision": json["revision"] = 0
-        case "size": json["imageBytes"] = 1
-        default: break
-        }
-        try JSONSerialization.data(withJSONObject: json).write(to: record)
-        switch damage {
-        case "json": try Data("invalid".utf8).write(to: record)
-        case "png": try Data(repeating: 0, count: 70).write(to: image)
+        case "notPNG": try Data(repeating: 0, count: 70).write(to: image)
         case "compressedPixels":
             var bytes = RecoveryPixels().bytes
             bytes[41] = 0 // Keep the PNG header/dimensions; invalidate the compressed pixel stream.
             try bytes.write(to: image)
-        case "missingRecord": try FileManager.default.removeItem(at: record)
-        case "missingImage": try FileManager.default.removeItem(at: image)
         case "fileName": try FileManager.default.moveItem(at: image, to: root.appendingPathComponent("images/not-an-identifier.png"))
-        default: break
+        default: try FileManager.default.moveItem(at: image, to: root.appendingPathComponent("images/\(id.rawValue.uuidString).partial"))
         }
         let history = HistoryStore(root: root)
-        let commands = recoveryCommands(history)
         _ = try await history.recover().get()
         #expect(try await history.entries().get().isEmpty)
-        #expect(!FileManager.default.fileExists(atPath: image.path))
-        #expect(!FileManager.default.fileExists(atPath: record.path))
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("images").path).isEmpty)
         let snapshot = try recoverySnapshot(root)
         _ = try await history.recover().get()
@@ -311,7 +296,7 @@ extension HistoryRecoveryTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let root = directory.appendingPathComponent("History.noindex")
         let id = CaptureID()
-        try await interruptedCommit(at: root, point: .recordRenamed, id: id)
+        try await interruptedCommit(at: root, point: .imageWritten, id: id)
         let image = root.appendingPathComponent("images/\(id.rawValue.uuidString).png")
         let outside = directory.appendingPathComponent("outside.png")
         try FileManager.default.moveItem(at: image, to: outside)
@@ -338,7 +323,7 @@ extension HistoryRecoveryTests {
         _ = try await history.recover().get()
         #expect(try await history.entries().get() == before)
         for entry in before {
-            for location in [entry.imageLocation, entry.recordLocation, entry.thumbnailLocation].compactMap({ $0 }) {
+            for location in [entry.imageLocation, entry.thumbnailLocation].compactMap({ $0 }) {
                 #expect(!location.hasPrefix("/") && !location.contains(".."))
                 #expect(FileManager.default.fileExists(atPath: newRoot.appendingPathComponent(location).path))
             }
@@ -361,6 +346,7 @@ extension HistoryRecoveryTests {
         let after = try #require(try await history.entries().get().first)
         #expect(after.captureID == entry.captureID)
         #expect(after.thumbnailLocation == nil && after.thumbnailBytes == 0)
+        #expect(await history.thumbnailPNG(after.captureID) == nil)
         #expect(try Data(contentsOf: root.appendingPathComponent(after.imageLocation)) == RecoveryPixels().bytes)
         let snapshot = try recoverySnapshot(root)
         _ = try await history.recover().get()
@@ -442,36 +428,32 @@ extension HistoryRecoveryTests {
 }
 
 extension HistoryRecoveryTests {
-    @Test func aSeparateProcessHoldsTheLockUntilItDies() async throws {
+    /// D27 is gone with the lock (ticket 78): `.rootLocked` is retired, and a store reopened
+    /// right after the previous one closed recovers and reads, even while child processes start.
+    @Test func reopeningARootRightAfterACloseWorksWhileChildProcessesStart() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
-        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let child = Process()
-        child.executableURL = repository.appendingPathComponent(".build/debug/HistoryCrashHelper")
         let id = CaptureID()
-        child.arguments = [root.path, HistoryCommitPoint.recordRenamed.rawValue, id.rawValue.uuidString, "hold"]
-        let ready = Pipe()
-        let release = Pipe()
-        child.standardOutput = ready
-        child.standardInput = release
-        child.standardError = FileHandle.nullDevice
-        try child.run()
-        try ready.fileHandleForWriting.close()
-        defer {
-            try? release.fileHandleForWriting.close()
-            if child.isRunning { child.waitUntilExit() }
+        _ = try await committedEntries(root, ids: [id])
+        let spawner = Task.detached {
+            for _ in 0..<40 {
+                let child = Process()
+                child.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+                try? child.run()
+                child.waitUntilExit()
+            }
         }
-        try #require(ready.fileHandleForReading.readData(ofLength: 1) == Data([1]))
-        let before = try recoverySnapshot(root)
-        let history = HistoryStore(root: root)
-        let commands = recoveryCommands(history)
-        #expect(await history.recover() == .failure(.rootLocked))
-        #expect(try recoverySnapshot(root) == before)
-        try release.fileHandleForWriting.close()
-        child.waitUntilExit()
-        #expect(child.terminationReason == .uncaughtSignal && child.terminationStatus == SIGKILL)
-        _ = try await history.recover().get()
-        #expect(try await history.entries().get().map(\.captureID) == [id])
+        for _ in 0..<40 {
+            let store = HistoryStore(root: root)
+            #expect(await store.availability() == nil)
+            #expect(try await store.rows().get().map(\.captureID) == [id])
+            let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+            let commands = recoveryCommands(store)
+            _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
+            #expect(await commands.execute(.discard(revision.captureID)) == .discarded(revision.captureID))
+            try await store.close().get()
+        }
+        await spawner.value
     }
 }
 

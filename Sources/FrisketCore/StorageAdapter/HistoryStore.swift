@@ -3,9 +3,13 @@ import Darwin
 import GRDB
 import ImageIO
 
+/// History storage (DA-4 and DA-11; ticket 78). A finalized capture is one atomic PNG write,
+/// `images/<UUID>.png`, plus one GRDB row at SQLite's default durability. `thumbnails/<UUID>.png`
+/// is a disposable cache. The launch sweep adopts a row-less UUID-named PNG (a crash between the
+/// write and the row), drops a row whose image is gone, and removes files it does not own.
+/// There is no lock, no staging directory, no sidecar and no ownership ledger.
+///
 /// Disk access is lazy: initialization and an empty query create nothing.
-/// The directory lock is held until this store is released, including while
-/// History queries and authorized commits run.
 public actor HistoryStore: CaptureHistory, HistoryRowSource {
     private let root: URL
     private let clock: @Sendable () -> Date
@@ -17,7 +21,6 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
     private var recoveredOnce = false
     private var closed = false
     private var database: DatabaseQueue?
-    private var rootLock: HistoryRootLock?
     private var measurementFailed = false
     private var limits: HistoryLimits
 
@@ -35,7 +38,7 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         self.evictionPoint = evictionPoint
     }
 
-    /// Starts one launch sweep. Queries and finalizations also join the startup
+    /// Starts one launch sweep. Queries, finalizations and maintenance also join the startup
     /// gate, so scheduling the task cannot expose unrecovered History.
     public static func launch(root: URL, limits: HistoryLimits = HistoryLimits(),
                               diagnostics: any DiagnosticSink = LocalDiagnosticLog()) -> HistoryStore {
@@ -67,7 +70,6 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         do {
             try database?.close()
             database = nil
-            rootLock = nil
             return .success(())
         } catch { return .failure(.unavailable) }
     }
@@ -98,7 +100,6 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
             case .unknownMigrations: code = .unknownMigrations
             case .invalidImage: code = .invalidImage
             case .recoveryRequired: code = .recoveryRequired
-            case .rootLocked: code = .rootLocked
             }
             await diagnostics.record(DiagnosticEvent(name: .historyRecoveryFailed, operation: .launchRecovery,
                 error: DiagnosticError(domain: .history, code: code)))
@@ -112,55 +113,14 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
             guard FileManager.default.fileExists(atPath: root.path) else {
                 return .success(HistoryRecoveryReport(logicalBytes: 0, removedMissingImages: 0))
             }
-            try acquireRootLock()
             try validateRootLayout()
             if try isReconciled() {
                 return .success(HistoryRecoveryReport(logicalBytes: try totalLogicalBytes(), removedMissingImages: 0))
             }
             let database = try writableDatabase(recovering: true)
-            let removedMissingImages = try reconcileRows(database)
-            for file in try children("staging") { try FileManager.default.removeItem(at: file) }
-            let known = Set(try readEntries(database).map { $0.captureID.rawValue.uuidString })
-            for file in try children("images")
-                where file.pathExtension == "png" {
-                let identifier = file.deletingPathExtension().lastPathComponent
-                guard !known.contains(identifier) else { continue }
-                guard UUID(uuidString: identifier)?.uuidString == identifier else {
-                    try FileManager.default.removeItem(at: file)
-                    continue
-                }
-                let recordLocation = "images/\(identifier).finalization.json"
-                let recordURL = root.appendingPathComponent(recordLocation)
-                guard let record = try validRecord(identifier: identifier, imageURL: file, recordURL: recordURL) else {
-                    try FileManager.default.removeItem(at: file)
-                    try removeIfPresent(recordURL)
-                    continue
-                }
-                let imageBytes = try logicalSize(file)
-                let recordBytes = try logicalSize(recordURL)
-                try database.write { db in
-                    try db.execute(sql: """
-                        INSERT INTO history (capture_identifier, revision, image_location, record_location,
-                            width, height, image_bytes, record_bytes, finalized_at, state)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'finalized')
-                        """, arguments: [identifier, Int64(record.revision), "images/\(identifier).png", recordLocation,
-                                          record.width, record.height, imageBytes, recordBytes, record.finalizedAt.timeIntervalSince1970])
-                }
-            }
-            let entries = try readEntries(database)
-            let records = Set(entries.map(\.recordLocation))
-            for file in try children("images") where file.lastPathComponent.hasSuffix(".finalization.json") {
-                if !records.contains("images/" + file.lastPathComponent) { try FileManager.default.removeItem(at: file) }
-            }
-            let thumbnails = Set(entries.compactMap(\.thumbnailLocation))
-            for file in try children("thumbnails") {
-                if !thumbnails.contains("thumbnails/" + file.lastPathComponent) { try FileManager.default.removeItem(at: file) }
-            }
-            for directory in ["images", "staging", "thumbnails"] {
-                let url = root.appendingPathComponent(directory)
-                if FileManager.default.fileExists(atPath: url.path) { try syncDirectory(url) }
-            }
-            _ = try database.writeWithoutTransaction { db in try db.checkpoint(.truncate) }
+            let removedMissingImages = try sweep(database)
+            try checkpoint(database)
+            // Closing lets a clean second sweep use an immutable read; row actions reopen on demand (D19).
             try database.close()
             self.database = nil
             return .success(HistoryRecoveryReport(logicalBytes: try totalLogicalBytes(), removedMissingImages: removedMissingImages))
@@ -168,51 +128,81 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         catch { return .failure(.unavailable) }
     }
 
-    private func reconcileRows(_ database: DatabaseQueue) throws -> Int {
-        let rows = try database.read { db in try Row.fetchAll(db, sql: "SELECT * FROM history ORDER BY id") }
+    /// Rows first: a row whose image is gone is dropped, and sizes follow the files. Then files:
+    /// a row-less `images/<UUID>.png` that decodes is adopted; anything else the store does not
+    /// own in `images/` and `thumbnails/` is removed, as is any `staging/` an earlier build left.
+    private func sweep(_ database: DatabaseQueue) throws -> Int {
+        try removeIfPresent(root.appendingPathComponent("staging"))
+        try removeIfPresent(backupDirectory)
         var missingImages = 0
-        for row in rows {
-            let identifier: String = row["capture_identifier"]
-            let imageLocation: String = row["image_location"]
-            let recordLocation: String = row["record_location"]
-            let thumbnailLocation: String? = row["thumbnail_location"]
-            try validateLocations(identifier: identifier, image: imageLocation, record: recordLocation, thumbnail: thumbnailLocation)
-            let imageURL = root.appendingPathComponent(imageLocation)
-            let missing = !FileManager.default.fileExists(atPath: imageURL.path)
-            if row["state"] as String == "deleting" || missing {
-                for location in [imageLocation, recordLocation, thumbnailLocation].compactMap({ $0 }) {
-                    try removeIfPresent(root.appendingPathComponent(location))
-                }
-                // Unlink before row removal so a second sweep can finish this deletion.
-                for directory in ["images", "thumbnails"] {
-                    let url = root.appendingPathComponent(directory)
-                    if FileManager.default.fileExists(atPath: url.path) { try syncDirectory(url) }
-                }
-                try database.write { db in try db.execute(sql: "DELETE FROM history WHERE capture_identifier = ?", arguments: [identifier]) }
-                if missing && row["state"] as String == "finalized" { missingImages += 1 }
+        for entry in try readEntries(database) {
+            let id = entry.captureID.rawValue.uuidString
+            let image = imageURL(id)
+            let thumbnail = thumbnailURL(id)
+            guard try exists(image) else {
+                try removeIfPresent(thumbnail)
+                try database.write { try $0.execute(sql: "DELETE FROM history WHERE id = ?", arguments: [entry.key]) }
+                missingImages += 1
                 continue
             }
-            let imageBytes = try logicalSize(imageURL)
-            let recordURL = root.appendingPathComponent(recordLocation)
-            let recordBytes = FileManager.default.fileExists(atPath: recordURL.path) ? try logicalSize(recordURL) : 0
-            let thumbnail = thumbnailLocation.flatMap { location in
-                FileManager.default.fileExists(atPath: root.appendingPathComponent(location).path) ? location : nil
-            }
-            let thumbnailBytes = try thumbnail.map { try logicalSize(root.appendingPathComponent($0)) } ?? 0
-            if imageBytes != row["image_bytes"] || recordBytes != row["record_bytes"] || thumbnailBytes != row["thumbnail_bytes"] || thumbnail != thumbnailLocation {
+            let imageBytes = try logicalSize(image)
+            let thumbnailBytes = try exists(thumbnail) ? try logicalSize(thumbnail) : 0
+            if imageBytes != entry.imageBytes || thumbnailBytes != entry.thumbnailBytes {
                 try database.write { db in
-                    try db.execute(sql: "UPDATE history SET image_bytes = ?, record_bytes = ?, thumbnail_location = ?, thumbnail_bytes = ? WHERE capture_identifier = ?",
-                        arguments: [imageBytes, recordBytes, thumbnail, thumbnailBytes, identifier])
+                    try db.execute(sql: "UPDATE history SET image_bytes = ?, thumbnail_bytes = ? WHERE id = ?",
+                                   arguments: [imageBytes, thumbnailBytes, entry.key])
                 }
             }
+        }
+        var known = Set(try readEntries(database).map { $0.captureID.rawValue.uuidString })
+        for file in try children("images") {
+            guard let id = Self.identifier(of: file) else {
+                try FileManager.default.removeItem(at: file) // a `.partial`, a sidecar, or a foreign name
+                continue
+            }
+            if known.contains(id) { continue }
+            if try adopt(file, identifier: id, database: database) { known.insert(id) }
+            else { try FileManager.default.removeItem(at: file) } // not a whole PNG: not a capture
+        }
+        for file in try children("thumbnails") {
+            if let id = Self.identifier(of: file), known.contains(id) { continue }
+            try FileManager.default.removeItem(at: file)
         }
         return missingImages
     }
 
-    private func validateLocations(identifier: String, image: String, record: String, thumbnail: String?) throws {
-        guard let uuid = UUID(uuidString: identifier), uuid.uuidString == identifier,
-              image == "images/\(identifier).png", record == "images/\(identifier).finalization.json",
-              thumbnail == nil || thumbnail == "thumbnails/\(identifier).png" else { throw HistoryFailure.unavailable }
+    /// A crash between the atomic PNG write and the row leaves only the PNG. It was authorized
+    /// (the write happens only inside `finalize`), so it is adopted, never deleted. The file has
+    /// no revision or date of its own: the row takes revision 1 and the file's modification date.
+    private func adopt(_ file: URL, identifier: String, database: DatabaseQueue) throws -> Bool {
+        let data = try Data(contentsOf: file)
+        guard let size = Self.decodedSize(data) else { return false }
+        let bytes = try logicalSize(file)
+        let modified = try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? clock()
+        try database.write { db in
+            try db.execute(sql: """
+                INSERT INTO history (capture_identifier, revision, width, height, image_bytes, thumbnail_bytes, finalized_at)
+                VALUES (?, 1, ?, ?, ?, 0, ?)
+                """, arguments: [identifier, size.width, size.height, bytes, modified.timeIntervalSince1970])
+        }
+        return true
+    }
+
+    /// Forces the pixels to decode: ImageIO can return a header-valid image whose compressed pixels are corrupt.
+    private static func decodedSize(_ data: Data) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetType(source) as String? == "public.png",
+              let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
+              let pixels = image.dataProvider?.data, CFDataGetLength(pixels) > 0 else { return nil }
+        return (image.width, image.height)
+    }
+
+    /// The canonical capture identifier of `<UUID>.png`, or nil for any other name.
+    private static func identifier(of file: URL) -> String? {
+        guard file.pathExtension == "png" else { return nil }
+        let name = file.deletingPathExtension().lastPathComponent
+        return UUID(uuidString: name)?.uuidString == name ? name : nil
     }
 
     // A no-op sweep must not even open a writer: SQLite can alter its header
@@ -224,41 +214,26 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         catch HistoryFailure.recoveryRequired { return false }
         defer { try? reader.close() }
         try validateMigrations(reader)
-        let entries = try readEntries(reader)
-        let count = try reader.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM history") }
-        guard count == entries.count, try children("staging").isEmpty else { return false }
+        guard try isCurrentSchema(reader) else { return false }
+        guard try !exists(root.appendingPathComponent("staging")), try !exists(backupDirectory) else { return false }
         var expectedImages = Set<String>()
         var expectedThumbnails = Set<String>()
-        for entry in entries {
-            try validateLocations(identifier: entry.captureID.rawValue.uuidString, image: entry.imageLocation,
-                                  record: entry.recordLocation, thumbnail: entry.thumbnailLocation)
-            expectedImages.insert(entry.imageLocation)
-            for (location, bytes) in [(entry.imageLocation, entry.imageBytes), (entry.recordLocation, entry.recordBytes)] {
-                let file = root.appendingPathComponent(location)
-                if FileManager.default.fileExists(atPath: file.path) {
-                    expectedImages.insert(location)
-                    guard try logicalSize(file) == bytes else { return false }
-                } else if location == entry.imageLocation || bytes != 0 { return false }
+        for entry in try readEntries(reader) {
+            let id = entry.captureID.rawValue.uuidString
+            expectedImages.insert("\(id).png")
+            guard try exists(imageURL(id)), try logicalSize(imageURL(id)) == entry.imageBytes else { return false }
+            if entry.thumbnailBytes > 0 {
+                expectedThumbnails.insert("\(id).png")
+                guard try exists(thumbnailURL(id)), try logicalSize(thumbnailURL(id)) == entry.thumbnailBytes else { return false }
             }
-            if let location = entry.thumbnailLocation {
-                expectedThumbnails.insert(location)
-                let file = root.appendingPathComponent(location)
-                guard FileManager.default.fileExists(atPath: file.path), try logicalSize(file) == entry.thumbnailBytes else { return false }
-            } else if entry.thumbnailBytes != 0 { return false }
         }
-        return try Set(children("images").map { "images/" + $0.lastPathComponent }) == expectedImages
-            && Set(try children("thumbnails").map { "thumbnails/" + $0.lastPathComponent }) == expectedThumbnails
+        return try Set(children("images").map(\.lastPathComponent)) == expectedImages
+            && Set(try children("thumbnails").map(\.lastPathComponent)) == expectedThumbnails
     }
 
-    private func acquireRootLockIfPresent() throws {
-        if FileManager.default.fileExists(atPath: root.path) { try acquireRootLock() }
-    }
-
-    private func acquireRootLock() throws {
-        guard rootLock == nil else { return }
-        guard root.lastPathComponent.hasSuffix(".noindex") else { throw HistoryFailure.unavailable }
-        rootLock = try HistoryRootLock.acquire(root)
-    }
+    private func imageURL(_ id: String) -> URL { root.appendingPathComponent("images/\(id).png") }
+    private func thumbnailURL(_ id: String) -> URL { root.appendingPathComponent("thumbnails/\(id).png") }
+    private var backupDirectory: URL { root.appendingPathComponent("migration-backup") }
 
     private func children(_ directory: String) throws -> [URL] {
         let url = root.appendingPathComponent(directory)
@@ -267,26 +242,16 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         return try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil).sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    private func removeIfPresent(_ url: URL) throws {
-        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    /// Does not follow links: a dangling link still exists.
+    private func exists(_ url: URL) throws -> Bool {
+        var metadata = stat()
+        if lstat(url.path, &metadata) == 0 { return true }
+        guard errno == ENOENT else { throw HistoryFailure.unavailable }
+        return false
     }
 
-    private func validRecord(identifier: String, imageURL: URL, recordURL: URL) throws -> FinalizationRecord? {
-        guard FileManager.default.fileExists(atPath: recordURL.path) else { return nil }
-        let data = try Data(contentsOf: recordURL)
-        let imageData = try Data(contentsOf: imageURL)
-        guard let record = try? JSONDecoder().decode(FinalizationRecord.self, from: data),
-              record.marker == "frisket.finalized.v1", record.captureIdentifier == identifier,
-              record.revision > 0, record.revision <= UInt64(Int64.max),
-              record.finalizedAt.timeIntervalSince1970.isFinite,
-              let source = CGImageSourceCreateWithData(imageData as CFData, nil),
-              CGImageSourceGetType(source) as String? == "public.png",
-              let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
-              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
-              image.width == record.width, image.height == record.height,
-              let pixels = image.dataProvider?.data, CFDataGetLength(pixels) > 0 else { return nil }
-        guard record.imageBytes == (try logicalSize(imageURL)) else { return nil }
-        return record
+    private func removeIfPresent(_ url: URL) throws {
+        if try exists(url) { try FileManager.default.removeItem(at: url) }
     }
 
     private func totalLogicalBytes() throws -> Int64 {
@@ -305,7 +270,7 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         await ensureLaunchRecovery()
         do {
             let entries = try readExisting { db in
-                try Row.fetchAll(db, sql: "SELECT * FROM history WHERE state = 'finalized' ORDER BY finalized_at, id").map(Self.entry(from:))
+                try Row.fetchAll(db, sql: "SELECT * FROM history ORDER BY finalized_at, id").map(Self.entry(from:))
             }
             return .success(entries ?? [])
         } catch let failure as HistoryFailure { return .failure(failure) }
@@ -322,10 +287,9 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         do {
             guard !closed else { throw HistoryFailure.unavailable }
             if let recoveryFailure { throw recoveryFailure }
-            try acquireRootLockIfPresent()
             let database = try writerForExistingHistory()
             guard let entry = try readEntry(id, database) else { throw HistoryFailure.unavailable }
-            try evict(entry, database: database)
+            try evict([entry], database: database)
             return .success(())
         } catch let failure as HistoryFailure { return .failure(failure) }
         catch { return .failure(.unavailable) }
@@ -346,7 +310,7 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
             let rows = try readExisting { db in
                 try Row.fetchAll(db, sql: """
                     SELECT capture_identifier, revision, width, height, finalized_at FROM history
-                    WHERE state = 'finalized' ORDER BY finalized_at DESC, id DESC
+                    ORDER BY finalized_at DESC, id DESC
                     """).map { row in
                     guard let uuid = UUID(uuidString: row["capture_identifier"]) else { throw HistoryFailure.unavailable }
                     return HistoryItem(captureID: CaptureID(uuid), revision: UInt64(row["revision"] as Int64),
@@ -362,8 +326,8 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
     /// The cached thumbnail of one History item, looked up by ID.
     public func thumbnailPNG(_ id: CaptureID) async -> Data? {
         await ensureLaunchRecovery()
-        guard let entry = try? readExisting({ try Self.entry(id, in: $0) }) ?? nil,
-              let thumbnail = try? ownedLocations(entry).dropFirst(2).first else { return nil }
+        guard let entry = try? readExisting({ try Self.entry(id, in: $0) }) ?? nil, entry.thumbnailBytes > 0,
+              let thumbnail = try? ownedURL(thumbnailURL(entry.captureID.rawValue.uuidString)) else { return nil }
         return try? Data(contentsOf: thumbnail)
     }
 
@@ -371,8 +335,7 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         await ensureLaunchRecovery()
         do {
             guard let entry = try readExisting({ try Self.entry(id, in: $0) }) ?? nil else { throw HistoryFailure.unavailable }
-            let image = try ownedLocations(entry)[0]
-            let data = try Data(contentsOf: image)
+            let data = try Data(contentsOf: try ownedURL(imageURL(entry.captureID.rawValue.uuidString)))
             guard !data.isEmpty else { throw HistoryFailure.invalidImage }
             return .success((entry.revision, data))
         } catch let failure as HistoryFailure { return .failure(failure) }
@@ -381,22 +344,25 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
 
     // D19: recovery closes the writer after its checkpoint, and a relaunch never opens it, so row
     // actions open what they need on demand. A root with no History database has no rows, and
-    // nothing is created for it: this returns nil.
+    // nothing is created for it: this returns nil. A database from before this schema needs the
+    // launch sweep to migrate it; a query never writes, so it reports `recoveryRequired`.
     private func readExisting<T>(_ body: (Database) throws -> T) throws -> T? {
         guard !closed else { throw HistoryFailure.unavailable }
         if let recoveryFailure { throw recoveryFailure }
-        try acquireRootLockIfPresent()
         if let database { return try database.read(body) }
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) else { return nil }
         let reader = try readOnlyDatabase()
         defer { try? reader.close() }
         try validateMigrations(reader)
+        guard try isCurrentSchema(reader) else { throw HistoryFailure.recoveryRequired }
         return try reader.read(body)
     }
 
     private func finalizeAfterRecovery(_ request: AuthorizedFinalization) -> CommitOutcome {
         var committed = false
         var imageWriteAttempted = false
+        let identifier = request.revision.captureID.rawValue.uuidString
+        let partial = root.appendingPathComponent("images/\(identifier).partial")
         do {
             guard !measurementFailed else { throw HistoryFailure.unavailable }
             guard let source = CGImageSourceCreateWithData(request.pngData as CFData, nil),
@@ -404,49 +370,32 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
                   let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
                 throw HistoryFailure.invalidImage
             }
-            let identifier = request.revision.captureID.rawValue.uuidString
-            let imageLocation = "images/\(identifier).png"
-            let recordLocation = "images/\(identifier).finalization.json"
             let finalizedAt = clock()
-            let record = FinalizationRecord(marker: "frisket.finalized.v1", captureIdentifier: identifier,
-                revision: request.revision.number, width: image.width, height: image.height,
-                imageBytes: Int64(request.pngData.count), finalizedAt: finalizedAt)
-            let recordData = try JSONEncoder().encode(record)
             let thumbnailData = try makeThumbnail(source: source)
-            guard Int64(request.pngData.count) + Int64(recordData.count) + Int64(thumbnailData.count) <= limits.maximumBytes else {
+            guard Int64(request.pngData.count) + Int64(thumbnailData.count) <= limits.maximumBytes else {
                 return .notCommitted(.captureExceedsHistoryLimit)
             }
             let database = try writableDatabase()
             _ = try usageBytes(database) // Every required size read must succeed before committing.
-            let stagingImage = root.appendingPathComponent("staging/\(identifier).png")
-            let stagingRecord = root.appendingPathComponent("staging/\(identifier).finalization.json")
+            // Never replace the image of a committed row.
+            guard try readEntry(request.revision.captureID, database) == nil else {
+                throw HistoryFailure.unavailable
+            }
             imageWriteAttempted = true
-            try recordAuxiliary(identifier: identifier, location: "staging/\(identifier).png", bytes: Int64(request.pngData.count), database: database)
-            try durableWrite(request.pngData, to: stagingImage, staged: .pngStaged, synced: .pngSynced)
-            try recordAuxiliary(identifier: identifier, location: "staging/\(identifier).finalization.json", bytes: Int64(recordData.count), database: database)
-            try durableWrite(recordData, to: stagingRecord, staged: .recordStaged, synced: .recordSynced)
-            try renameExclusively(stagingImage, to: root.appendingPathComponent(imageLocation))
-            try relocateAuxiliary(from: "staging/\(identifier).png", to: imageLocation, database: database)
-            try commitPoint(.imageRenamed)
-            try renameExclusively(stagingRecord, to: root.appendingPathComponent(recordLocation))
-            try relocateAuxiliary(from: "staging/\(identifier).finalization.json", to: recordLocation, database: database)
-            try commitPoint(.recordRenamed)
-            try syncDirectory(root.appendingPathComponent("images"))
-            try syncDirectory(root.appendingPathComponent("staging"))
-            try syncDirectory(root)
-            try commitPoint(.directorySynced)
+            // The atomic write: whole bytes under a name the sweep never adopts, then one rename.
+            try removeIfPresent(partial)
+            try request.pngData.write(to: partial, options: .withoutOverwriting)
+            try commitPoint(.imageStaged)
+            guard Darwin.rename(partial.path, imageURL(identifier).path) == 0 else { throw HistoryFailure.unavailable }
+            try commitPoint(.imageWritten)
             // A failed size read must not turn into a committed row.
-            let imageBytes = try logicalSize(root.appendingPathComponent(imageLocation))
-            let recordBytes = try logicalSize(root.appendingPathComponent(recordLocation))
-            _ = try usageBytes(database)
+            let imageBytes = try logicalSize(imageURL(identifier))
             try database.write { db in
                 try db.execute(sql: """
-                    INSERT INTO history (capture_identifier, revision, image_location, record_location,
-                        width, height, image_bytes, record_bytes, finalized_at, state)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'finalized')
-                    """, arguments: [identifier, Int64(request.revision.number), imageLocation, recordLocation,
-                                      image.width, image.height, imageBytes, recordBytes, finalizedAt.timeIntervalSince1970])
-                try db.execute(sql: "DELETE FROM history_auxiliary_files WHERE capture_identifier = ?", arguments: [identifier])
+                    INSERT INTO history (capture_identifier, revision, width, height, image_bytes, thumbnail_bytes, finalized_at)
+                    VALUES (?, ?, ?, ?, ?, 0, ?)
+                    """, arguments: [identifier, Int64(request.revision.number), image.width, image.height,
+                                      imageBytes, finalizedAt.timeIntervalSince1970])
             }
             committed = true
             try commitPoint(.rowCommitted)
@@ -455,11 +404,14 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
             try enforce(database, protecting: identifier)
             return .committed
         } catch {
-            // A post-commit cache or injected failure cannot undo durable History.
+            // A post-commit cache or injected failure cannot undo History.
             if committed { return .committed }
-            // Failed writes can leave authorized pixels for recovery. Do not describe
+            // Failed writes can leave authorized pixels that the next sweep adopts. Do not describe
             // that revision as safely editable: a later redaction cannot erase them.
-            if imageWriteAttempted { return .notCommitted(.recoveryRequired) }
+            if imageWriteAttempted {
+                try? removeIfPresent(partial)
+                return .notCommitted(.recoveryRequired)
+            }
             switch error {
             case HistoryFailure.unknownMigrations: return .notCommitted(.unknownMigrations)
             case HistoryFailure.invalidImage: return .notCommitted(.invalidImage)
@@ -474,11 +426,13 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
     /// actor method loses overload resolution to the protocol extension's `.unavailable` default
     /// when the app awaits it on a `HistoryStore` directly.
     public func maintain(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure> {
-        maintainNow(limits: limits)
+        await ensureLaunchRecovery()
+        return maintainNow(limits: limits)
     }
 
     public func status(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure> {
-        statusNow(consumeNotice: consumeNotice)
+        await ensureLaunchRecovery()
+        return statusNow(consumeNotice: consumeNotice)
     }
 
     private func maintainNow(limits: HistoryLimits?) -> Result<HistoryUsage, HistoryFailure> {
@@ -489,9 +443,6 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
             }
             let database = try writableDatabase()
             measurementFailed = true
-            for entry in try readEntries(database, includeDeleting: true) where entry.state == .deleting {
-                try evict(entry, database: database)
-            }
             try remeasure(database)
             measurementFailed = false
             try enforce(database, protecting: nil)
@@ -503,15 +454,14 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
     private func statusNow(consumeNotice: Bool) -> Result<HistoryUsage, HistoryFailure> {
         do {
             guard !measurementFailed else { throw HistoryFailure.unavailable }
-            guard let database else {
-                if FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) {
-                    return .failure(.recoveryRequired)
-                }
+            guard database != nil || FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) else {
                 return .success(HistoryUsage(limits: limits, usageBytes: 0))
             }
+            let database = try writableDatabase()
             try checkpoint(database)
             let usage = try usageBytes(database)
-            let row = try database.read { try Row.fetchOne($0, sql: "SELECT * FROM history_retention WHERE id = 1")! }
+            let row = try database.read { try Row.fetchOne($0, sql: "SELECT * FROM history_retention WHERE id = 1") }
+            guard let row else { throw HistoryFailure.unavailable }
             let last: Double? = row["last_quota_eviction"]
             let pending: Bool = row["quota_notice_pending"]
             if consumeNotice && pending {
@@ -529,84 +479,35 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         _ = try database.writeWithoutTransaction { try $0.checkpoint(.truncate) }
     }
 
-    private func ownedLocations(_ entry: HistoryEntry) throws -> [URL] {
-        let id = entry.captureID.rawValue.uuidString
-        guard entry.imageLocation == "images/\(id).png",
-              entry.recordLocation == "images/\(id).finalization.json",
-              entry.thumbnailLocation == nil || entry.thumbnailLocation == "thumbnails/\(id).png" else {
+    /// Refuses a location whose directory resolves outside the root (a linked `images/`).
+    private func ownedURL(_ url: URL) throws -> URL {
+        guard url.deletingLastPathComponent().resolvingSymlinksInPath().deletingLastPathComponent() == root.resolvingSymlinksInPath() else {
             throw HistoryFailure.unavailable
         }
-        return try [entry.imageLocation, entry.recordLocation, entry.thumbnailLocation].compactMap { location in
-            guard let location else { return nil }
-            let url = root.appendingPathComponent(location)
-            guard url.deletingLastPathComponent().resolvingSymlinksInPath().deletingLastPathComponent() == root.resolvingSymlinksInPath() else {
-                throw HistoryFailure.unavailable
-            }
-            return url
-        }
+        return url
     }
 
-    private func recordAuxiliary(identifier: String, location: String, bytes: Int64, database: DatabaseQueue) throws {
-        try database.write { db in
-            try db.execute(sql: "INSERT INTO history_auxiliary_files (capture_identifier, location, logical_bytes) VALUES (?, ?, ?)",
-                arguments: [identifier, location, bytes])
-        }
-    }
-
-    private func relocateAuxiliary(from: String, to: String, database: DatabaseQueue) throws {
-        try database.write { db in
-            try db.execute(sql: "UPDATE history_auxiliary_files SET location = ? WHERE location = ?", arguments: [to, from])
-        }
-    }
-
-    private func remeasureAuxiliary(_ database: DatabaseQueue) throws {
-        let rows = try database.read { try Row.fetchAll($0, sql: "SELECT * FROM history_auxiliary_files") }
-        for row in rows {
-            let id: String = row["capture_identifier"]
-            let location: String = row["location"]
-            guard UUID(uuidString: id)?.uuidString == id,
-                  ["staging/\(id).png", "staging/\(id).finalization.json", "images/\(id).png",
-                   "images/\(id).finalization.json"].contains(location) else { throw HistoryFailure.unavailable }
-            var measuredLocation = location
-            // A process may die between a rename and updating the ownership ledger.
-            if location.hasPrefix("staging/"), !FileManager.default.fileExists(atPath: root.appendingPathComponent(location).path) {
-                measuredLocation = "images/" + root.appendingPathComponent(location).lastPathComponent
-            }
-            let url = root.appendingPathComponent(measuredLocation)
-            guard url.deletingLastPathComponent().resolvingSymlinksInPath().deletingLastPathComponent() == root.resolvingSymlinksInPath() else {
-                throw HistoryFailure.unavailable
-            }
-            // Missing intended files can precede the first write, or have been removed by recovery.
-            var info = stat()
-            if lstat(url.path, &info) != 0 {
-                guard errno == ENOENT else { throw HistoryFailure.unavailable }
-                try database.write { try $0.execute(sql: "DELETE FROM history_auxiliary_files WHERE location = ?", arguments: [location]) }
-            } else {
-                let bytes = try logicalSize(url)
-                try database.write { try $0.execute(sql: "UPDATE history_auxiliary_files SET location = ?, logical_bytes = ? WHERE location = ?",
-                    arguments: [measuredLocation, bytes, location]) }
-            }
-        }
-    }
-
+    /// Row sizes follow the files. A missing image fails maintenance and blocks commits until
+    /// a sweep drops the row; a missing thumbnail is only an empty cache.
     private func remeasure(_ database: DatabaseQueue) throws {
-        let measurements = try readEntries(database).map { entry -> (Int64, [Int64]) in
-            (entry.key, try ownedLocations(entry).map { try logicalSize($0) })
+        let measurements = try readEntries(database).map { entry -> (Int64, Int64, Int64) in
+            let id = entry.captureID.rawValue.uuidString
+            let image = try logicalSize(try ownedURL(imageURL(id)))
+            let thumbnail = try ownedURL(thumbnailURL(id))
+            return (entry.key, image, try exists(thumbnail) ? try logicalSize(thumbnail) : 0)
         }
-        try remeasureAuxiliary(database)
-        // Validate SQLite sidecars too, before publishing any measured sizes.
         _ = try usageBytes(database)
         try database.write { db in
-            for (key, sizes) in measurements {
-                try db.execute(sql: "UPDATE history SET image_bytes = ?, record_bytes = ?, thumbnail_bytes = ? WHERE id = ?",
-                    arguments: [sizes[0], sizes[1], sizes.count == 3 ? sizes[2] : 0, key])
+            for (key, image, thumbnail) in measurements {
+                try db.execute(sql: "UPDATE history SET image_bytes = ?, thumbnail_bytes = ? WHERE id = ?",
+                               arguments: [image, thumbnail, key])
             }
         }
     }
 
     private func usageBytes(_ database: DatabaseQueue) throws -> Int64 {
         var total = try database.read { try Int64.fetchOne($0,
-            sql: "SELECT (SELECT COALESCE(SUM(image_bytes + record_bytes + thumbnail_bytes), 0) FROM history) + (SELECT COALESCE(SUM(logical_bytes), 0) FROM history_auxiliary_files)")! }
+            sql: "SELECT COALESCE(SUM(image_bytes + thumbnail_bytes), 0) FROM history")! }
         for suffix in ["", "-wal", "-shm"] {
             let file = root.appendingPathComponent("history.sqlite" + suffix)
             if suffix.isEmpty || FileManager.default.fileExists(atPath: file.path) {
@@ -616,6 +517,7 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         return total
     }
 
+    /// One batch: age first, then oldest-first until the quota holds, never the capture just committed.
     private func enforce(_ database: DatabaseQueue, protecting identifier: String?) throws {
         let now = clock().timeIntervalSince1970
         let window = Double(limits.retentionDays) * 86_400
@@ -630,48 +532,43 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
                 arguments: [now, anomalous])
             return anomalous
         }
-        if !deferred {
-            let cutoff = Date(timeIntervalSince1970: now - window)
-            for entry in try readEntries(database) where entry.finalizedAt < cutoff && entry.captureID.rawValue.uuidString != identifier {
-                try evict(entry, database: database)
-            }
-        }
+        let candidates = try readEntries(database).filter { $0.captureID.rawValue.uuidString != identifier }
+        let cutoff = Date(timeIntervalSince1970: now - window)
+        let aged = deferred ? [] : candidates.filter { $0.finalizedAt < cutoff }
+        // Measure once, with the WAL folded in, then subtract what the batch removes.
         try checkpoint(database)
-        for entry in try readEntries(database) where entry.captureID.rawValue.uuidString != identifier {
-            guard try usageBytes(database) > limits.maximumBytes else { break }
-            try evict(entry, database: database, quota: true)
-            try checkpoint(database)
+        var usage = try usageBytes(database) - aged.reduce(0) { $0 + $1.imageBytes + $1.thumbnailBytes }
+        let agedKeys = Set(aged.map(\.key))
+        var overQuota: [HistoryEntry] = []
+        for entry in candidates where !agedKeys.contains(entry.key) {
+            guard usage > limits.maximumBytes else { break }
+            overQuota.append(entry)
+            usage -= entry.imageBytes + entry.thumbnailBytes
         }
+        try evict(aged + overQuota, database: database, quota: !overQuota.isEmpty)
     }
 
-    private func evict(_ entry: HistoryEntry, database: DatabaseQueue, quota: Bool = false) throws {
-        let locations = try ownedLocations(entry)
-        try database.write { db in
-            try db.execute(sql: "UPDATE history SET state = 'deleting' WHERE id = ?", arguments: [entry.key])
-            if quota {
+    /// Files first, then every row in one transaction and one checkpoint for the whole batch.
+    private func evict(_ batch: [HistoryEntry], database: DatabaseQueue, quota: Bool = false) throws {
+        guard !batch.isEmpty else { return }
+        if quota {
+            try database.write { db in
                 try db.execute(sql: "UPDATE history_retention SET last_quota_eviction = ?, quota_notice_pending = 1 WHERE id = 1",
                     arguments: [clock().timeIntervalSince1970])
             }
         }
-        try checkpoint(database)
-        try evictionPoint(.markedDeleting)
-        let points: [HistoryEvictionPoint] = [.imageUnlinked, .recordUnlinked, .thumbnailUnlinked]
-        for index in 0..<3 {
-            if index < locations.count {
-                if unlink(locations[index].path) != 0 && errno != ENOENT { throw HistoryFailure.unavailable }
+        for entry in batch {
+            let id = entry.captureID.rawValue.uuidString
+            for url in [imageURL(id), thumbnailURL(id)] {
+                if unlink(try ownedURL(url).path) != 0 && errno != ENOENT { throw HistoryFailure.unavailable }
             }
-            try evictionPoint(points[index])
         }
-        try syncDirectory(root.appendingPathComponent("images"))
-        if FileManager.default.fileExists(atPath: root.appendingPathComponent("thumbnails").path) {
-            try syncDirectory(root.appendingPathComponent("thumbnails"))
-        }
-        try evictionPoint(.directoriesSynced)
+        try evictionPoint(.filesUnlinked)
         try database.write { db in
-            try db.execute(sql: "DELETE FROM history WHERE id = ?", arguments: [entry.key])
+            for entry in batch { try db.execute(sql: "DELETE FROM history WHERE id = ?", arguments: [entry.key]) }
         }
         try checkpoint(database)
-        try evictionPoint(.rowRemoved)
+        try evictionPoint(.rowsRemoved)
     }
 
     private func makeThumbnail(source: CGImageSource) throws -> Data {
@@ -691,20 +588,17 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
 
     private func cacheThumbnail(data: Data, identifier: String, database: DatabaseQueue) throws {
         try FileManager.default.createDirectory(at: root.appendingPathComponent("thumbnails"), withIntermediateDirectories: true)
-        let location = "thumbnails/\(identifier).png"
-        let url = root.appendingPathComponent(location)
-        try data.write(to: url, options: .atomic)
+        try data.write(to: thumbnailURL(identifier), options: .atomic)
         let size = Int64(data.count)
         try database.write { db in
-            try db.execute(sql: "UPDATE history SET thumbnail_location = ?, thumbnail_bytes = ? WHERE capture_identifier = ?",
-                           arguments: [location, size, identifier])
+            try db.execute(sql: "UPDATE history SET thumbnail_bytes = ? WHERE capture_identifier = ?", arguments: [size, identifier])
         }
     }
 
     private func readOnlyDatabase() throws -> DatabaseQueue {
         // SQLite READONLY alone may create/change -shm. An immutable read
         // creates no sidecars, but ignores WAL: refuse outstanding WAL first.
-        // Launch recovery reconciles it under the exclusive root lock.
+        // The launch sweep reconciles it.
         for suffix in ["-wal", "-journal"] {
             let journal = root.appendingPathComponent("history.sqlite" + suffix)
             if FileManager.default.fileExists(atPath: journal.path), try logicalSize(journal) > 0 {
@@ -721,6 +615,10 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         try database.read { db in
             if try Self.migrator().hasBeenSuperseded(db) { throw HistoryFailure.unknownMigrations }
         }
+    }
+
+    private func isCurrentSchema(_ database: DatabaseQueue) throws -> Bool {
+        try database.read { try Self.migrator().hasCompletedMigrations($0) }
     }
 
     // A crashed WAL/rollback journal must be applied to see migration state.
@@ -745,7 +643,6 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
     private func writableDatabase(recovering: Bool = false) throws -> DatabaseQueue {
         guard !closed else { throw HistoryFailure.unavailable }
         if !recovering, let recoveryFailure { throw recoveryFailure }
-        try acquireRootLockIfPresent()
         if let database { return database }
         guard root.lastPathComponent.hasSuffix(".noindex") else { throw HistoryFailure.unavailable }
         // Refuse future schemas before setting attributes, PRAGMAs, or creating files.
@@ -758,29 +655,25 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
             }
         }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try acquireRootLock()
         var excludedRoot = root
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try excludedRoot.setResourceValues(values)
-        for directory in ["staging", "images"] {
-            try FileManager.default.createDirectory(at: root.appendingPathComponent(directory), withIntermediateDirectories: true)
-        }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("images"), withIntermediateDirectories: true)
         let isNewDatabase = !FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path)
         var configuration = Configuration()
         configuration.prepareDatabase { db in
             // Must precede creation of the first table. secure_delete is per connection.
+            // Durability is SQLite's default (DA-11): no synchronous or fullfsync overrides.
             if isNewDatabase { try db.execute(sql: "PRAGMA auto_vacuum = INCREMENTAL") }
-            try db.execute(sql: "PRAGMA secure_delete = ON; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA checkpoint_fullfsync = ON")
+            try db.execute(sql: "PRAGMA secure_delete = ON")
         }
         let opened = try DatabaseQueue(path: root.appendingPathComponent("history.sqlite").path, configuration: configuration)
         do {
             try opened.writeWithoutTransaction { db in
                 guard try String.fetchOne(db, sql: "PRAGMA journal_mode = WAL") == "wal" else { throw HistoryFailure.unavailable }
             }
-            try Self.migrator().migrate(opened)
-            try syncDirectory(root)
-            try syncDirectory(root.deletingLastPathComponent())
+            try migrate(opened)
             database = opened
             return opened
         } catch {
@@ -788,6 +681,48 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
             throw error
         }
     }
+
+    /// Existing History (the sidecar schema) migrates behind a backup of its database. The backup
+    /// sits in the Time Machine-excluded root and is excluded itself; it is deleted once the
+    /// migration's own check (every finalized row survives) and SQLite's integrity check pass.
+    /// A failed migration rolls back and leaves the backup in place.
+    private func migrate(_ database: DatabaseQueue) throws {
+        let migrator = Self.migrator()
+        let applied = try database.read { try migrator.appliedIdentifiers($0) }
+        let upgrading = applied.contains("history-v1") && !applied.contains(Self.rowsOnlyMigration)
+        if upgrading {
+            try removeIfPresent(backupDirectory)
+            try FileManager.default.createDirectory(at: backupDirectory, withIntermediateDirectories: false)
+            var excluded = backupDirectory
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try excluded.setResourceValues(values)
+            let backup = try DatabaseQueue(path: backupDirectory.appendingPathComponent("history.sqlite").path)
+            try database.backup(to: backup)
+            try backup.close()
+            // A row the old store was deleting has no place in the new table; finish its unlinks
+            // first, or the sweep would adopt its image back into History.
+            let deleting = try database.read { db in
+                try String.fetchAll(db, sql: "SELECT capture_identifier FROM history WHERE state = 'deleting'")
+            }
+            for id in deleting where UUID(uuidString: id)?.uuidString == id {
+                for url in [imageURL(id), thumbnailURL(id), root.appendingPathComponent("images/\(id).finalization.json")] {
+                    try removeIfPresent(url)
+                }
+            }
+        }
+        try migrator.migrate(database)
+        guard upgrading else { return }
+        let integrity = try database.read { try String.fetchOne($0, sql: "PRAGMA integrity_check") }
+        guard integrity == "ok" else { throw HistoryFailure.unavailable }
+        try removeIfPresent(root.appendingPathComponent("staging"))
+        for file in try children("images") where file.lastPathComponent.hasSuffix(".finalization.json") {
+            try FileManager.default.removeItem(at: file)
+        }
+        try removeIfPresent(backupDirectory)
+    }
+
+    private static let rowsOnlyMigration = "history-rows-v1"
 
     // Append migrations; never edit a shipped migration or enable erase-on-change.
     private static func migrator() -> DatabaseMigrator {
@@ -830,13 +765,43 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
                 );
                 """)
         }
+        // Ticket 78: one row per finalized capture, locations derived from the identifier. The
+        // sidecar columns, the `deleting` state and the auxiliary ledger go. The check inside the
+        // migration rolls it back unless every finalized row survives with a canonical identifier.
+        migrator.registerMigration(rowsOnlyMigration) { db in
+            let finalized = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM history WHERE state = 'finalized'") ?? 0
+            try db.execute(sql: """
+                CREATE TABLE history_rows (
+                    id INTEGER PRIMARY KEY,
+                    capture_identifier TEXT NOT NULL UNIQUE,
+                    revision INTEGER NOT NULL CHECK (revision > 0),
+                    width INTEGER NOT NULL CHECK (width > 0),
+                    height INTEGER NOT NULL CHECK (height > 0),
+                    image_bytes INTEGER NOT NULL CHECK (image_bytes >= 0),
+                    thumbnail_bytes INTEGER NOT NULL DEFAULT 0 CHECK (thumbnail_bytes >= 0),
+                    finalized_at REAL NOT NULL,
+                    date_normalized INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT INTO history_rows (id, capture_identifier, revision, width, height, image_bytes,
+                        thumbnail_bytes, finalized_at, date_normalized)
+                    SELECT id, capture_identifier, revision, width, height, image_bytes,
+                        CASE WHEN thumbnail_location IS NULL THEN 0 ELSE thumbnail_bytes END, finalized_at, date_normalized
+                    FROM history WHERE state = 'finalized';
+                DROP TABLE history;
+                ALTER TABLE history_rows RENAME TO history;
+                CREATE INDEX history_age ON history(finalized_at, id);
+                DROP TABLE history_auxiliary_files;
+                """)
+            let identifiers = try String.fetchAll(db, sql: "SELECT capture_identifier FROM history")
+            guard identifiers.count == finalized,
+                  identifiers.allSatisfy({ UUID(uuidString: $0)?.uuidString == $0 }) else { throw HistoryFailure.unavailable }
+        }
         return migrator
     }
 
-    private func readEntries(_ database: DatabaseQueue, includeDeleting: Bool = false) throws -> [HistoryEntry] {
+    private func readEntries(_ database: DatabaseQueue) throws -> [HistoryEntry] {
         try database.read { db in
-            try Row.fetchAll(db, sql: "SELECT * FROM history WHERE state = 'finalized' OR ? ORDER BY finalized_at, id", arguments: [includeDeleting])
-                .map(Self.entry(from:))
+            try Row.fetchAll(db, sql: "SELECT * FROM history ORDER BY finalized_at, id").map(Self.entry(from:))
         }
     }
 
@@ -844,48 +809,18 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
         try database.read { try Self.entry(id, in: $0) }
     }
 
-    /// One finalized History item by ID; the capture identifier is unique and indexed.
+    /// One History item by ID; the capture identifier is unique and indexed.
     private static func entry(_ id: CaptureID, in db: Database) throws -> HistoryEntry? {
-        try Row.fetchOne(db, sql: "SELECT * FROM history WHERE capture_identifier = ? AND state = 'finalized'",
+        try Row.fetchOne(db, sql: "SELECT * FROM history WHERE capture_identifier = ?",
                          arguments: [id.rawValue.uuidString]).map(entry(from:))
     }
 
     private static func entry(from row: Row) throws -> HistoryEntry {
-        guard let uuid = UUID(uuidString: row["capture_identifier"]) else { throw HistoryFailure.unavailable }
+        let identifier: String = row["capture_identifier"]
+        guard let uuid = UUID(uuidString: identifier), uuid.uuidString == identifier else { throw HistoryFailure.unavailable }
         return HistoryEntry(key: row["id"], captureID: CaptureID(uuid), revision: UInt64(row["revision"] as Int64),
-            imageLocation: row["image_location"], recordLocation: row["record_location"],
-            thumbnailLocation: row["thumbnail_location"], width: row["width"], height: row["height"],
-            imageBytes: row["image_bytes"], recordBytes: row["record_bytes"], thumbnailBytes: row["thumbnail_bytes"],
-            finalizedAt: Date(timeIntervalSince1970: row["finalized_at"]), state: HistoryState(rawValue: row["state"])!)
-    }
-
-    private func durableWrite(_ data: Data, to location: URL, staged: HistoryCommitPoint, synced: HistoryCommitPoint) throws {
-        let descriptor = Darwin.open(location.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
-        guard descriptor >= 0 else { throw HistoryFailure.unavailable }
-        defer { Darwin.close(descriptor) }
-        try data.withUnsafeBytes { buffer in
-            var offset = 0
-            while offset < buffer.count {
-                let count = Darwin.write(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
-                if count < 0 && errno == EINTR { continue }
-                guard count > 0 else { throw HistoryFailure.unavailable }
-                offset += count
-            }
-        }
-        try commitPoint(staged)
-        guard fcntl(descriptor, F_FULLFSYNC) == 0 else { throw HistoryFailure.unavailable }
-        try commitPoint(synced)
-    }
-
-    private func renameExclusively(_ source: URL, to destination: URL) throws {
-        guard renamex_np(source.path, destination.path, UInt32(RENAME_EXCL)) == 0 else { throw HistoryFailure.unavailable }
-    }
-
-    private func syncDirectory(_ directory: URL) throws {
-        let descriptor = Darwin.open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-        guard descriptor >= 0 else { throw HistoryFailure.unavailable }
-        defer { Darwin.close(descriptor) }
-        guard fsync(descriptor) == 0 else { throw HistoryFailure.unavailable }
+            width: row["width"], height: row["height"], imageBytes: row["image_bytes"], thumbnailBytes: row["thumbnail_bytes"],
+            finalizedAt: Date(timeIntervalSince1970: row["finalized_at"]))
     }
 
     private func logicalSize(_ location: URL) throws -> Int64 {
@@ -914,47 +849,9 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
             }
         }
         try validate(root)
-        for name in ["images", "staging", "thumbnails"] {
+        for name in ["images", "thumbnails"] {
             let url = root.appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: url.path), try fileKind(url) != S_IFDIR { throw HistoryFailure.unavailable }
         }
     }
-}
-
-/// Alongside the PNG, durable before the row. Recovery also has to decode the
-/// image and compare dimensions; this marker alone never proves validity.
-private struct FinalizationRecord: Codable {
-    let marker: String
-    let captureIdentifier: String
-    let revision: UInt64
-    let width: Int
-    let height: Int
-    let imageBytes: Int64
-    let finalizedAt: Date
-}
-
-// A directory descriptor avoids creating a lock file on an unused root. Each
-// open file description gets its own nonblocking flock, even in one process.
-private final class HistoryRootLock: Sendable {
-    private let descriptor: Int32
-    private init(descriptor: Int32) { self.descriptor = descriptor }
-    // D27: while another thread starts a child process, the child can briefly share a just-closed
-    // owner's descriptor, so the lock looks held for a moment. Retrying for up to 250 ms rides that
-    // out; a live second owner still gets `.rootLocked`. Ticket 78 removes the lock and this retry.
-    static func acquire(_ root: URL) throws -> HistoryRootLock {
-        let descriptor = Darwin.open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard descriptor >= 0 else { throw HistoryFailure.unavailable }
-        for attempt in 0...25 {
-            if flock(descriptor, LOCK_EX | LOCK_NB) == 0 { return HistoryRootLock(descriptor: descriptor) }
-            let code = errno
-            guard code == EWOULDBLOCK, attempt < 25 else {
-                Darwin.close(descriptor)
-                throw code == EWOULDBLOCK ? HistoryFailure.rootLocked : HistoryFailure.unavailable
-            }
-            usleep(10_000)
-        }
-        Darwin.close(descriptor)
-        throw HistoryFailure.rootLocked
-    }
-    deinit { Darwin.close(descriptor) }
 }

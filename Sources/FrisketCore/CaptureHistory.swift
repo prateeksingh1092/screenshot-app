@@ -1,25 +1,22 @@
 import Foundation
 
 public enum HistoryFailure: Error, Equatable, Sendable {
-    case unavailable, unknownMigrations, invalidImage, recoveryRequired, rootLocked
+    case unavailable, unknownMigrations, invalidImage, recoveryRequired
 }
 
-public enum HistoryState: String, Codable, Sendable { case finalized, deleting }
-
+/// One History row. File locations are derived from the capture identifier, relative to the root.
 public struct HistoryEntry: Equatable, Sendable {
     public let key: Int64
     public let captureID: CaptureID
     public let revision: UInt64
-    public let imageLocation: String
-    public let recordLocation: String
-    public let thumbnailLocation: String?
     public let width: Int
     public let height: Int
     public let imageBytes: Int64
-    public let recordBytes: Int64
+    /// Zero when the disposable thumbnail is not cached.
     public let thumbnailBytes: Int64
     public let finalizedAt: Date
-    public let state: HistoryState
+    public var imageLocation: String { "images/\(captureID.rawValue.uuidString).png" }
+    public var thumbnailLocation: String? { thumbnailBytes > 0 ? "thumbnails/\(captureID.rawValue.uuidString).png" : nil }
 }
 
 /// History window row. No file names or paths.
@@ -67,9 +64,11 @@ extension CaptureHistory {
 
 /// Recovery/fault-injection contract. Each point means the named operation has
 /// completed. Both crash-recovery tiers must cover every case, including the cache.
+/// `imageStaged`: the PNG bytes are in `images/<UUID>.partial`. `imageWritten`: renamed to
+/// `images/<UUID>.png` (the atomic write). `rowCommitted`: the GRDB row is in.
+/// `thumbnailCached`: the disposable thumbnail and its size are in.
 public enum HistoryCommitPoint: String, CaseIterable, Codable, Sendable {
-    case pngStaged, pngSynced, recordStaged, recordSynced
-    case imageRenamed, recordRenamed, directorySynced, rowCommitted, thumbnailCached
+    case imageStaged, imageWritten, rowCommitted, thumbnailCached
 }
 
 public struct HistoryRecoveryReport: Equatable, Sendable {
@@ -112,7 +111,9 @@ public extension CaptureHistory {
     }
 }
 
-/// Each callback occurs after the named durable step. Resume deleting rows at launch.
+/// Each callback occurs after the named step of one eviction batch. The files go first, so a
+/// crash leaves rows whose image is missing, which the launch sweep drops; never an orphan PNG
+/// that the sweep would adopt back into History.
 public enum HistoryEvictionPoint: String, CaseIterable, Sendable {
-    case markedDeleting, imageUnlinked, recordUnlinked, thumbnailUnlinked, directoriesSynced, rowRemoved
+    case filesUnlinked, rowsRemoved
 }

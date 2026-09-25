@@ -54,13 +54,14 @@ verification build. Screen Recording must already be granted
 
 8. Verify the History image. Take the newest file under
    `~/Library/Application Support/io.github.prateeksingh1092.frisket.debug/History.noindex/images/`
-   (exclude `*.finalization.json`) and run, with `1` on a 1× display:
+   and run, with `1` on a 1× display:
 
    ```sh
    .build/FrisketTestPattern --verify-redacted "<that image path>" 2
    ```
 
-   Expected: PASS. Its `.finalization.json` record must contain `"revision":2`.
+   Expected: PASS. Its History row has revision 2 (ticket 78 removed the
+   `.finalization.json` sidecar).
 
 9. **Copy** from the refreshed thumbnail. In Preview choose File → New from
    Clipboard and save as `$PWD/.build/redacted-copy.png`, then run

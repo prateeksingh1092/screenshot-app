@@ -65,7 +65,7 @@ extension RetentionCommandsTests {
         let before = try await history.status(consumeNotice: false).get()
         let entries = try await history.entries().get()
         let first = try #require(entries.first)
-        let bytes = first.imageBytes + first.recordBytes + first.thumbnailBytes
+        let bytes = first.imageBytes + first.thumbnailBytes
         let status = try await history.maintain(limits: HistoryLimits(retentionDays: 30,
             maximumBytes: before.usageBytes - bytes)).get()
         #expect(try await history.entries().get().map(\.captureID) == [second.captureID, third.captureID])
@@ -166,27 +166,27 @@ extension RetentionCommandsTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let root = directory.appendingPathComponent("History.noindex")
         let exports = directory.appendingPathComponent("Exports")
-        var history: HistoryStore? = HistoryStore(root: root, evictionPoint: { reached in
+        let history = HistoryStore(root: root, evictionPoint: { reached in
             if reached == point { throw EvictionStop.interrupted }
         })
-        var layer: CaptureLifecycleCoordinator? = commands(history!, exporter: PNGFileExporter(folder: { exports }, historyRoot: root))
-        let old = await capture(layer!)
-        guard case .save(let outcome) = await layer!.execute(.save(old)), case .saved = outcome.delivery else {
+        let layer = commands(history, exporter: PNGFileExporter(folder: { exports }, historyRoot: root))
+        let old = await capture(layer)
+        guard case .save(let outcome) = await layer.execute(.save(old)), case .saved = outcome.delivery else {
             Issue.record("Expected synthetic export"); return
         }
         let exportFile = try #require(try FileManager.default.contentsOfDirectory(at: exports, includingPropertiesForKeys: nil).first)
         let original = try Data(contentsOf: exportFile)
-        let surviving = await keep(layer!)
-        #expect(await history!.maintain(limits: HistoryLimits(maximumBytes: 1)) == .failure(.unavailable))
-        #expect(try await !history!.entries().get().map(\.captureID).contains(old.captureID))
-        let interruptedUsage = try await history!.status(consumeNotice: false).get().usageBytes
-        layer = nil
-        history = nil
-        let reopenedHistory = HistoryStore(root: root)
+        let surviving = await keep(layer)
+        let oldest = try #require(try await history.entries().get().first)
+        let usage = try await history.status(consumeNotice: false).get().usageBytes
+        #expect(await history.maintain(limits: HistoryLimits(maximumBytes: usage - oldest.imageBytes - oldest.thumbnailBytes)) == .failure(.unavailable))
+        try await history.close().get()
+        // Reopen as the app does: the launch sweep drops the rows whose files are gone.
+        let reopenedHistory = HistoryStore.launch(root: root)
         let first = try await reopenedHistory.maintain(limits: nil).get()
         let second = try await reopenedHistory.maintain(limits: nil).get()
         #expect(first.usageBytes == second.usageBytes)
-        #expect(first.usageBytes <= interruptedUsage)
+        #expect(first.usageBytes <= usage)
         #expect(try await reopenedHistory.entries().get().map(\.captureID) == [surviving.captureID])
         #expect(try Data(contentsOf: exportFile) == original)
         #expect(first.lastQuotaEviction != nil)
@@ -198,11 +198,12 @@ extension RetentionCommandsTests {
         let environment = ProcessInfo.processInfo.environment
         guard let path = environment["FRISKET_EVICTION_TEST_ROOT"],
               let value = environment["FRISKET_EVICTION_TEST_POINT"],
-              let point = HistoryEvictionPoint(rawValue: value) else { return }
+              let point = HistoryEvictionPoint(rawValue: value),
+              let limit = environment["FRISKET_EVICTION_TEST_LIMIT"].flatMap(Int64.init) else { return }
         let history = HistoryStore(root: URL(fileURLWithPath: path), evictionPoint: { reached in
             if reached == point { kill(getpid(), SIGKILL) }
         })
-        _ = await history.maintain(limits: HistoryLimits(maximumBytes: 1))
+        _ = await history.maintain(limits: HistoryLimits(maximumBytes: limit))
         Issue.record("Child did not reach its kill point")
     }
 
@@ -213,10 +214,9 @@ extension RetentionCommandsTests {
         var layer: CaptureLifecycleCoordinator? = commands(store)
         _ = await keep(layer!)
         let survivor = await keep(layer!)
-        _ = try await store.status(consumeNotice: false).get()
+        let usage = try await store.status(consumeNotice: false).get().usageBytes
+        let oldest = try #require(try await store.entries().get().first)
         layer = nil
-        // Close deterministically: releasing the last reference can leave the store's database and
-        // root lock open for a while under load, which made the reopened store report recoveryRequired.
         try await store.close().get()
         let child = Process()
         child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
@@ -226,6 +226,8 @@ extension RetentionCommandsTests {
         var environment = ProcessInfo.processInfo.environment
         environment["FRISKET_EVICTION_TEST_ROOT"] = root.path
         environment["FRISKET_EVICTION_TEST_POINT"] = point.rawValue
+        // Over quota by the oldest capture only, so one survives the batch.
+        environment["FRISKET_EVICTION_TEST_LIMIT"] = String(usage - oldest.imageBytes - oldest.thumbnailBytes)
         child.environment = environment
         child.standardOutput = FileHandle.nullDevice
         child.standardError = FileHandle.nullDevice
@@ -235,15 +237,7 @@ extension RetentionCommandsTests {
         #expect(child.terminationStatus == SIGKILL)
         // Reopen as the app does after a crash: launch recovery runs before maintenance.
         let reopenedHistory = HistoryStore.launch(root: root)
-        // D27 family: while other tests start child processes, this sometimes reports
-        // recoveryRequired (2 of 10 runs; 0 alone). Ticket 78 replaces this commit protocol and
-        // its crash tests. Until then only that one error is tolerated; any other failure still fails.
-        try await withKnownIssue("D27: recoveryRequired after a kill, under concurrent child processes", isIntermittent: true) {
-            try await verifyEvictionResume(reopenedHistory, root: root, survivor: survivor)
-        } matching: { issue in
-            if case let .errorCaught(error) = issue.kind { return (error as? HistoryFailure) == .recoveryRequired }
-            return false
-        }
+        try await verifyEvictionResume(reopenedHistory, root: root, survivor: survivor)
     }
 
     private func verifyEvictionResume(_ reopenedHistory: HistoryStore, root: URL, survivor: CaptureRevision) async throws {
@@ -254,7 +248,7 @@ extension RetentionCommandsTests {
         let entries = try await reopenedHistory.entries().get()
         var diskBytes: Int64 = 0
         for entry in entries {
-            for path in [entry.imageLocation, entry.recordLocation, entry.thumbnailLocation].compactMap({ $0 }) {
+            for path in [entry.imageLocation, entry.thumbnailLocation].compactMap({ $0 }) {
                 diskBytes += Int64(try Data(contentsOf: root.appendingPathComponent(path)).count)
             }
         }
@@ -282,7 +276,7 @@ extension RetentionCommandsTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let store = HistoryStore(root: root, commitPoint: { point in
-            if point == .directorySynced {
+            if point == .imageWritten {
                 let images = root.appendingPathComponent("images")
                 for file in try FileManager.default.contentsOfDirectory(at: images, includingPropertiesForKeys: nil) where file.pathExtension == "png" {
                     try FileManager.default.removeItem(at: file)
@@ -318,19 +312,18 @@ extension RetentionCommandsTests {
 }
 
 extension RetentionCommandsTests {
-    @Test func interruptedFinalizationBytesAreStillAccountedAtLaunch() async throws {
+    /// D24's other half: an interrupted finalization is adopted at launch and counted once.
+    @Test func interruptedFinalizationIsAdoptedAndCountedOnceAtLaunch() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
-        var history: HistoryStore? = HistoryStore(root: root, commitPoint: { point in
-            if point == .pngSynced { throw EvictionStop.interrupted }
+        let history = HistoryStore(root: root, commitPoint: { point in
+            if point == .imageWritten { throw EvictionStop.interrupted }
         })
-        var layer: CaptureLifecycleCoordinator? = commands(history!)
-        let revision = await capture(layer!)
-        #expect(await layer!.execute(.dismiss(revision)) == .finalized(revision, .notCommitted(.recoveryRequired)))
-        _ = try await history!.status(consumeNotice: false).get()
-        layer = nil
-        history = nil
-        let reopenedHistory = HistoryStore(root: root)
+        let layer = commands(history)
+        let revision = await capture(layer)
+        #expect(await layer.execute(.dismiss(revision)) == .finalized(revision, .notCommitted(.recoveryRequired)))
+        try await history.close().get()
+        let reopenedHistory = HistoryStore.launch(root: root)
         let usage = try await reopenedHistory.maintain(limits: nil).get().usageBytes
         var disk: Int64 = Int64(RetentionPixels().bytes.count)
         for suffix in ["", "-wal", "-shm"] {
@@ -338,6 +331,30 @@ extension RetentionCommandsTests {
             if FileManager.default.fileExists(atPath: file.path) { disk += Int64(try Data(contentsOf: file).count) }
         }
         #expect(usage == disk)
-        #expect(try await reopenedHistory.entries().get().isEmpty)
+        #expect(try await reopenedHistory.entries().get().map(\.captureID) == [revision.captureID])
     }
+
+    /// One eviction batch takes one checkpoint: the files go, then every row in one transaction.
+    @Test func quotaEvictsSeveralCapturesInOneBatch() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let batches = BatchCounter()
+        let history = HistoryStore(root: root, evictionPoint: { if $0 == .rowsRemoved { batches.increment() } })
+        let layer = commands(history)
+        for _ in 0..<4 { _ = await keep(layer) }
+        let newest = await keep(layer)
+        let entries = try await history.entries().get()
+        let usage = try await history.status(consumeNotice: false).get().usageBytes
+        let evicted = entries.dropLast().reduce(Int64(0)) { $0 + $1.imageBytes + $1.thumbnailBytes }
+        let status = try await history.maintain(limits: HistoryLimits(maximumBytes: usage - evicted)).get()
+        #expect(try await history.entries().get().map(\.captureID) == [newest.captureID])
+        #expect(batches.value == 1)
+        #expect(status.usageBytes <= status.limits.maximumBytes)
+    }
+}
+
+private final class BatchCounter: Sendable {
+    private let count = Mutex(0)
+    var value: Int { count.withLock { $0 } }
+    func increment() { count.withLock { $0 += 1 } }
 }

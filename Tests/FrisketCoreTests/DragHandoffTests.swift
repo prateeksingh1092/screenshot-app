@@ -89,8 +89,7 @@ private final class FirstEventFiles: @unchecked Sendable {
 @Suite struct DragHandoffTests {
     @Test func commitPointListIsClosed() {
         #expect(Set(HistoryCommitPoint.allCases.map(\.rawValue)) == [
-            "pngStaged", "pngSynced", "recordStaged", "recordSynced", "imageRenamed", "recordRenamed",
-            "directorySynced", "rowCommitted", "thumbnailCached"
+            "imageStaged", "imageWritten", "rowCommitted", "thumbnailCached"
         ])
     }
 
