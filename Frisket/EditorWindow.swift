@@ -1,4 +1,5 @@
 import AppKit
+import FrisketAdapters
 import FrisketCore
 
 /// The editor's finish and undo actions. They reach the editor as menu or responder actions,
@@ -124,6 +125,8 @@ enum EditorAction {
     var selection: (box: MarkBox, handles: [(handle: MarkHandle, x: Double, y: Double)])? { didSet { needsDisplay = true } }
     /// Every mark's VoiceOver label and box, in canvas points, in Tab order.
     var accessibleMarks: [(label: String, box: MarkBox, selected: Bool)] = []
+    /// The marks' accessibility elements, kept until the marks change (D31).
+    private lazy var markElements = MarkAccessibilityElements(parent: self)
     /// The box of the label being typed, in canvas points (ticket 86).
     var typingBox: MarkBox? { didSet { needsDisplay = true } }
     /// Called when the canvas changes size, so the label being typed can follow the zoom.
@@ -185,14 +188,16 @@ enum EditorAction {
         super.keyDown(with: event)
     }
 
+    /// The marks as image elements with their labels, frames and selected state. Frames are in
+    /// this view's space, so they follow the zoom and the window; the elements persist (D31).
     override func accessibilityChildren() -> [Any]? {
-        guard let window else { return nil }
-        return accessibleMarks.map { mark in
-            let frame = window.convertToScreen(convert(viewRect(mark.box).insetBy(dx: -2, dy: -2), to: nil))
-            let element = NSAccessibilityElement.element(withRole: .image, frame: frame, label: mark.label, parent: self)
-            (element as? NSAccessibilityElement)?.setAccessibilitySelected(mark.selected)
-            return element
-        }
+        markElements.update(accessibleMarks.map {
+            MarkAccessibilityElements.Mark(label: $0.label, frame: viewRect($0.box).insetBy(dx: -2, dy: -2), selected: $0.selected)
+        })
+    }
+
+    override func accessibilitySelectedChildren() -> [Any]? {
+        accessibilityChildren()?.filter { ($0 as? NSAccessibilityElement)?.isAccessibilitySelected() == true }
     }
 
     private func documentPoint(_ event: NSEvent) -> CGPoint? {
