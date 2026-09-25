@@ -10,7 +10,7 @@
 
 - [x] The canary leak tests at the flatten seam pass for black and for at least two other colours.
 - [ ] `pattern --verify-redacted` takes the expected colour, and the live `editor-redaction` row checks a colour other than black. (Code done: the verifier takes the colour and the row picks Grey; the live-matrix run is the coordinator's.)
-- [x] Shapes are outlines only; no editor tool other than Solid redaction draws an opaque fill.
+- [x] Shapes are outlines only; no editor tool other than Solid redaction draws an opaque fill. (Amended by decision 88: a Box-style label fills its box; it is a label, not a redaction.)
 - [x] Decision 59's filled-rectangle rule, the plan's "guaranteed black" wording and the CleanShot study are updated.
 
 ## Comments

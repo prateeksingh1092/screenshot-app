@@ -366,6 +366,11 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Rule:** opening History (⌘⇧1, the menu or Reveal in History) selects the newest row and scrolls it to the top, so Copy, Save, Restore and Delete act on the capture just made. A reload while the window is open (a commit, a Delete, Try Again) keeps the user's row while it still exists, else selects the newest. The rule is `HistoryList.selection(keeping:opening:)` in FrisketCore, tested in `HistoryListTests`; the window only applies it and scrolls with a `ScrollViewReader`.
     - **Live row:** `history-copy` captures a size no other row uses, varied per run (the pattern plus a 2–80 point margin), and passes only when History's Copy gives exactly that size and the pattern. `history_newest` no longer clicks the top row: the row now proves History's own selection, which is what D30 got wrong.
 
+88. **Box labels stay opaque; they are labels, not redactions (Prateek, 2026-09-25; decisions 61, 82 and 84):**
+    - A Box-style label (ticket 86) fills its box in the ink colour, as CleanShot does, and its width handle can widen it. Prateek chose to keep it (option "Keep, it's a label"), not to make the box hug the text or remove the style.
+    - A Box label is not a redaction: its edges are antialiased, and none of Solid redaction's guarantees or canary tests apply to it. Hiding content is Solid redaction's job alone. This amends ticket 88's line "no editor tool other than Solid redaction draws an opaque fill".
+    - **Why:** raised by the review of `a724abd..fa2be6c`. It is a product-visible trade-off, so it was Prateek's call.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

@@ -89,8 +89,8 @@ public struct DocumentCrop: Equatable, Sendable {
 }
 
 /// An annotation drawn above redactions. Its ink is one opaque colour and its line a width in
-/// document points (ticket 84: both can be changed after drawing); there is no opacity, corner
-/// radius, or fill that could be mistaken for Solid redaction.
+/// document points (ticket 84: both can be changed after drawing). A Box-style label fills its box
+/// in the ink colour (decision 88); it is a label, not a redaction, and carries none of Solid redaction's guarantees.
 public struct DocumentAnnotation: Equatable, Sendable {
     /// The default ink.
     public static let stroke = RGBAPixel(red: 0xff, green: 0x3b, blue: 0x30, alpha: 0xff)
