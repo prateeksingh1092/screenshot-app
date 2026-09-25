@@ -39,20 +39,26 @@ public struct Bitmap: Equatable, Sendable {
 }
 
 /// An opaque replacement of a region, in document points from the top-left corner.
-/// It has no colour, opacity, corner radius or stroke to configure.
+/// Its fill colour is data, always at alpha 255 (decision 61); it has no opacity, corner
+/// radius or stroke to configure.
 public struct SolidRedaction: Equatable, Sendable {
+    /// The default fill colour.
     public static let fill = RGBAPixel(red: 0, green: 0, blue: 0, alpha: 255)
     public let x: Double
     public let y: Double
     public let width: Double
     public let height: Double
+    /// Every pixel this redaction covers is exactly this colour in every output.
+    public let colour: RGBAPixel
 
-    public init?(x: Double, y: Double, width: Double, height: Double) {
-        guard [x, y, width, height].allSatisfy(\.isFinite), width > 0, height > 0 else { return nil }
+    /// Refuses a colour that is not fully opaque.
+    public init?(x: Double, y: Double, width: Double, height: Double, colour: RGBAPixel = SolidRedaction.fill) {
+        guard [x, y, width, height].allSatisfy(\.isFinite), width > 0, height > 0, colour.alpha == 255 else { return nil }
         self.x = x
         self.y = y
         self.width = width
         self.height = height
+        self.colour = colour
     }
 }
 
@@ -136,22 +142,11 @@ public struct DocumentEdits: Equatable, Sendable {
     }
 }
 
-/// Converts encoded capture bytes to and from the renderer's sRGB bitmap, in memory only.
+/// Converts encoded capture bytes to and from the editor preview's sRGB bitmap, in memory only.
+/// Delivered output never uses it; that is `CaptureFlattening.flatten` (ticket 65).
 public protocol BitmapCodec: Sendable {
     func decode(_ pngData: Data) -> Bitmap?
     func encode(_ bitmap: Bitmap) -> Data?
-    /// Renders `edits` over `pngData` strip by strip. The default path decodes the
-    /// full image first; production codecs should stream.
-    func encode(_ pngData: Data, edits: DocumentEdits) -> Data?
-}
-
-extension BitmapCodec {
-    public func encode(_ pngData: Data, edits: DocumentEdits) -> Data? {
-        guard let base = decode(pngData) else { return nil }
-        var strips: [Bitmap] = []
-        DocumentRenderer.forEachStrip(EditorDocument(base: base, edits: edits)) { strips.append($0) }
-        return DocumentRenderer.concatenate(strips).flatMap(encode)
-    }
 }
 
 /// The editor's document: a base image plus its edits. Rendering is `DocumentRenderer.render`.

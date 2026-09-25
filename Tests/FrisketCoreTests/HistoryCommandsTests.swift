@@ -477,14 +477,6 @@ extension HistoryCommandsTests {
     }
 }
 
-/// Stands in for the editor renderer: Done always yields a valid synthetic PNG History accepts.
-private struct RenderedPNGCodec: BitmapCodec {
-    func decode(_ pngData: Data) -> Bitmap? {
-        Bitmap(width: 2, height: 1, pixels: Array(repeating: RGBAPixel(red: 255, green: 0, blue: 0, alpha: 255), count: 2))
-    }
-    func encode(_ bitmap: Bitmap) -> Data? { HistoryPixels().bytes }
-}
-
 /// The two ways a capture is already in History while its Thumbnail is still open.
 private enum FinalizedWithOpenThumbnail: CaseIterable, Sendable {
     /// Done commits the rendered revision and leaves its Thumbnail open.
@@ -503,7 +495,7 @@ extension HistoryCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard: any ImageClipboard = state == .afterFailedCopy ? RetryHistoryClipboard() : HistoryClipboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), clipboard: clipboard,
-            pendingByteLimit: 1024, history: HistoryStore(root: root), codec: RenderedPNGCodec())
+            pendingByteLimit: 1024, history: HistoryStore(root: root), flattener: ScriptedFlattener(always: HistoryPixels().bytes))
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         #expect(await commands.execute(.capture(id, maximumBytes: 1024)) == .pending(original))

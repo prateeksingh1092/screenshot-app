@@ -111,13 +111,13 @@ public struct CaptureCommandLayer: Sendable {
                 drag: (any DragHandoff)? = nil,
                 thumbnailPolicy: ThumbnailStackPolicy = ThumbnailStackPolicy(),
                 clock: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
-                codec: (any BitmapCodec)? = nil,
+                flattener: (any CaptureFlattening)? = nil,
                 textRecognizer: (any TextRecognizer)? = nil,
                 textClipboard: (any TextClipboard)? = nil) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, windowSource: windowSource, clipboard: clipboard,
                                                   pendingByteLimit: pendingByteLimit, history: history, exporter: exporter, drag: drag,
-                                                  thumbnailPolicy: thumbnailPolicy, clock: clock, codec: codec,
+                                                  thumbnailPolicy: thumbnailPolicy, clock: clock, flattener: flattener,
                                                   textRecognizer: textRecognizer, textClipboard: textClipboard)
     }
 

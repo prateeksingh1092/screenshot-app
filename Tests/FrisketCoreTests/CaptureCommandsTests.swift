@@ -320,7 +320,7 @@ extension CaptureCommandsTests {
 }
 
 extension CaptureCommandsTests {
-    @Test func doneWithoutAnEditingCodecIsRefusedAndKeepsThePendingCaptureUnchanged() async throws {
+    @Test func doneWithoutAFlattenerIsRefusedAndKeepsThePendingCaptureUnchanged() async throws {
         let log = LocalDiagnosticLog()
         let clipboard = RecordingClipboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([23, 24])),

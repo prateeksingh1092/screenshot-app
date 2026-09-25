@@ -66,13 +66,6 @@ private struct ByteRecognizer: TextRecognizer {
     }
 }
 
-private struct LoopCodec: BitmapCodec {
-    func decode(_ pngData: Data) -> Bitmap? {
-        Bitmap(width: 1, height: 1, pixels: [RGBAPixel(red: 1, green: 2, blue: 3, alpha: 255)])
-    }
-    func encode(_ bitmap: Bitmap) -> Data? { Data([9, 9, 9]) }
-}
-
 private actor RecordingDiagnostics: DiagnosticSink {
     private(set) var events: [DiagnosticEvent] = []
     func record(_ event: DiagnosticEvent) async { events.append(event) }
@@ -101,10 +94,10 @@ private actor RecordingDiagnostics: DiagnosticSink {
     @Test func staleRevisionResultsAreDroppedAndDoNotWriteTheClipboard() async throws {
         let recognizer = GatedRecognizer(text: "late-secret")
         let clipboard = RecordingTextClipboard()
-        let codec = LoopCodec()
+        let flattener = ScriptedFlattener(always: Data([9, 9, 9]))
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
             source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
-            pendingByteLimit: 4_000_000, codec: codec,
+            pendingByteLimit: 4_000_000, flattener: flattener,
             textRecognizer: recognizer, textClipboard: clipboard)
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -122,11 +115,11 @@ private actor RecordingDiagnostics: DiagnosticSink {
 
     @Test func copyRecognizedTextAfterDoneUsesTheRenderedRevisionStandIn() async throws {
         let clipboard = RecordingTextClipboard()
-        let codec = LoopCodec()
+        let flattener = ScriptedFlattener(always: Data([9, 9, 9]))
         let recognizer = ByteRecognizer()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
             source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
-            pendingByteLimit: 4_000_000, codec: codec,
+            pendingByteLimit: 4_000_000, flattener: flattener,
             textRecognizer: recognizer, textClipboard: clipboard)
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
