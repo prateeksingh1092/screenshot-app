@@ -101,6 +101,7 @@ public actor CaptureLifecycleCoordinator {
     }
 
     /// An open editor pauses its Thumbnail's timeout; leaving it restarts the timeout in full (ticket 91).
+    /// While it is open, overflow exits the oldest other card instead (ticket 95).
     public func setEditorOpen(_ isOpen: Bool, for id: CaptureID) {
         if isOpen {
             editorOpen.insert(id)
@@ -142,7 +143,7 @@ public actor CaptureLifecycleCoordinator {
     public func thumbnails() -> Thumbnails {
         let now = clock()
         let paused = stackFocused || screenLocked
-        let cards = stack.cards(at: now).map { card in
+        let cards = stack.cards(at: now, sparing: editorOpen).map { card in
             let id = card.revision.captureID
             let record = pending[id]
             let suppressed = record?.automaticExitSuppressed ?? false
@@ -359,14 +360,14 @@ public actor CaptureLifecycleCoordinator {
                 if exit == .timeout {
                     guard !stackFocused, !screenLocked, !editorOpen.contains(id) else { return .rejected(.thumbnailExitNotDue) }
                 }
-                guard stack.admits(exit, for: id, at: clock()) else { return .rejected(.thumbnailExitNotDue) }
+                guard stack.admits(exit, for: id, at: clock(), sparing: editorOpen) else { return .rejected(.thumbnailExitNotDue) }
             } else if stack.contains(id), !isBusy(id) {
                 // A kept finalized Thumbnail (ticket 91): its pixels are gone, only the card remains.
                 guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
                 if exit == .timeout {
                     guard !stackFocused, !screenLocked, !editorOpen.contains(id) else { return .rejected(.thumbnailExitNotDue) }
                 }
-                guard stack.admits(exit, for: id, at: clock()) else { return .rejected(.thumbnailExitNotDue) }
+                guard stack.admits(exit, for: id, at: clock(), sparing: editorOpen) else { return .rejected(.thumbnailExitNotDue) }
             }
             switch exit.outcome {
             case .finalizeToHistory: return await finalizeAndClose(revision)

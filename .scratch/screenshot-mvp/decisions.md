@@ -371,6 +371,12 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - A Box label is not a redaction: its edges are antialiased, and none of Solid redaction's guarantees or canary tests apply to it. Hiding content is Solid redaction's job alone. This amends ticket 88's line "no editor tool other than Solid redaction draws an opaque fill".
     - **Why:** raised by the review of `a724abd..fa2be6c`. It is a product-visible trade-off, so it was Prateek's call.
 
+89. **Overflow spares the capture being edited (implementer, 2026-09-25, ticket 95; coordinator's rule, amends decision 76):**
+    - **Rule:** while the editor is open for a capture, stack overflow exits the oldest *other* card; the card being edited never overflows. This replaces decision 76's "Overflow still applies". When the editor leaves, the card's timeout restarts in full, as decision 76 says, and overflow applies to it again.
+    - **Where:** `ThumbnailStack` picks the overflowing cards oldest first, skipping the captures `CaptureLifecycleCoordinator.setEditorOpen` marks open; `thumbnails()` reports `dueExit == .overflow` on that card and `.exitThumbnail(_, .overflow)` refuses the edited one as not due. Tested in `overflowSparesTheCaptureBeingEditedAndExitsTheOldestOtherCard`.
+    - **Why:** before, the edited card was marked due and only the panel's busy flag held it, so Done after four more captures closed the card about 1.2 s later.
+    - **Also in ticket 95 (no new rule):** Restore pressed while a card animates out waits for the exit, then restores; the Undo menu names the mark that changed via `DocumentEdits.noun(for:)`; the label text view turns off inline predictions and Writing Tools.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

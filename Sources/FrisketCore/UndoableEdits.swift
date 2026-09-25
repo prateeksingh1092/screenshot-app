@@ -65,23 +65,26 @@ import Foundation
         onChange?()
     }
 
-    /// The name the Undo and Redo menu items show for the change from `old` to `new`.
+    /// The name the Undo and Redo menu items show for the change from `old` to `new`: the noun of the
+    /// mark that changed (ticket 95), from `DocumentEdits.noun(for:)` like the mark-editing names.
     static func actionName(from old: DocumentEdits, to new: DocumentEdits) -> String {
         if old.crop != new.crop { return "Crop" }
         if old.redactions != new.redactions { return "Solid Redaction" }
-        if old.annotations != new.annotations, let added = new.annotations.last {
-            switch added.kind {
-            case .rectangle: return "Shape"
-            case .arrow: return added.style == .line ? "Line" : "Arrow"
-            case .text: return "Label"
-            }
+        if let (edits, index) = changed(old.annotations, new.annotations, in: old, new) {
+            return edits.noun(for: .annotation(index))
         }
-        if old.effects != new.effects, let added = new.effects.last {
-            switch added.kind {
-            case .blur: return "Blur"
-            case .magnify: return "Magnify"
-            }
+        if let (edits, index) = changed(old.effects, new.effects, in: old, new) {
+            return edits.noun(for: .effect(index))
         }
         return "Edit"
+    }
+
+    /// The first mark that differs, read from `new`, or from `old` when a mark was removed.
+    private static func changed<Mark: Equatable>(_ before: [Mark], _ after: [Mark], in old: DocumentEdits,
+                                                 _ new: DocumentEdits) -> (DocumentEdits, Int)? {
+        guard before != after else { return nil }
+        let shared = min(before.count, after.count)
+        let index = (0..<shared).first { before[$0] != after[$0] } ?? shared
+        return after.count < before.count ? (old, index) : (new, index)
     }
 }

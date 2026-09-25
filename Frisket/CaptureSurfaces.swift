@@ -17,6 +17,8 @@ import FrisketCore
     private(set) var isCapturing = false
     var isTerminating = false
     private var panels: [CaptureID: ThumbnailPanel] = [:]
+    /// Cards showing "Capture kept in History" before they close; Restore waits for them (ticket 95).
+    private var exiting: [CaptureID: Task<Void, Never>] = [:]
     private var editors: [CaptureID: EditorWindow] = [:]
     /// Wakes the stack at the core's next due time; the core owns order, displays and status (ticket 73).
     private var nextDue: Task<Void, Never>?
@@ -443,8 +445,13 @@ import FrisketCore
                 notice(Notice.after(command, result))
                 if commit == .committed {
                     panel.showKeptInHistory()
-                    try? await Task.sleep(for: .seconds(1.2))
-                    remove(id)
+                    let exit = Task {
+                        try? await Task.sleep(for: .seconds(1.2))
+                        exiting[id] = nil
+                        remove(id)
+                    }
+                    exiting[id] = exit
+                    await exit.value
                 } else {
                     await settleThumbnails()
                     panel.model.dismissFailed = true
@@ -470,7 +477,9 @@ import FrisketCore
 
     /// Ticket 79 (DA-10): a History item comes back as a finalized Thumbnail on the pointer's display.
     /// The core lists it; its preview is decoded from History's image, which `image` reads.
+    /// A card still animating out is let go first, so Restore brings it back rather than failing.
     func restoreFromHistory(_ id: CaptureID, image: () async -> Data?) async -> Bool {
+        if let exit = exiting[id] { await exit.value }
         guard !isTerminating, panels[id]?.model.busy != true else { return false }
         guard case let .restored(revision) = await commands.execute(.restoreFromHistory(id)) else { return false }
         if panels[id] == nil {
