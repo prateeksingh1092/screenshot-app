@@ -1,3 +1,9 @@
+> **2026-09-25 13:06: blocked on a locked screen.** `main` is at `99ed2d6`, `ci.sh` green (422 tests). Signed build `99ed2d6` is installed; the previous build is in `.build/Frisket-previous-*`.
+> - **Merged since the 23/23 run:** 94 (six new live rows: `history-restore`, `editor-undo-names`, `editor-mark-keyboard`, `editor-curved-arrow`, `editor-label-typed`, `editor-style-bar`), 95 (review fixes, decision 89) and decision 88 (Box labels stay opaque, Prateek).
+> - **Not yet run live:** the six new rows. Their first attempt hit the lock screen: `loginwindow` was frontmost and `drive` refused every event. The displays also sleep within seconds while Prateek is away. Hold `caffeinate -d -i -u -t 2400` in the background during runs.
+> - **Next, after Prateek unlocks:** calibrate the six rows on the external display (30-minute limit; the agent's assumptions are in ticket 94's report), then run the full matrix of 29 rows on each display. The rows may need two runs per display to fit the 9-minute cap.
+> - **Clean-up done:** the merged worktrees and branches, the old bundles, the pre-78 History backup and `diagnose/red-loops` are deleted (Prateek approved).
+>
 > **Live, 2026-09-25 12:47:** signed build `986159b` is installed; the previous bundles are in `.build/Frisket-previous-*`. The full matrix passes 23/23 on both displays (runs `20260925-123930` and `-124317`).
 > - **Fixed from the first run:** D29 (ticket 92, decision 86: the editor's style bar) and D30 (ticket 93, decision 87: History opens on the newest capture).
 > - **Harness faults fixed:** the harness now refuses to start while CleanShot X runs. The first run went to CleanShot, which held the ⌘⇧ keys. Also fixed: History button labels, the Save notice read from its AX value, and the window row's capture scale.
