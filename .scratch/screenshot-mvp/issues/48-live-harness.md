@@ -134,3 +134,11 @@ Installed signed build of `main` at `7ea997e` (decision 59), in `~/Applications/
 **Still open:**
 - copytext-none and history-delete still fail in the harness after these fixes. Their logs haven't been read yet.
 - The History window leak between rows.
+
+### 2026-09-25: coordinator, clean run on the built-in display
+
+- **Run:** `20260925-014433` on the built-in display, `b13dcde` installed, about 9 minutes, inside the 15-minute cap.
+- **Result:** 0 failures. All 21 rows give their expected verdict: 15 PASS and 6 XFAIL, the XFAILs being D2, D3 ×2, D6 and D17.
+- **Now pass after the recalibration:** copytext-none, history-delete and drag-cancel.
+- **Not seen on this run:** the History-window leak between rows.
+- **Status:** resolved.
