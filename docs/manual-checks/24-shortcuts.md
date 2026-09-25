@@ -1,17 +1,27 @@
-# Shortcut defaults and remapping — manual checklist
+# 24: Shortcuts and collisions with macOS
 
-Not run by the implementer. Use only an approved signed build and synthetic test-pattern windows; capture and clipboard actions require the operator's authorization.
+Set up as in [README.md](README.md). Also record the keyboard layout. The
+package tests check validation; the harness uses ⌘⇧1 and ⌘⇧2. This file
+checks the keys against macOS and other apps. Frisket never changes macOS's
+own screenshot shortcuts (DA-2).
 
-Record date, macOS build, reviewed commit, architecture, code signature, keyboard layout, display layout and Screen Recording permission state. Record each result and any duplicate activation. Record which architecture ran. arm64 stays unexecuted until an Apple silicon run exists.
-
-1. Quit any other screenshot app that uses ⌘⇧3/4/5, including CleanShot. Start Frisket with fresh shortcut preferences. The menu shows ⌘⇧4 Capture Area, ⌘⇧5 Capture Window, ⌘⇧3 Capture Full Screen, ⌘⇧2 Focus Latest Thumbnail, and ⌘⇧1 History. If macOS still had those screenshot shortcuts, Frisket turns them off.
-2. Press Command–Shift–4 once: exactly one Frisket Area selector, no macOS screenshot UI. The selector shows the selection size. Cancel with Esc.
-3. Press Command–Shift–3 once against the test pattern: exactly one Frisket Full Screen capture, no macOS screenshot.
-4. Press Command–Shift–5: exactly one Frisket window selector. Cancel with Esc. Press Command–Shift–2: focus the latest thumbnail exactly once, with no capture. Press Command–Shift–1: History opens, with no capture. Check with another application frontmost and across Spaces.
-5. In Settings, click Change and press a new shortcut for each action. Verify the new binding works and the old binding no longer fires. Restart and verify persistence. Verify the menu shows the same shortcut. Restore Default and verify the number-row binding returns.
-6. Try a binding that is still an enabled macOS shortcut and is not one Frisket has turned off. Expect a collision warning and the previous Frisket binding to remain active.
-7. Try a binding already assigned to another Frisket action. Expect a duplicate warning and unchanged bindings.
-8. Restore macOS screenshot shortcuts from Settings. Frisket must stop firing ⌘⇧3/4/5/6 while macOS owns them again. Turn them off from Settings and confirm the number row works again.
-9. Occupy a candidate binding in another Carbon-hot-key app. Apply it in Frisket: expect a registration warning and the old binding to remain usable.
-10. With a test build injecting a failed or malformed system-shortcut query, try startup and remapping: no unverified binding should be activated or persisted. On dispatch, an unverifiable system list must suppress Frisket's action.
-11. Use keyboard navigation and VoiceOver to activate Change, press a shortcut, read warnings, and restore defaults. Defaults undergo the same validation as remaps.
+1. Quit any other screenshot app that uses ⌘⇧3/4/5, such as CleanShot. In
+   System Settings › Keyboard › Keyboard Shortcuts › Screenshots, turn off the
+   macOS shortcuts that use them. Start Frisket with fresh shortcut settings.
+   Settings shows ⌘⇧1 History, ⌘⇧2 Focus Latest Thumbnail, ⌘⇧3 Capture Full
+   Screen, ⌘⇧4 Capture Area and ⌘⇧5 Capture Window. ⌘⇧6 does nothing in
+   Frisket (decision 60).
+2. Press each once, with another app frontmost and on another Space. Each does
+   exactly one Frisket action, and no macOS screenshot UI appears. Cancel the
+   Selections with Esc.
+3. Turn one macOS screenshot shortcut back on. Settings says which one macOS
+   still uses and links to System Settings. The link opens Keyboard Shortcuts.
+   Turn it off again: Settings notices when you come back.
+4. In Settings, change each shortcut. The new one works, the old one doesn't,
+   and the change survives a relaunch. Restore Default brings back the number
+   row. A shortcut macOS still uses, or one another Frisket action has, is
+   refused with a warning, and the old one stays.
+5. Take a shortcut another app has registered. Frisket warns and keeps the old
+   one working.
+6. Do steps 3 and 4 by keyboard and with VoiceOver: Change, the warnings and
+   Restore Default are reachable and read.

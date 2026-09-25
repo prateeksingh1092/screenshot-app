@@ -139,7 +139,7 @@ CleanShot state after the test: 12 synthetic-pattern captures were added to its 
 - An empty `discardSelectionPreviews()`, and an empty `FrisketCore.swift`.
 - Snapzy provenance checks while `ported-files.json` is empty.
 - Diagnostics that are written and never read.
-- Stale docs: `stitcher.md`, `core-package.md:243`, `cursor-workflow.md:51`, `SESSION-CHECKPOINT.md`, and the old ⌃⌥⌘ shortcuts in 9 manual checks.
+- Stale docs: none left (ticket 82, 2026-09-25). `stitcher.md` was deleted with scrolling capture (ticket 87); `core-package.md` and `app-build.md` were rewritten; `cursor-workflow.md` and `SESSION-CHECKPOINT.md` are in `archive/`; the manual checks use ⌘⇧ and keep only what the harness can't check.
 
 **Scalability:**
 - History window reload is O(n²).
@@ -430,7 +430,7 @@ This phase ships value before the re-architecture. The steps are independent and
   - empty `discardSelectionPreviews` and `FrisketCore.swift`;
   - unread diagnostics (inject one sink, or delete);
   - `build-snapzy.sh` and the snapzy branch in `measure.py`.
-- **Docs.**
+- **Docs** (done by ticket 82; `stitcher.md` deleted instead, decision 60; the process docs went to `archive/`, not `docs/history/`).
   - Rewrite `stitcher.md` and `core-package.md`; retire `SESSION-CHECKPOINT.md` into `docs/history/`.
   - Update `cursor-workflow.md` and the manual checks to ⌘⇧ shortcuts.
   - Shrink the manual checks to what the live harness can't automate.

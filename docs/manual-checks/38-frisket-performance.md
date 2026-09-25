@@ -3,8 +3,7 @@
 All live measurements and target ratification remain pending. This implementation
 ran only offline tests, compilation and static checks. The 500 ms thumbnail
 placeholder remains unchanged. No measured baseline or low-power GPU confirmation
-is claimed. Decision 53 is absent from this checkout; decisions 46 and 49–52 were
-read. The ticket-specific brief prohibits live measurement in this session.
+is claimed. Ticket 83 re-measures these on the remediated build.
 
 ## Instrumentation contract
 
@@ -19,7 +18,7 @@ failures produce no row; a duplicate submission produces no second row. Failed
 output disables logging for that process; restart the entire measurement session.
 
 Area start is immediately after the selection result returns, before hiding the
-overlay and validating/enqueuing pixels. It excludes prefetch, magnifier setup,
+overlay and validating/enqueuing pixels. It excludes prefetch, overlay setup,
 human selection duration, and event delivery before that return. Full-screen start
 is after display selection; keep modes in separate sessions. End is after PNG
 thumbnail downsampling and `ThumbnailPanel` construction, which calls
@@ -97,7 +96,7 @@ Resolve its reference-tool storage and endpoint-calibration blockers first.
    numeric evidence. Reconfirm GPU and thermal conditions at the end. Existing
    harness flags remain until independently supported operator evidence exists.
 
-## Comparison shape for ticket 40 / Prateek
+## Comparison shape for ticket 83 / Prateek
 
 Every numeric cell should contain median / nearest-rank p95 and an evidence link
 for exactly 20 valid runs. Pending is not zero. Separate capture modes, builds and
@@ -116,6 +115,6 @@ v1 comparator is **macOS Screenshot only** (decision 54). Snapzy Release does no
 | Active low-power GPU evidence | Pending | Pending | Confirmation required | Pending |
 | Clock resolution / overhead / display calibration | Pending | Pending | No numeric error claim yet | Pending |
 
-Ticket 40 and Prateek must fill the
+Ticket 83 and Prateek must fill the
 comparison, resolve non-comparable endpoints, choose targets and only then record
 accepted ratification in decisions.md. This ticket does not ratify any target.

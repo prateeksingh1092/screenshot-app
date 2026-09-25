@@ -1,584 +1,195 @@
-# Frisket core package
+# Frisket package
 
-`Frisket` is a Swift 6.3 package with two static libraries, `FrisketCore` and
-`FrisketAdapters` (the app's AppKit, ScreenCaptureKit and Vision adapters in
-`Frisket/Adapters/`, linked by the app since ticket 77), and the test targets
-`FrisketCoreTests` and `FrisketAdapterTests`. It targets macOS 26.
-GRDB 7.11.1 is its only external dependency, pinned to the official HTTPS source
-and linked statically. `HistoryCrashHelper` is a test-only executable under
-`Tests/Helpers/`, built as a dependency of the core tests and absent from the
-Xcode project and app bundle. The core implements
-capture, Copy, and dismiss-to-History, with app capture and pasteboard adapters.
-See the [History contract](history-storage.md) for ticket 09 storage and recovery seams. SwiftPM's default
-build uses the host architecture; no cross-compilation flags are set.
+The root `Package.swift` is a Swift 6.3 package for macOS 26. It builds what
+the app runs and what the tests check. How the app links it is in
+[app-build.md](app-build.md).
 
-## Build and test commands
+## What is in it
 
-Run from the repository root. Decision 46 and the ticket implementation request
-authorize these builds. Use the pinned Xcode 26.5 toolchain for Swift Testing
-(decision 47); the library also builds with the CLT. No signing, keychain
-access, app launch, real screen capture, or real clipboard is involved. The first
-resolution fetches only the approved GRDB dependency.
+| Target | Kind | What it holds |
+|---|---|---|
+| `FrisketCore` | static library product | The pure core: lifecycle, renderer, editor model, selection and window picking, History and export policy. `StorageAdapter/` is its only disk code. |
+| `FrisketAdapters` | static library product | `Frisket/Adapters/`: the AppKit, ScreenCaptureKit and Vision adapters (decision 80). |
+| `FrisketCoreTests` | tests | The core, through its public seams. |
+| `FrisketAdapterTests` | tests | The adapters, with no application host. |
+| `HistoryCrashHelper` | test executable | Kills itself at each History commit point for the crash tests. It is not in the app. |
+
+GRDB 7.11.1 is the only dependency. It is pinned once, in `Package.swift`, and
+the app and the package read the same `Package.resolved`.
+
+The app links both products and compiles none of their files (decision 80). So
+the code the tests exercise is the code the app runs.
+
+## Build and test
+
+Run from the repository root:
 
 ```sh
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
-export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache"
+scripts/test-core.sh                        # every package test
+scripts/test-core.sh --filter CaptureRendererTests
+```
 
-swift build --disable-sandbox --disable-keychain \
-  --cache-path .build/cache --scratch-path .build \
-  --config-path .build/config --security-path .build/security
+`test-core.sh` sets `DEVELOPER_DIR` to Xcode (the Command Line Tools lack Swift
+Testing, decision 47) and keeps every cache inside `.build/`. It runs:
 
+```sh
 swift test --disable-sandbox --disable-keychain --disable-xctest \
   --cache-path .build/cache --scratch-path .build \
   --config-path .build/config --security-path .build/security
 ```
 
-The local cache paths avoid writes outside the workspace. `--disable-sandbox`
-disables SwiftPM's nested manifest sandbox because the agent sandbox rejects
-`sandbox_apply`; it does not disable the agent's filesystem restrictions.
-`--disable-keychain` avoids credential lookup, and `--disable-xctest` prevents
-SwiftPM from generating an XCTest runner. All authored tests import `Testing`.
-For a single test, append `--filter CaptureCommandsTests` to the test command.
+All tests use Swift Testing. A test that reproduces an open defect is wrapped
+in `knownDefect("Dn")`; `scripts/ci.sh --defects` lists the ones still red.
 
-**Installed CLT result (2026-09-22):** the core builds on x86_64 macOS 26.7,
-build 25G229, with Apple Swift 6.3.3 (swiftlang-6.3.3.1.3,
-clang-2100.1.1.101). Swift Testing compilation fails with
-`error: no such module 'Testing'`. The Swift Testing tests are **Xcode-only
-for this installed toolchain**, per ticket 02's explicit fallback. Ticket 04
-subsequently runs these with Xcode 26.5; see its
-[verification draft](../.scratch/screenshot-mvp/reports/04-implementer.md).
-Ticket 06 also executes these Swift Testing tests with Xcode 26.5 (17F42),
-Swift 6.3.2, on the same x86_64 macOS build. There is no XCTest substitution.
-**arm64 not executed.**
+Module caches store absolute paths. A `.build/` copied from another worktree
+fails with module errors. Delete `.build/module-cache`, `.build/clang-cache`,
+`.build/x86_64-apple-macosx` (or `arm64-…`) and `.build/DerivedData`, and build
+again.
 
-## Repository checks (ticket 80)
+## The fence
 
-`scripts/ci.sh` runs `Checks/check_repository.py` (standard library only; tooling, not
-an app dependency) once over `Sources/` and `Frisket/`, and once with `--self-test`
-over the fixtures in `Checks/Fixtures/`:
+The core may not do disk I/O or use the network. `Checks/check_repository.py`
+enforces this and the other invariants (decision 85). `scripts/ci.sh` runs it:
 
 ```sh
 /usr/bin/python3 -B Checks/check_repository.py --self-test
-/usr/bin/python3 -B Checks/check_repository.py --root .            # every check
+/usr/bin/python3 -B Checks/check_repository.py --root .
 /usr/bin/python3 -B Checks/check_repository.py --root . --check core-io
 ```
 
-| Check | Invariant |
+| Check | What it enforces |
 |---|---|
-| `finalization` | (1) `AuthorizedFinalization` is built only by `CaptureLifecycleCoordinator` |
-| `app-writes` | (2) the app (`Frisket/`) has no filesystem write route; storage writes only through finalization |
-| `storage-pixels` | (3) `StorageAdapter/` never takes a `CaptureImage`, a pixel source or an original |
-| `core-io` | (4) the core imports only its allowlist (DA-1: Foundation, Synchronization, CoreGraphics, CoreText, ImageIO, Accelerate; the storage adapter also GRDB and Darwin) and, outside `StorageAdapter/`, names no file route |
-| `input-monitoring` | (5) no event taps or global event monitors |
-| `network` | (6) no network modules or APIs (story 74) |
-| `app-sources` | ticket 77: the app target compiles no adapter file and links `FrisketAdapters` |
+| `finalization` | Only `CaptureLifecycleCoordinator` builds an `AuthorizedFinalization`. |
+| `app-writes` | The app (`Frisket/`) has no file-write route. Storage writes go through finalization. |
+| `storage-pixels` | `StorageAdapter/` never takes a `CaptureImage`, a pixel source or an original. |
+| `core-io` | The core imports only Foundation, Synchronization, CoreGraphics, CoreText, ImageIO and Accelerate. `StorageAdapter/` may also import GRDB and Darwin. Outside `StorageAdapter/`, the core names no file route. |
+| `input-monitoring` | No event taps and no global event monitors. |
+| `network` | No network modules or APIs. |
+| `app-sources` | The app compiles no adapter file and links `FrisketAdapters`. |
 
-Each fixture names its check, the files and the exact expected diagnostics; the
-self-test fails unless every check has a passing and a failing fixture. The
-checks are lexical: comments and string literals are masked, interpolations are
-scanned. They do not prove the absence of obfuscated or dynamically resolved APIs.
-`Checks/check_drift.py` separately fails on retired terms (`Checks/retired-terms.tsv`).
+`--self-test` fails unless every check has a passing and a failing fixture in
+`Checks/Fixtures/`. The checks are lexical. They mask comments and strings, but
+they can't see an API reached dynamically.
 
-Ticket 37 adds `performanceToolingSatisfiesOfflineChecks` to the Swift Testing
-suite. It runs the standard-library Python tests in `Tools/Performance/` without
-app launches, network or capture. Standalone: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-/usr/bin/python3 -B -m unittest discover -s Tools/Performance -p 'test_*.py'`.
-The native probe is built separately by `bash Tools/Performance/build-probe.sh`.
-Measurement gates, definitions, commands, and the ticket 38 log interface are in
-[the ticket 37 operator runbook](manual-checks/37-performance-baselines.md).
+`Checks/check_drift.py` fails when a term in `Checks/retired-terms.tsv` is back
+in a live file.
 
-Ticket 38 connects opt-in `FRISKET_CAPTURE_LATENCY=1` app stdout logging to area
-and full-screen selection acceptance and thumbnail presentation submission, using
-one monotonic nanosecond clock. The numeric JSONL rows feed ticket 37's existing
-`app-latency` and `report` commands. See the
-[Frisket measurement handoff](manual-checks/38-frisket-performance.md) for exact
-endpoints, operator commands, limitations, and the pending comparison table.
-Live baselines, low-power GPU confirmation and Prateek's target ratification
-remain pending; the 500 ms placeholder is unchanged.
+The rest is covered by tests, not by the fence. The clipboard flags are checked
+at the adapter (`copyWritesPNGAndConcealedMarkerWithCurrentHostOnly`). Solid
+redaction is checked by the renderer tests and the adapter canary tests.
 
-Ticket 39 adds `firstRunRecordSatisfiesOfflineChecks`. It runs the
-standard-library Python tests in `Tools/FirstRun/` without app launches,
-network or capture. Standalone: `/usr/bin/python3 -B -m unittest discover -s
-Tools/FirstRun -p 'test_*.py'`. `scripts/first-run-record.sh` writes date, OS
-build, commit, architectures, signature, sanitized display layout, and
-permission state into ignored `.build/first-run/`. The bundled pattern is
-`Tools/FrisketTestPattern.swift` (320×180 points, display centre) with
-`--verify`. Hardware cases remain the [ticket 39 runbook](manual-checks/39-first-run.md).
+## Capture lifecycle
 
-Ticket 40 adds `releaseProjectSatisfiesOfflineChecks`. Development stays
-native `x86_64`; Release is universal (`x86_64` + `arm64`) with the production
-bundle `io.github.prateeksingh1092.frisket`. `scripts/release-universal.sh`
-signs with the existing Apple Development identity, writes
-`arm64 built and signed, never executed`, and never installs or launches.
-v1 is not declared until Codex assesses the verification report.
+`CaptureLifecycleCoordinator` is a public actor and the one action interface
+(decision 71). The app builds one. Tests build one per case with stand-ins.
+`execute(_:) async -> CaptureCommandOutcome` runs every command:
 
-## Ticket 06 command interface
+- **Capture:** `capture` (area), `captureFullScreen` and `captureWindow`. Each
+  reserves its byte allowance before it asks the source for pixels. The
+  permission gate runs first.
+- **Deliver:** `copy`, `save`, `drag`, and `retryCopy` and `retrySave` after a
+  failed delivery.
+- **Leave:** `dismiss`, `exitThumbnail` (timeout, swipe, Close, Esc, overflow)
+  and `discard` (Delete).
+- **Edit:** `done` renders and finalizes. `render` renders only; a drag from
+  the editor uses it and finalizes on an accepted drop.
+- **History:** `deleteHistory` and `restoreFromHistory`.
+- **Text:** `copyRecognizedText`.
 
-`CaptureLifecycleCoordinator.execute(_:) async -> CaptureCommandOutcome` is seam 1.
-Construct one coordinator for the app, injecting `CapturePixelSource`, `ImageClipboard`,
-a `pendingByteLimit`, and optionally a `DiagnosticSink`. It is a public actor;
-independent coordinators are independent sessions. (Ticket 74 retired the
-command-layer wrapper that only forwarded to it.) There are no public lifecycle mutators or
-private-state queries.
+A Pending capture lives in one `PendingCapture` record, in memory (decision
+67). Nothing about it reaches disk before an `AuthorizedFinalization`. Copy and
+Save commit to History before they write. A drag commits only after the
+destination accepts the drop (DA-3).
 
-- `capture(CaptureID, maximumBytes:)` reserves that allowance across the entire
-  coordinator before awaiting the source. The source must respect the allowance
-  while producing encoded PNG bytes. Empty and oversized responses are refused;
-  failed/refused captures release their reservations and may be attempted again.
-  Accepted bytes replace the reservation with their actual byte count.
-- `copy(CaptureRevision)` delivers a frozen image. `CopyOutcome` reports the
-  revision, `commit`, and `delivery` separately. This ticket always reports
-  `notCommitted(historyUnavailable)`; it does not pretend an in-memory result
-  was committed to History. Persistence arrives in ticket 09.
-- `retryCopy(CaptureRevision)` is available only after a failed delivery and
-  uses the retained bytes of that same revision. A repeated Copy returns
-  `retryRequired`; a repeated successful delivery returns `alreadyDelivered`.
-- `discard(CaptureID)` drops pending or failed-delivery bytes. Discarded IDs
-  cannot be reused. Unknown IDs, incorrect revisions, duplicates, and commands
-  for an operation awaiting an adapter return typed rejections.
+`thumbnails()` returns each Thumbnail's `status` (`pending` or `finalized`),
+whether it is `editable`, and `nextDueAt`. A finalized Thumbnail stays until it
+times out or leaves (decision 76). An open editor pauses its Thumbnail's
+timeout. The default stack holds 4 Thumbnails and times out after 10 seconds.
 
-The unedited revision is number 1; editing is outside this ticket. A nonpositive
-session budget admits no captures, and a capture allowance must be positive.
-Failed and in-flight delivery bytes remain charged; successful delivery and
-discard release them. With editing enabled (ticket 26), a successful Copy whose
-History commit failed before image writes retains its bytes and receipt for
-Edit, Dismiss or Delete; those bytes remain charged. Completed/discarded identifier tombstones remain for the
-session, preventing stale commands from creating another capture. This is an
-encoded-payload budget, not a bound on the capture adapter's transient decoding
-or platform allocations; ticket 08 must enforce its source allowance as well.
+`handleSystemEvent` handles quit, screen lock and unlock, and display changes.
+`QuitPlan.steps(for:)` decides how Quit ends (decision 73). `Notice.after`
+decides what the user is told after each outcome; a success says nothing,
+except Save, which names the file.
 
-`ImageClipboard` exposes only `write(ClipboardImage)` and returns a
-`ClipboardReceipt(changeCount:)` or a closed `ClipboardFailure`. Its payload
-contains PNG data and immutable `currentHostOnly = true` / `concealed = true`
-flags, with no file location, text alternative, or clipboard read method.
-An optional `replacing: ClipboardReceipt` restricts a write to an unchanged
-change count; the adapter checks this metadata immediately before writing.
-The
-source adapter owns PNG encoding/validity; the core transports bytes unchanged.
-Tests use synthetic byte fixtures, not platform image encoding. The receipt is
-recorded in the returned delivery outcome. Honoring pasteboard flags and the
-real change count is ticket 08's adapter responsibility.
+## Capture renderer
+
+`CaptureRenderer` is the one pixel path for edits (decisions 64 and 75):
+
+- `flatten(_ capture: Data, edits: DocumentEdits) -> Data` makes the delivered
+  PNG. The coordinator calls it for Done and for editor Copy, Save and drag.
+- `preview(_ capture: Data, maxEdge: 2048) -> CapturePreview` decodes the
+  capture once for the editor. `CapturePreview.render(edits)` paints with the
+  same `EditPainter.paint` as `flatten`.
+
+At full size the preview equals the decoded output byte for byte. That is the
+Delivered image invariant. When the capture is larger than `maxEdge`, each
+preview pixel averages only capture pixels in its own block. Every block that
+touches a Solid redaction is exactly that redaction's colour (D23).
+
+Painting order:
+
+1. Crop, snapped outward to output pixels.
+2. Solid redactions, snapped outward, written as fill bytes with no blending.
+   The colour comes from the palette (decision 82) and is always alpha 255.
+3. Blur (vImage box, 3 × 3, six passes) and Magnify (2×, no interpolation).
+   Each reads only its own box. The redactions are stamped again after them.
+4. Annotations, drawn with CoreGraphics and CoreText (decisions 68, 83 and 84):
+   a white plate for every mark, the redactions again, then the ink. Labels
+   use `HelveticaNeue-Bold`. `ArrowGeometry` and `LabelLayout` compute the
+   shapes in the core.
+
+The output PNG keeps only the IHDR, IDAT, sRGB and IEND chunks. A capture is at
+most one display (decision 60). The renderer refuses anything taller than
+32,768 px, read from the PNG header.
+
+`RenderTimingTests` holds `flatten`, `preview` and `render` under 250 ms at
+800 × 1,000 px in a debug build (decision 70). `scripts/editor-memory-run.sh`
+measures the peak memory of a full-display edit (decision 72).
+
+## Editor model
+
+- `DocumentEdits` holds the scale, the crop, the Solid redactions, the Blur and
+  Magnify boxes and the annotations.
+- `UndoableEdits` registers every change with the window's `UndoManager`, with
+  a name such as "Undo Crop" (decision 77).
+- `MarkEditor` selects, moves, resizes, deletes and restyles marks, and gives
+  each mark its VoiceOver label (decision 81).
+- `LabelSession` writes typed text into the edits as it is typed (decision 84).
+
+## Choosing what to capture
+
+- `DisplaySelectionSession` and `SelectionGeometry` hold the area Selection. A
+  Selection stays on its Origin display.
+- `RegionRequest` turns a Selection or a whole display into a display ID, a
+  source rectangle snapped to pixels and an output size (decision 65).
+- `CaptureDisplays` finds a display by pointer, ID or window overlap, and is
+  the one place that flips coordinates.
+- `WindowSelection` joins the window-server list with ScreenCaptureKit's
+  windows and filters them, including the Capture exclusion list (decisions
+  65 and 69).
+
+## History, export and clipboard
+
+- History storage and the launch sweep are in [history-storage.md](history-storage.md).
+  `HistoryList` is the History window's read model.
+- `PNGFileExporter` names a Save `Frisket 2026-09-25 at 14.03.07.png`, adding
+  ` (2)` on a collision (decision 79). `ExportFolderPolicy` refuses History's
+  own folder and unwritable folders, and flags iCloud folders.
+- `ImageClipboard` and `TextClipboard` writes are marked concealed and
+  current-host-only by the adapter.
+- `copyRecognizedText` runs `TextRecognizer` on the current revision. A result
+  for an older revision is dropped. The outcome carries only a character count.
 
 ## Diagnostics
 
-`DiagnosticSink.record(DiagnosticEvent)` admits only closed event, operation,
-error-domain and error-code enums: no identifier, image, string message, path or
-underlying platform error. The app injects the adapters' `SystemDiagnosticLog`
-into the coordinator and History. It writes one `os.Logger` line per event
-(`notice`, or `error` when the event carries an error code), marked public because
-it holds only those enum values. The unified log keeps and expires the entries;
-Frisket writes no log file of its own (decision 25, ticket 80). Where no sink is
-injected, events are dropped. The planted-canary command test checks the exact
-events and that none of the synthetic pixel, text or path payload reaches them.
+`DiagnosticSink.record(DiagnosticEvent)` takes only closed enums: no
+identifier, pixel, text or path. The app injects the adapters'
+`SystemDiagnosticLog`, one `os.Logger` line per event (decision 85). Frisket
+writes no log file. Without a sink, events are dropped.
 
-## Ticket 08 app integration
+## Tool tests
 
-See [app build and signing](app-build.md). The app links a native static target
-from the exact core source directory; SwiftPM remains the automated test runner.
-`CaptureLifecycleCoordinator.image(for:)` exposes revision-bound in-memory bytes for
-thumbnail downsampling, returning nil for unknown, stale, released or discarded
-revisions. Editable copied captures with a pre-write History failure remain
-queryable until resolved. Cancellation is a typed capture-source outcome. Lifecycle and byte
-ownership remain in the coordinator.
-
-The app's Xcode build always runs the `input-monitoring` static check. The new
-Swift Testing suite exercises selection/pixel stand-ins and the actual AppKit
-pasteboard item/options adapter through seam 1. No general pasteboard object,
-screen-capture call, permission prompt, or application host is used in tests.
-
-## Ticket 20 full-screen capture
-
-`captureFullScreen(CaptureID, maximumBytes:)` uses the optional `fullScreenSource`
-injected into the same coordinator. Without that source it reports unavailable;
-it never falls back to area capture. Both capture commands share one coordinator,
-Pending capture budget and revision-bound Copy, Retry Copy, Dismiss and Delete flow.
-With History injected, both finalize through the same commit protocol; the app
-shares Dismiss/Escape, Quit, and “Kept in History” feedback for either source.
-Diagnostics classify both as the existing closed `capture` operation.
-
-The app's **Capture Full Screen** menu item requests the display under the
-pointer, with display-local bounds and native backing-scale pixel dimensions.
-The source bounds the raw bitmap before capture. ScreenCaptureKit uses the same
-own-app exclusion filter and in-memory PNG encoding as area capture; there is no
-window-sharing fallback. Full-screen capture has no hot key in this ticket;
-shortcut defaults/remapping belong to ticket 24. Seam 1 fixtures cover 1×, 2×,
-negative global coordinates, exclusion requests, Pending image dimensions,
-thumbnail downsampling and unchanged Copy bytes. Actual display selection and
-OS exclusion require [the manual checklist](manual-checks/20-full-screen-capture.md).
-
-## Ticket 09 verification additions
-
-`sh scripts/test-core.sh --filter HistoryCommandsTests` runs seam 1 with real
-files and GRDB/SQLite, synthetic PNGs, a fixed clock, migration fixtures, and
-all nine commit-point faults for both area and full-screen captures. The command
-uses the same in-worktree caches and
-Xcode toolchain as the full `sh scripts/test-core.sh` run. Original ticket 06
-History-unavailable descriptions above remain applicable when no `CaptureHistory`
-is injected. The app now injects the lazy disk store.
-
-## Ticket 13 thumbnail stack
-
-The coordinator holds a pure `ThumbnailStack` containing exactly its Pending
-captures: a card arrives with `.pending` and leaves whenever the capture stops
-being pending (a committed exit, Delete, or a successful Copy, Save or Drag). The public interface:
-
-- `ThumbnailStackPolicy(maximumCount: 4, autoDismiss: .after(.seconds(10)))` and a
-  `clock: () -> ContinuousClock.Instant`, both optional on the coordinator's
-  initializer. Decision 54 selects these working defaults; Settings can change
-  them later.
-- `thumbnails() -> [ThumbnailCard]`: newest first. Each card has its revision,
-  `expiresAt` (arrival plus the delay on the injected clock, or nil when
-  auto-dismiss is never), optional `displayID`, and `dueExit`:
-  `.overflow` beyond the maximum count, otherwise `.timeout` once expired, else nil.
-- `execute(.exitThumbnail(revision, exit))`, with `ThumbnailExit.outcome`:
-
-  | Exit | Outcome | Admitted |
-  | --- | --- | --- |
-  | timeout | finalize to History | only once `expiresAt` is reached |
-  | swipe, close, escape | finalize to History | always |
-  | overflow | finalize to History | only when the card is beyond the maximum count |
-  | delete | discard; nothing written | always |
-
-  An exit that isn't due returns `rejected(thumbnailExitNotDue)` and changes
-  nothing. Finalizing exits return `dismiss`'s outcomes, and delete returns
-  `discard`'s. After a committed Copy whose delivery failed, delete is still
-  `alreadyFinalized` (ticket 09). A failed commit leaves the card on the stack.
-
-Overflow is a separate command rather than a side effect of capture, so the
-`capture-memory` rule that capture can't authorize persistence still holds.
-The app queries `thumbnails()` after each arrival and removal, and when a card's
-`expiresAt` passes, then issues the due exits. Pausing under focus belongs to
-ticket 32. Ticket 14 owns quit, display unplug, screen lock, and the
-auto-dismiss setting.
-`sh scripts/test-core.sh --filter ThumbnailStackCommandsTests` runs the seam 1
-tests with a manual clock, real files and SQLite.
-
-## Ticket 14 system events and auto-dismiss
-
-`ThumbnailAutoDismiss.after(Duration)` or `.never`. Zero seconds expire
-immediately; never is an explicit flag (`ThumbnailAutoDismissPreference`), not a
-zero delay. Overflow still finalizes under never. Settings persist the flag and
-seconds separately and call `setThumbnailPolicy`.
-
-`handleSystemEvent`:
-
-| Event | Outcome |
-| --- | --- |
-| quit | finalize every unedited pending card, oldest first; stop on the first failed commit |
-| screenLocked | leave pending and pause timeout; overflow still due |
-| screenUnlocked | resume timeout against the original arrival |
-| displaysChanged(remaining) | move cards whose display left to `remaining.first`; cards stay pending |
-
-A crash loses unedited pending captures: they exist only in the coordinator's
-memory (decision 31). A new coordinator on the same History root sees no
-pending cards and no History rows. The app observes `didChangeScreenParameters`
-and `com.apple.screenIsLocked` / `com.apple.screenIsUnlocked`.
-
-## Ticket 15 History window
-
-The History window reads the store directly (ticket 74, decision 71) through
-`HistoryList`: a reload is one `HistoryStore.rows()` query, newest first, with no
-paths, and reports whether the rows changed. The list is lazy: each visible row
-looks up its picture by ID with `thumbnailPNG(_:)` (falling back to
-`finalizedImage(_:)`), cached by revision. `execute(.copy/.save/.drag)` on a History revision reuses the
-delivery adapters and leaves the owned file. Repeat
-Copy is allowed. `deleteHistory` uses the same `deleting` → unlink → row-removed
-path as quota eviction; an interrupted delete finishes at the next launch.
-Done is `alreadyFinalized`. The History window is a Frisket surface, so capture
-already excludes it with the rest of the app.
-
-## Ticket 12 drag handoff
-
-`execute(.drag(revision, operation))` is another exit through the same finalization
-policy as Copy and Dismiss. Only `.copy` is accepted; `.move` and `.delete` are
-rejected and do not touch History. Since ticket 54 (DA-3) a copy drag hands off
-first and finalizes only when the destination accepted the drop: nothing is
-staged on disk, and `DragPromiseWriter` writes the promised file from memory.
-The app adapter is an `NSFilePromiseProvider` whose dragging mask is `.copy`.
-Delivery reports `.copied` only after the destination write, completion callback,
-and session lifetime finish. A successful drag commits once and removes the
-Thumbnail. A cancelled or failed drag commits nothing (`DragOutcome.commit` is
-`nil` unless an earlier delivery already committed), keeps the capture pending,
-and suppresses timeout/overflow until an explicit action. Copy, Save and Drag
-share the cached History commit, including a failed commit. An editor drag uses
-`.render` rather than `.done`: the edit becomes the next pending revision, and
-the drag finalizes it only on an accepted drop. History has no staging
-directory (ticket 78); the launch sweep removes any `staging/` an earlier build left.
-
-## Ticket 26 editor document, renderer and Done
-
-- **Edits:** `DocumentEdits` holds `scale`
-  (output pixels per document point), an optional `crop` in original document
-  points, and the ordered `redactions`.
-  `SolidRedaction(x:y:width:height:)` is in document points from the top-left
-  and fails for non-finite or non-positive geometry. It carries its `colour`
-  (decision 61), which must have alpha 255; the default, `SolidRedaction.fill`,
-  is black. It has no opacity, radius or stroke to set.
-- **Renderer (seam 2):** `CaptureRenderer.flatten(_:edits:)` is the only output
-  path, and `CaptureRenderer.preview(_:maxEdge:)` returns the editor's
-  `CapturePreview`, whose `render(edits)` paints with the same internal
-  function (ticket 68). Crop is applied first (outward snap to output pixels).
-  Each redaction is then shifted into the cropped document, multiplied by
-  `scale`, snapped outward, clipped, and copied as fill bytes with no blending
-  or antialiasing.
-- **Done (seam 1):** `execute(.done(revision, edits))` decodes the current
-  pending image, renders, encodes, and replaces the pending image with the
-  result as revision *n*+1 before any suspension. It then finalizes that
-  revision through the same `AuthorizedFinalization` boundary and returns
-  `.edited(nextRevision, commit, clipboardFailure:)`. The rendered PNG must fit
-  the remaining session byte budget before it can replace the pending image.
-  Commit failure leaves the rendered revision
-  pending for Dismiss or Copy retries. The original is unreachable either way.
-  Every command and `image(for:)` now check the current revision. A committed
-  rendered revision stays in memory for the refreshed thumbnail, then Copy
-  (reusing the commit) or Dismiss releases it. Done is refused for finalized,
-  discarded or recovery-blocked captures (no History re-editing, decision 28).
-- **Clipboard:** a copied capture remains editable only if History failed
-  before image writes. Done with Solid redactions conditionally replaces that
-  capture's earlier copy using its saved receipt, even if History is still
-  unavailable. A changed clipboard is untouched. Replacement retains PNG-only,
-  concealed and current-host-only delivery. An unavailable clipboard is reported
-  separately from the History result, with an explicit Copy action on the
-  refreshed thumbnail. Committed copies remain final and cannot be re-edited.
-- **Interrupted writes:** History reports `recoveryRequired` once an image
-  write has been attempted and finalization fails. Such revisions are frozen
-  against further editing because their authorized pixels may already be in
-  `images/`, where the next launch sweep adopts them (ticket 78).
-
-Seam 1 canary tests (`EditorRedactionCommandsTests`, adapter test target) use
-the real codec, `HistoryStore` and `ThumbnailImage` with 1× and 2× fixtures.
-They decode the History image, the History thumbnail cache, the refreshed
-on-screen thumbnail and the clipboard stand-in's bytes in fixed sRGB.
-The clipboard adapter is exercised with change-count metadata and synthetic
-AppKit items; the general pasteboard is never touched by these tests.
-
-## Ticket 23 permission gate
-
-The command initializer now requires a `CapturePermissionSource` in addition to
-pixels and clipboard. Existing fixtures explicitly inject a granted stand-in;
-the app supplies the CoreGraphics/ScreenCaptureKit adapter. See
-[permission model, platform evidence and alert ordering](permission-recovery.md)
-and [the manual state checklist](manual-checks/23-permission-states.md).
-
-The app filesystem guard permits the specific recovery forms
-`NSWorkspace.shared.open` and `FileHandle.nullDevice`; fixtures still reject
-actual file writes in those same files, writable file handles, and POSIX `open`.
-
-## Ticket 18 multi-display selection
-
-`DisplaySelectionSession(displays:pointer:)` is pure layout/selection policy.
-`SelectionDisplay` carries the stable display ID, global bottom-left frame,
-and backing scale (with the same valid-frame contract as `SelectionGeometry`).
-`display(at:)` uses half-open edges; overlapping/mirrored frames choose the
-lowest display ID. The invocation display supplies the default keyboard
-rectangle. `begin(at:)` chooses and locks the first drag's display;
-`update`, `nudge`, and `resize` delegate to the existing `SelectionGeometry`.
-`acceptedRect` rejects subpixel/zero-area selections. `updateDisplays` ignores
-enumeration order and permanently cancels on added/removed displays or any
-frame/scale change, clearing both the rectangle and origin display. A new
-session is required after cancellation.
-
-Fixture unit tests cover negative coordinates, shared edges, the origin lock,
-reordered layouts, unplugging either display, all displays removed, movement,
-scale changes, additions, and rejection of stale selection reuse. A seam-1
-pixel/display stand-in drives the same session through an unplug, checking
-that no pixels or Pending capture survive, no clipboard write occurs, and a
-subsequent selection can use the released budget. The existing hide-before-pixels
-and 1×/2× geometry checks continue to apply.
-
-The AppKit adapter presents a nonactivating key-capable panel on every display,
-using screen-saver level and `canJoinAllSpaces`, `fullScreenAuxiliary`,
-`canJoinAllApplications`, `stationary`, and `ignoresCycle`. Display notifications are observed during selection; Space notifications are
-observed from prefetch through capture completion. Space changes re-order all
-panels and restore the origin panel's key focus without activating Frisket;
-they invalidate frozen previews and end an interrupted drag, retaining the
-rectangle. Shareable-content prefetch completes before preview preparation or
-selection, preserving permission and pending-alert ordering. Preview sampling
-happens before any panel is shown. `AreaCaptureSource` compares
-the Space generation across asynchronous prefetch and preparation and discards invalidated
-previews before selection. The overlay stamps the accepted rectangle with the
-current generation; the source checks it before and after final capture at the
-core seam, returning cancellation if it changed. Controlled asynchronous
-stand-ins verify preview invalidation, no Pending image after a switch during
-final capture, and budget recovery. All panels and
-view snapshots are removed before the selection continuation resumes;
-`ScreenCapturePlatform` flushes window updates before the final pixel request
-and retains own-app exclusion. Layout validation also surrounds asynchronous
-preview preparation and final pixel capture. No global event monitors or event
-taps are used. OS window ordering, activation, cursor behavior, and actual
-pixel output remain [manual checks](manual-checks/18-selection-overlay-displays.md).
-
-## Ticket 11 Save interface
-
-`execute(.save(revision))` and `execute(.retrySave(revision))` return
-`.save(SaveOutcome)` with the revision, History `commit`, and file `delivery`
-reported separately. Save uses the same shared delivery step and retained commit
-result as Copy. Only delivery is retried; successful or failed History commits
-are not repeated. Invalid/stale/in-flight commands are rejected before delivery.
-Copy and Save have separate retry eligibility. A committed capture cannot be
-pending-discarded after export failure; Dismiss retains that single History item.
-History failure does not block export and the app presents an acknowledgment
-notice when delivery succeeds without History.
-
-The `CaptureExport` adapter accepts only `AuthorizedFinalization`. Its PNG bytes
-are the coordinator's frozen output (currently the unedited revision; future
-editor rendering must supply its flattened result there). `PNGFileExporter`
-creates the selected directory on delivery, writes an exclusively created
-temporary file in that folder (mode `0644`, subject to umask), then publishes
-the complete PNG with an exclusive rename. It never opens/moves a History
-image. `ExportFilenamePolicy` uses
-`Frisket-<capture UUID>-r<revision>.png`, followed by `-2`, `-3`, etc. on collisions;
-exclusive rename prevents races from overwriting existing files or symlinks.
-After 10,000 occupied candidates, delivery reports unavailable. Failed writes
-remove only the temporary file created by that attempt. Exports are not registered with
-History; retention/deletion operate on app-owned data only.
-
-`ExportFolderPolicy.assess` is pure core policy over path/access/resource facts.
-The disk adapter resolves existing ancestors (including symlinks with missing
-children), accounts for case-insensitive volumes, and compares volume/file
-resource identities on existing ancestors, including roots with missing suffixes.
-It refuses this build's History root and the debug and production History roots
-under Application Support, including their descendants and aliases, and refuses
-unwritable/non-directory destinations. Intermediate symlink replacement between
-assessment and writing remains a race; descriptor-relative traversal is deferred.
-It checks
-again on every delivery, including retries. iCloud detection combines the
-`~/Library/Mobile Documents` location with `isUbiquitousItem` on ancestors.
-Settings uses the same assessment and warns before accepting an iCloud folder.
-No diagnostic carries a filename/path; Save extends the existing closed enums.
-
-The exporter lives in the existing filesystem-capable `StorageAdapter/` and
-requires the same finalization capability as History. No static guard exception
-was added, and `HistoryStore` recovery internals were not changed.
-
-Focused verification: `sh scripts/test-core.sh --filter
-'SaveCommandsTests|ExportFolderPolicyTests'`. Tests use synthetic PNGs, real
-SQLite/files in temporary directories, and one held delivery stand-in to test
-in-flight command gating. See [manual checks](manual-checks/11-save-and-settings.md)
-for the runtime items that remain pending.
-
-## Ticket 10 crash recovery
-
-`sh scripts/test-core.sh --filter HistoryRecoveryTests` exercises the launch
-sweep through seam 1 with real SQLite and temporary files. The command uses the
-standard `.build` scratch path; tests locate `.build/debug/HistoryCrashHelper`.
-Tier 1 throws after every named commit point. Tier 2 launches that helper with
-`Process` and requires actual `SIGKILL` termination at every point. Both rebuild
-History over the same directory and compare entries, logical sizes and every
-file's bytes after two sweeps. Explicit point lists in both tiers are checked
-against `HistoryCommitPoint.allCases`; omitting a point must fail the check.
-
-Additional cases cover a separate process holding the root lock, release on
-process death, invalid records and undecodable pixel streams, missing images
-and thumbnails, interrupted deletions, archive accounting, root relocation,
-future migrations with outstanding WAL, symlink refusal and launch ordering.
-See [History storage](history-storage.md) for the launch interface and failure
-behavior. These tests launch only the helper, never the app, and use synthetic
-PNGs and a recording clipboard stand-in.
-
-## Ticket 21 window capture
-
-`captureWindow(CaptureID, maximumBytes:)` uses the optional `windowSource` on
-`CaptureLifecycleCoordinator`, sharing the permission gate, Pending capture budget,
-Copy/Save and their retries, Delete and History finalization with the other
-capture commands.
-A missing window source fails unavailable without falling back to area capture.
-Diagnostics use the existing closed `capture` operation.
-
-`WindowSelection(windows:ownProcessID:ownBundleIdentifier:)` is pure core policy:
-its metadata input is front-to-back, in global top-left-origin screen points.
-`candidates` excludes off-screen, minimized, own-process,
-own-bundle and unidentified-owner windows; `window(at:)` returns the frontmost
-eligible hit, preserving negative coordinates and display-spanning bounds.
-Visible foreign floating windows remain eligible regardless of window level;
-the platform excludes desktop elements.
-No titles or pixels enter this policy. The fixture adapter uses this same policy
-through seam 1; the live adapter intersects on-screen `SCShareableContent` with
-CoreGraphics' metadata-only on-screen z-order. SCK exposes no minimized flag;
-minimized windows are absent from this on-screen intersection, and `isActive`
-is deliberately not used (Stage Manager can make an off-screen window active).
-
-`WindowScreenCapturePlatform` awaits preparation before lazily showing temporary
-nonactivating panels on all displays. Window-local input handles hover, click,
-arrows/Tab, Return and Escape. Space/display changes cancel selection. After
-hiding and flushing the panels, it reloads the current window list and validates
-identity and eligibility. `SCContentFilter(desktopIndependentWindow:)` captures
-only the selected foreign window, excluding all Frisket panels by construction;
-no display crop or sharing flags are used. Cursor, child windows, shadows and
-audio are disabled. Native content dimensions are bounded before requesting
-pixels, and encoded PNG bytes are bounded before returning them. Permission
-and Space/display generation are checked around asynchronous capture work.
-
-The **Capture Window** menu adds no shortcut (ticket 24 owns that). Runtime
-acceptance is pending in [the synthetic-only checklist](manual-checks/21-window-capture.md).
-SDK evidence came from installed `SCShareableContent.h`, `SCStream.h` and
-`CGWindow.h`; no network research was performed.
-
-## Ticket 17 History database failure
-
-`historyAvailability()` reports the last open or migration outcome without
-creating History or deleting a refused database. Corrupt files, unknown
-migrations, and permission failures leave History disabled; capture, Copy,
-Save, and drag still deliver. Dismiss stays pending when the commit is
-refused. Settings and the History window show a notice, **Try Again**
-(`recoverHistory()`), and **Show History Folder**. Recovery never erases the
-database; the user can copy it out or repair it, then retry. See
-[manual checks](manual-checks/17-history-database-failure.md).
-
-## Ticket 27 crop
-
-`DocumentCrop` is an optional edit in original document points. The renderer
-crops first, then snaps redactions outward in the cropped output. Seam 2 tests
-cover 1×/2×, fractional rectangles, a frozen snapshot, and render-equivalence
-against an independently cropped base. Seam 1 canaries run Done+crop at 1× and
-2× and check History, the pending image, both thumbnails, Copy, Save, and drag.
-The editor Crop tool (`C`) composes onto an existing crop; the canvas drops the
-pre-crop `NSImage` before drawing the new size. See
-[manual checks](manual-checks/27-crop.md).
-
-## Ticket 33 copy recognized text
-
-`execute(.copyRecognizedText(revision))` runs `TextRecognizer` on the current
-revision's image (pending bytes, or History after finalize). The recognizer
-await does not hold `inProgress`, so Done can replace the revision while OCR
-is in flight; a stale result is dropped and the clipboard is not written.
-The command outcome carries only `characterCount` and delivery. Diagnostics
-record success or failure for `.copyRecognizedText` and never the string.
-
-The app injects `VisionTextRecognizer` (`VNRecognizeTextRequest`, accurate,
-no language correction) and `PasteboardAdapter.writeText` (string + concealed
-+ current-host-only). The thumbnail **Copy Text** control, `t`, and the
-VoiceOver action call the same command. The notice title is only
-`Copied N characters`.
-
-Seam 1 stand-ins recognize a canary while it is visible and return empty
-after Solid redaction. The tagged local Vision pair is
-`FRISKET_VISION_OCR=1` (`RecognizedTextVisionTests`); it records the OS
-build and requires CANARY before redaction and its absence after. See
-[manual checks](manual-checks/33-copy-recognized-text.md).
-
-## Ticket 36 editing a tall capture
-
-Scrolling capture was removed (decision 60), so no capture is taller than one
-display. Done renders the whole image once with `CaptureRenderer.flatten`
-(ticket 65) and encodes it with ImageIO; the strip PNG encoder and its zlib
-bindings were deleted by ticket 67.
-
-Blur is a vImage 3×3 box convolution, edge-extended at its box and run six
-times; Magnify draws the box's top-left quarter at 2× over the whole box with
-CoreGraphics and no interpolation. Both read only their own box of the
-redacted composite, and the redactions are stamped again after them. The strip
-walk was deleted with the old renderer (ticket 68).
-
-The editor canvas is `CaptureRenderer.preview(capture)` (max edge **2048**),
-decoded once off the main actor; each edit renders off the main actor and the
-main actor only swaps the image. At full size the preview equals the
-delivered image. Downscaled, each preview pixel averages only capture pixels
-inside its own block, every block that touches a Solid redaction is exactly
-that redaction's colour, and annotations keep their full-size geometry, scaled
-(D23). Done re-renders the pending PNG at full resolution.
-
-The opt-in peak is `sh scripts/editor-memory-run.sh` (one display, 6,016 ×
-3,384, every edit kind) or `sh scripts/editor-memory-run.sh cap` (5,120 ×
-32,768). Gate B results are in decision 72.
+The package suite also runs the Python tests of `Tools/Performance/`,
+`Tools/FirstRun/` and `Tools/Release/`. The performance runbooks are
+[37](manual-checks/37-performance-baselines.md) and
+[38](manual-checks/38-frisket-performance.md).

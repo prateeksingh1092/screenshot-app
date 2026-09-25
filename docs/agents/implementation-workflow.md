@@ -1,5 +1,11 @@
 # Implementation workflow
 
+**Current practice (remediation, from 2026-09-24).** An implementer follows
+`Plans/implementer-brief.md`: one ticket per worktree, test first, `scripts/ci.sh`
+green, medium effort (decision 62). The in-session instruction decides who leads
+(CLAUDE.md). The rest of this page records the v1 workflow; where it disagrees
+with the brief or a later decision, those win.
+
 How Frisket tickets are implemented under decision 46. Sources: the local `implement`, `tdd`, and `code-review` skills (requirements), [the Pocock implementation research](../research/2026-09-22-pocock-implementation-process.md), and Codex's assessment (adopt with changes, 2026-09-22). Two practices here come from Matt Pocock's upstream docs, not from the local skill text, and are adopted as project practice: review in a fresh session, and the operator (not the implementer) closes tickets.
 
 ## Per ticket
