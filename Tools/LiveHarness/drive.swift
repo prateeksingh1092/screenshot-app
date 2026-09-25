@@ -244,7 +244,13 @@ func find(_ pid: pid_t, _ label: String, exact: Bool) -> AXUIElement? {
         for c in children(e) { if let f = walk(c, d + 1) { return f } }
         return nil
     }
-    for r in roots(pid) { if let f = walk(r, 0) { return f } }
+    // An open History window has hundreds of rows; walking it made one search take 12 s (2026-09-25).
+    // Search it only when the label is about History ("History captures…", "…selected History capture").
+    let wantsHistory = label.localizedCaseInsensitiveContains("History")
+    for r in roots(pid) {
+        if !wantsHistory, axString(r, kAXTitleAttribute) == "Frisket History" { continue }
+        if let f = walk(r, 0) { return f }
+    }
     return nil
 }
 

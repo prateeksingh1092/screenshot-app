@@ -20,7 +20,7 @@
 
 **Blocked by:** none. It runs before 67, which also changes the renderer.
 
-**Status:** resolved by diagnosis 2026-09-25: the renderer is not slow; the cause is the History reload, fixed in ticket 74
+**Status:** resolved 2026-09-25: no product defect; the harness accessibility search was slow with History open (fixed in `drive`)
 
 - [x] A package test times `CaptureFlattening.flatten` and the editor preview render (`DocumentRenderer.render`) for 800 × 1,000 px with one arrow and one label, and fails above a budget: 250 ms each in a debug build, or whatever the measurement supports, recorded in `decisions.md`.
 - [ ] The measured cause is named in the report with numbers, and fixed. The delivered-vs-preview byte equality and every Solid redaction test stay exact.
@@ -47,3 +47,13 @@ On the installed `789d460`, built-in display, with the same capture and steps:
 | open (about 240 items) | 5.8 s | 1.1 s | 48.4 s |
 
 **Correction:** the "before 65" row in this ticket's table was measured just after a relaunch, which had closed the History window. It was never a regression from ticket 65 or 66. The History reload is ticket 74's area; its agent has this evidence, and its live check covers the timing with History open.
+
+### 2026-09-25: coordinator, the real cause is the harness
+
+- **Still slow after ticket 74:** with History open, the editor took 5.1 s to open and Done 43 s.
+- **Frisket was idle:** a 6 s `sample` of Frisket during the slow Done showed every thread idle (`mach_msg`, `__workq_kernreturn`).
+- **The measurement was the slow part:** one `drive axfind` took 12.51 s with the History window open and 0.10 s with it closed. It walks the whole accessibility tree, and the timing loops and harness rows poll it.
+- **Conclusion:** the slowness was never Frisket's. My first diagnosis (ticket 65 or 66) and the second (the History reload) were both wrong.
+- **What still holds:** ticket 74's one-query History is still a real improvement.
+- **Harness fix:** `drive` skips the History window unless the label is about History. One search now takes 0.12 s with History open.
+- **Status:** resolved; no product defect.
