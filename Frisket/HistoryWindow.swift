@@ -95,19 +95,40 @@ import FrisketCore
         }
     }
 
+    /// Called after a History item is deleted, so its open Thumbnail closes on screen too (D10).
+    var onHistoryDeleted: ((CaptureID) -> Void)?
+
     func delete() {
-        guard !busy, let commands, let row = selectedRow else { return }
+        guard !busy, let commands, let row = selectedRow, confirmDelete(row) else { return }
         busy = true
         Task {
             let result = await commands.execute(.deleteHistory(row.item.captureID))
             busy = false
-            if case .historyDeleted = result {
+            switch result {
+            case .historyDeleted(let id):
+                onHistoryDeleted?(id)
                 await reload()
-            } else {
+            case .rejected(.commandInProgress):
                 await reload(clearingMessage: false)
-                message = "Delete failed. Try again."
+                message = "This capture is busy with another action. Delete again in a moment."
+            default:
+                await reload(clearingMessage: false)
+                message = "Could not delete. History is unavailable."
             }
         }
+    }
+
+    /// Delete is destructive, so it is the one History action that asks first (DA-4, DA-5).
+    private func confirmDelete(_ row: Row) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Delete this capture from History?"
+        alert.informativeText = "\(row.label). It is removed at once and can't be restored. "
+            + "Copies you already saved, pasted or dragged elsewhere are not affected."
+        alert.alertStyle = .warning
+        let delete = alert.addButton(withTitle: "Delete")
+        delete.hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
 

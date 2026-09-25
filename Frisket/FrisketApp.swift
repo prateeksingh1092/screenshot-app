@@ -108,6 +108,7 @@ import FrisketCore
                 return !self.requestingPermission
             }
             captures = presentation
+            historyWindow.model.onHistoryDeleted = { [weak presentation] id in presentation?.historyDeleted(id) }
         }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)

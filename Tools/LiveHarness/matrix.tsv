@@ -21,5 +21,5 @@ stack	D9	xfail	Two pending Thumbnails don't overlap
 focus-latest	D12	xfail	After ⌘⇧2, the Thumbnail's C key copies (keys reach the Thumbnail, not the frontmost app)
 history-copy	-	pass	History row Copy puts the newest capture on the clipboard (pattern --verify)
 history-save	D17	xfail	History row Save writes one export whose name carries the date
-history-delete	D10	xfail	History Delete with the capture's Thumbnail still open asks first, then succeeds
+history-delete	D10	pass	History Delete with the capture's Thumbnail still open asks first, then succeeds
 drag-cancel	D7	xfail	A cancelled editor drag leaves History and drag staging unchanged
