@@ -45,7 +45,8 @@ private struct ThumbnailCard: View {
             if !status.isEmpty {
                 Text(status)
                     .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)   // the card has a fixed size (D9); VoiceOver hears the whole status
+                    .accessibilityLabel(status)
             }
         }
         .padding(12)
@@ -317,23 +318,25 @@ private final class ThumbnailCardPanel: NSPanel {
         }
     }
 
+    /// Every Thumbnail has one fixed size (D9): the capture is aspect-fit in a fixed image area,
+    /// and the controls and status line share a fixed area below it.
     private func layoutChrome(image: NSImage) {
-        let width: CGFloat = 288
+        let card = ThumbnailStackLayout.cardSize
         let gap: CGFloat = 8
-        let maxImage = CGSize(width: 264, height: 148)
+        let imageArea = CGSize(width: 264, height: 128)
+        let glassHeight = card.height - imageArea.height - gap
         let aspect = max(image.size.width, 1) / max(image.size.height, 1)
-        var imageSize = CGSize(width: maxImage.width, height: maxImage.width / aspect)
-        if imageSize.height > maxImage.height {
-            imageSize.height = maxImage.height
-            imageSize.width = maxImage.height * aspect
+        var imageSize = CGSize(width: imageArea.width, height: imageArea.width / aspect)
+        if imageSize.height > imageArea.height {
+            imageSize.height = imageArea.height
+            imageSize.width = imageArea.height * aspect
         }
-        controlHost?.layoutSubtreeIfNeeded()
-        let glassHeight = max(controlHost?.fittingSize.height ?? 0, 44)
         let origin = panel.frame.origin
-        panel.setContentSize(NSSize(width: width, height: imageSize.height + gap + glassHeight))
+        panel.setContentSize(card)
         if shown { panel.setFrameOrigin(origin) }
-        controlGlass?.frame = NSRect(x: 0, y: 0, width: width, height: glassHeight)
-        imageWell?.frame = NSRect(x: (width - imageSize.width) / 2, y: glassHeight + gap,
+        controlGlass?.frame = NSRect(x: 0, y: 0, width: card.width, height: glassHeight)
+        imageWell?.frame = NSRect(x: (card.width - imageSize.width) / 2,
+                                  y: glassHeight + gap + (imageArea.height - imageSize.height) / 2,
                                   width: imageSize.width, height: imageSize.height)
     }
 
