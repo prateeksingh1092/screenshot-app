@@ -12,6 +12,8 @@ import tempfile
 import unicodedata
 
 TEST_ROOTS = ("Tests/",)
+CHECKS = ["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory",
+          "input-monitoring", "app-sources", "network", "silgen"]
 
 
 def dependency_issues(manifest, resolved=None):
@@ -239,6 +241,54 @@ def input_monitoring_issues(files):
     return issues
 
 
+
+def product_swift(files):
+    for path, text in sorted(files.items()):
+        if path.startswith(("Sources/", "Frisket/")) and path.endswith(".swift"):
+            yield path, text
+
+
+def network_issues(files):
+    """Spec story 74: Frisket makes no network connections. Lexical, like the other checks."""
+    issues = []
+    modules = {"Network", "CFNetwork", "NetworkExtension", "WebKit", "MultipeerConnectivity", "CloudKit"}
+    symbols = (r'\b(?:URLSession\w*|NSURLSession\w*|NSURLConnection|NSURLDownload|NW(?:Connection|Listener|Browser|PathMonitor|Endpoint)\w*'
+               r'|CFSocket\w*|CFStreamCreatePairWithSocket\w*|CFHTTPMessage\w*|SCNetworkReachability\w*|WKWebView'
+               r'|getStreamsToHost\w*)\b'
+               r'|(?<![\w.])(?:socket|connect|sendto|recvfrom|getaddrinfo|gethostbyname)\s*\(')
+    for path, text in product_swift(files):
+        code = swift_code(text).replace("`", "")
+        imports = re.findall(r'\bimport\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(\w+)', code)
+        # A declaration such as `func connect(_:)` is not a call to POSIX connect(2).
+        calls = re.sub(r'\bfunc\s+\w+', 'func _', code)
+        if any(module in modules for module in imports) or re.search(symbols, calls):
+            issues.append(f"{path}: network API is forbidden")
+    return issues
+
+
+# D22: C functions bound with the Swift calling convention. Ticket 63 removes notify_post;
+# ticket 67 removes the zlib and libcompression bindings. Nothing may join this list.
+KNOWN_SILGEN_NAMES = {
+    ("Frisket/SystemScreenshotHotkeyStore.swift", "notify_post"),
+    ("Sources/FrisketCore/StripPNGEncoder.swift", "compression_stream_init"),
+    ("Sources/FrisketCore/StripPNGEncoder.swift", "compression_stream_process"),
+    ("Sources/FrisketCore/StripPNGEncoder.swift", "compression_stream_destroy"),
+    ("Sources/FrisketCore/StripPNGEncoder.swift", "crc32"),
+    ("Sources/FrisketCore/StripPNGEncoder.swift", "adler32"),
+}
+
+
+def silgen_issues(files, strict=False):
+    issues = []
+    for path, text in product_swift(files):
+        if not re.search(r'@_silgen_name\b', swift_code(text)):
+            continue
+        names = re.findall(r'@_silgen_name\s*\(\s*"([^"]*)"', text) or ["?"]
+        for name in names:
+            if strict or (path, name) not in KNOWN_SILGEN_NAMES:
+                issues.append(f"{path}: @_silgen_name(\"{name}\") binds a C function with the Swift calling convention")
+    return issues
+
 def app_source_issues(root):
     # Parse the project rather than depending on Xcode's formatting or comments.
     project_path = root / "Frisket.xcodeproj" / "project.pbxproj"
@@ -362,6 +412,10 @@ def check_fixture(path):
         actual = identity_issues(fixture["files"])
     elif fixture["check"] == "provenance":
         actual = provenance_issues(fixture["files"], fixture["entries"])
+    elif fixture["check"] == "network":
+        actual = network_issues(fixture["files"])
+    elif fixture["check"] == "silgen":
+        actual = silgen_issues(fixture["files"], fixture.get("strict", False))
     else:
         raise ValueError("unknown fixture check")
     if actual != fixture["expected"]:
@@ -405,7 +459,7 @@ def dumped_manifest(root):
     return json.loads(result.stdout)
 
 
-def repository_issues(root, check):
+def repository_issues(root, check, strict=False):
     if check == "app-sources":
         return app_source_issues(root)
     if check == "dependencies":
@@ -415,6 +469,10 @@ def repository_issues(root, check):
     files = product_files(root)
     if check == "input-monitoring":
         return input_monitoring_issues(files)
+    if check == "network":
+        return network_issues(files)
+    if check == "silgen":
+        return silgen_issues(files, strict)
     if check == "imports":
         return import_issues(files)
     if check == "diagnostics":
@@ -432,7 +490,9 @@ if __name__ == "__main__":
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--fixture", type=pathlib.Path)
     mode.add_argument("--root", type=pathlib.Path)
-    parser.add_argument("--check", choices=["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory", "input-monitoring", "app-sources"])
+    parser.add_argument("--check", choices=CHECKS)
+    parser.add_argument("--strict", action="store_true",
+                        help="silgen: also report the known D22 uses")
     args = parser.parse_args()
     try:
         if args.fixture:
@@ -440,7 +500,7 @@ if __name__ == "__main__":
         else:
             if not args.check:
                 parser.error("--root requires --check")
-            issues = repository_issues(args.root.resolve(), args.check)
+            issues = repository_issues(args.root.resolve(), args.check, args.strict)
             if issues:
                 raise ValueError("\n".join(issues))
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
