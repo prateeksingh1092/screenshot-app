@@ -89,3 +89,6 @@ Codex.local.md
 !Tests/Fixtures/ScrollingCapture/synthetic-sticky/frame-1.png
 !Tests/Fixtures/ScrollingCapture/synthetic-sticky/frame-2.png
 !Tests/Fixtures/ScrollingCapture/synthetic-sticky/reference.png
+
+# Local signing identity (Config/Signing.example.xcconfig documents it).
+Config/Signing.xcconfig

@@ -1,0 +1,10 @@
+// Signing for the Frisket app target.
+//
+// Your team and identity go in Config/Signing.xcconfig, which git ignores; copy
+// Config/Signing.example.xcconfig to start. Without it the app is signed ad hoc,
+// and macOS forgets the Screen Recording grant on every rebuild (decision 49).
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+#include? "Signing.xcconfig"
