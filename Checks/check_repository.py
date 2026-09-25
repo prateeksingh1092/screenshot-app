@@ -266,10 +266,9 @@ def network_issues(files):
     return issues
 
 
-# D22: C functions bound with the Swift calling convention. Ticket 63 removes notify_post;
+# D22: C functions bound with the Swift calling convention. Ticket 63 removed notify_post;
 # ticket 67 removes the zlib and libcompression bindings. Nothing may join this list.
 KNOWN_SILGEN_NAMES = {
-    ("Frisket/SystemScreenshotHotkeyStore.swift", "notify_post"),
     ("Sources/FrisketCore/StripPNGEncoder.swift", "compression_stream_init"),
     ("Sources/FrisketCore/StripPNGEncoder.swift", "compression_stream_process"),
     ("Sources/FrisketCore/StripPNGEncoder.swift", "compression_stream_destroy"),

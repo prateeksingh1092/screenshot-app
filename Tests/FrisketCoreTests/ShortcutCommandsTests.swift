@@ -34,14 +34,18 @@ import Testing
     #expect(commands.failures[.captureScrolling] == .systemCollision)
 }
 
-@MainActor @Test func claimingSystemScreenshotShortcutsLetsThoseDefaultsRegister() {
+/// DA-2: once the user turns the macOS shortcuts off in System Settings, starting again registers them.
+@MainActor @Test func defaultsRegisterAfterTheUserTurnsOffTheMacOSShortcuts() {
     let system = ShortcutSystemStandIn()
-    let family = [20, 21, 22, 23].map { ShortcutBinding(keyCode: $0, modifiers: 768) }
-    system.enabled = family
+    system.enabled = [20, 21, 22, 23].map { ShortcutBinding(keyCode: $0, modifiers: 768) }
     let commands = ShortcutCommands(system: system)
-    commands.start(claimingSystemShortcuts: family)
+    commands.start()
+    #expect(commands.failures[.captureArea] == .systemCollision)
+    #expect(commands.active[.showHistory] == ShortcutBinding(keyCode: 18, modifiers: 768))
+    system.enabled = []
+    commands.start()
     #expect(commands.active[.captureArea] == ShortcutBinding(keyCode: 21, modifiers: 768))
-    #expect(commands.permits(.captureArea))
+    #expect(commands.failures.isEmpty)
     #expect(commands.permits(.captureScrolling))
 }
 
@@ -150,16 +154,6 @@ func shortcutFailedRemapNeverChangesActiveOrSavedBinding(failure: ShortcutFailur
     #expect(SystemScreenshotHotkeys.isFamily(ShortcutBinding(keyCode: 20, modifiers: 4864)))
     #expect(!SystemScreenshotHotkeys.isFamily(ShortcutBinding(keyCode: 21, modifiers: 6400)))
     #expect(!SystemScreenshotHotkeys.isFamily(ShortcutBinding(keyCode: 18, modifiers: 768)))
-}
-
-@Test func disablingTheFamilyTurnsOffOnlyEnabledScreenshotIdentifiers() {
-    let enabled = ["28": true, "30": false, "184": true, "99": true]
-    let result = SystemScreenshotHotkeys.turnedOff(byDisablingFamily: enabled)
-    #expect(result.changed == ["28", "184"])
-    #expect(result.enabled["28"] == false)
-    #expect(result.enabled["30"] == false)
-    #expect(result.enabled["184"] == false)
-    #expect(result.enabled["99"] == true)
 }
 
 @Test func collisionsAreDesiredFamilyBindingsTheSystemStillHas() {

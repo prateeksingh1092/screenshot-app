@@ -17,7 +17,15 @@ Quit any other screenshot app that uses these keys, including CleanShot. Frisket
 | ⌘⇧2 | Focus the latest thumbnail |
 | ⌘⇧1 | Open History |
 
-If macOS still has those screenshot shortcuts turned on, Frisket turns them off and Settings can restore the ones it changed. Click **Change** in Settings and press keys to pick a different shortcut.
+Frisket never changes your macOS settings. If macOS still uses ⇧⌘3, ⇧⌘4, ⇧⌘5 or ⇧⌘6 for its own screenshots, Frisket leaves those shortcuts inactive, and Settings names them:
+
+1. Open **System Settings › Keyboard**, then click **Keyboard Shortcuts…**. Settings' **Open Keyboard Shortcuts…** button takes you there.
+2. Choose **Screenshots** and turn off the shortcuts Frisket named.
+3. Come back to Frisket; it registers them at once. **Check Again** in Settings does the same.
+
+To give them back to macOS, turn them on again in the same place. An earlier Frisket build turned them off by itself. If it did so on your Mac, Settings shows **Restore macOS screenshot shortcuts**, which turns back on only the ones it changed, and only when you click it.
+
+Click **Change** in Settings and press keys to pick a different shortcut.
 
 The first capture asks for Screen Recording permission. Grant it, then capture again if macOS asks you to reopen Frisket.
 
