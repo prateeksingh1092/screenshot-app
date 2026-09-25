@@ -43,7 +43,9 @@ func frontInfo() -> (name: String, pid: pid_t) {
 }
 func safeTarget() -> Bool {
     let f = frontInfo()
-    return f.pid == frisketApp()?.processIdentifier || f.name == patternName
+    // `FRISKET_DRIVE_ALLOW_FRONT="CleanShot X"` allows keys to one named comparator app for one command.
+    let allowed = Set((ProcessInfo.processInfo.environment["FRISKET_DRIVE_ALLOW_FRONT"] ?? "").split(separator: ",").map(String.init))
+    return f.pid == frisketApp()?.processIdentifier || f.name == patternName || allowed.contains(f.name)
 }
 
 func activeDisplays() -> [CGDirectDisplayID] {
