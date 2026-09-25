@@ -40,6 +40,10 @@ for check in dependencies imports identity provenance diagnostics capture-memory
   }
 done
 
+echo "== drift (retired terms, Checks/retired-terms.tsv)"
+/usr/bin/python3 -B Checks/check_drift.py --self-test >/dev/null
+/usr/bin/python3 -B Checks/check_drift.py --root "$root" || { echo "ci: a retired term is back in a live file" >&2; exit 1; }
+
 echo "== package tests"
 "$root/scripts/test-core.sh"
 

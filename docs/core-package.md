@@ -633,5 +633,5 @@ re-renders the pending PNG at full resolution.
 
 The opt-in peak is `sh scripts/editor-memory-run.sh`. Coordinator release run:
 **5120×57,600**, 225 strips, PNG 1,180,425,795 bytes, peak physical
-footprint **586,006,528** bytes, under 2 GB. See
-[manual checks](manual-checks/36-editing-long-scrolling.md).
+footprint **586,006,528** bytes, under 2 GB. That size came from a scrolling
+capture, which decision 60 removed; tickets 65 and 67 resize this budget.

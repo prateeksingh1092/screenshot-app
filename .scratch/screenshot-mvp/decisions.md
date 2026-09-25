@@ -210,6 +210,10 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
 
 62. **Effort (Prateek, 2026-09-25):** medium effort for every remaining ticket. This supersedes decision 58's high default and its xhigh list (tickets 65–68). He chose this after being told the risk: the renderer and lifecycle tickets guard the Solid redaction and Pending capture invariants. The mitigation is that those tickets keep their test-first seams and the canary leak tests.
 
+63. **Saved shortcuts outlive removed actions (coordinator, 2026-09-25, ticket 87):** `ShortcutAction.savedBindings(from:)` skips actions it no longer knows, such as `captureScrolling`. Without this, the saved `globalShortcuts.v1` preference would stop decoding and silently reset every shortcut the user had customised. Two tests cover it.
+    - **Drift check:** `Checks/check_drift.py` runs in `ci.sh` and fails when a term retired by a decision (listed in `Checks/retired-terms.tsv`) appears in a live file.
+
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

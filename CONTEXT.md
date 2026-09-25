@@ -17,10 +17,6 @@ _Avoid_: Region, crop (crop happens in the editor)
 **Origin display**:
 The display on which a selection begins; the selection cannot leave it.
 
-**Loupe**:
-A magnified view of the pixels under the pointer, shown while choosing a selection so its edges can be placed exactly.
-_Avoid_: Magnifier (confused with Magnify)
-
 **Capture exclusion list**:
 Apps whose windows are always left out of captures.
 
@@ -39,7 +35,7 @@ _Avoid_: Redaction
 
 **Magnify**:
 An editor effect that enlarges part of a capture in place. It never conceals content.
-_Avoid_: Loupe, zoom
+_Avoid_: zoom
 
 **OCR**:
 Extraction of text from a capture so that the text can be copied or otherwise used.

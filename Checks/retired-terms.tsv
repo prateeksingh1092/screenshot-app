@@ -1,0 +1,8 @@
+# Terms a decision has retired. Checks/check_drift.py fails CI when one reappears in a live file.
+# A line that says why the term is gone (Retired, Superseded, "decision 6x") is allowed.
+# pending: comma-separated path prefixes still waiting for their ticket, written prefix=ticket. They warn, not fail.
+# pattern (Python regex, case-insensitive)	decision	use instead	pending
+\bLoupe\b	60	(no Loupe while selecting)
+\bxhigh\b	62	medium effort
+RGBA\(0, ?0, ?0, ?255\)|opaque black|exact(ly)? black|guaranteed[^.\n]{0,12}black	61	the chosen redaction colour at alpha 255	Sources/=88,Tests/=88,Frisket/=88,Tools/=88,docs/=88
+ScrollingCapture|Stitcher|captureScrolling|scrolling capture|⌘⇧6	60	(scrolling capture is removed)

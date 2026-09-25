@@ -164,7 +164,7 @@ func shortcutFailedRemapNeverChangesActiveOrSavedBinding(failure: ShortcutFailur
 /// Decision 60 retired the scrolling shortcut. A preference saved before then still names it;
 /// the other saved shortcuts must survive instead of the whole preference being dropped.
 @Test func savedShortcutsFromBeforeScrollingWasRemovedKeepTheirOtherBindings() throws {
-    let saved = Data(#"["captureArea",{"keyCode":0,"modifiers":256},"captureScrolling",{"keyCode":22,"modifiers":768}]"#.utf8)
+    let saved = Data(#"["captureArea",{"keyCode":0,"modifiers":256},"captureScrolling",{"keyCode":22,"modifiers":768}]"#.utf8)  // a legacy preference (decision 60)
     #expect(ShortcutAction.savedBindings(from: saved) == [.captureArea: ShortcutBinding(keyCode: 0, modifiers: 256)])
 }
 
