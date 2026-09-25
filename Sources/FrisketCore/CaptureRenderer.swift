@@ -301,12 +301,13 @@ enum AnnotationPainter {
             // Straight caps and joins only (decision 68).
             context.setLineCap(.square)
             context.setLineJoin(.miter)
-            let pen = CGFloat(max(2, (2 * scale).rounded()))
-            let colour = layer == .ink ? inkColour : plateColour
-            context.setStrokeColor(colour)
-            context.setFillColor(colour)
-            context.setLineWidth(layer == .ink ? pen : pen + 2)
             for annotation in annotations {
+                // Each mark's own ink and width (ticket 84); the default 2 pt keeps decision 68's pen.
+                let pen = CGFloat(max(2, (annotation.width * scale).rounded()))
+                let colour = layer == .ink ? inkColour(annotation.colour) : plateColour
+                context.setStrokeColor(colour)
+                context.setFillColor(colour)
+                context.setLineWidth(layer == .ink ? pen : pen + 2)
                 draw(annotation, layer: layer, in: context, scale: scale, origin: origin, pen: pen,
                      fullWidth: fullWidth, fullHeight: fullHeight)
             }
@@ -327,9 +328,9 @@ enum AnnotationPainter {
         }
     }
 
-    private static let inkColour = CGColor(srgbRed: CGFloat(DocumentAnnotation.stroke.red) / 255,
-                                           green: CGFloat(DocumentAnnotation.stroke.green) / 255,
-                                           blue: CGFloat(DocumentAnnotation.stroke.blue) / 255, alpha: 1)
+    private static func inkColour(_ ink: RGBAPixel) -> CGColor {
+        CGColor(srgbRed: CGFloat(ink.red) / 255, green: CGFloat(ink.green) / 255, blue: CGFloat(ink.blue) / 255, alpha: 1)
+    }
     private static let plateColour = CGColor(srgbRed: CGFloat(EditPainter.plate.red) / 255,
                                              green: CGFloat(EditPainter.plate.green) / 255,
                                              blue: CGFloat(EditPainter.plate.blue) / 255, alpha: 1)
@@ -356,7 +357,8 @@ enum AnnotationPainter {
             let vx = tip.x - tail.x, vy = tip.y - tail.y
             let length = (vx * vx + vy * vy).squareRoot()
             guard length > 0 else { return }
-            let size = CGFloat(max(8, 10 * scale))
+            // The head grows with the line: 10 pt at the default 2 pt width.
+            let size = CGFloat(max(8, (8 + annotation.width) * scale))
             let ux = vx / length, uy = vy / length
             let back = CGPoint(x: tip.x - ux * size, y: tip.y - uy * size)
             context.move(to: tail)

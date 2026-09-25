@@ -5,7 +5,7 @@ import FrisketCore
 /// each completed canvas drag, in document points. Later tools (crop, arrows, shapes,
 /// text, blur) add conformers here; the document and renderer stay the only pixel path.
 enum EditorToolRole: Equatable {
-    case conceal, frame, draw
+    case conceal, frame, draw, select
 }
 
 @MainActor protocol EditorTool: AnyObject {
@@ -16,6 +16,17 @@ enum EditorToolRole: Equatable {
     var role: EditorToolRole { get }
     /// Applies a drag from `start` to `end`; returns false when the drag changes nothing.
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool
+}
+
+/// Selects marks (ticket 84): a press on any mark takes hold of it. It draws nothing.
+@MainActor final class SelectTool: EditorTool {
+    let title = "Select"
+    let accessibilityLabel = "Select tool. Click a mark to move, resize, restyle or delete it."
+    let keyEquivalent = "v"
+    let symbolName = "cursorarrow"
+    let role = EditorToolRole.select
+
+    func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool { false }
 }
 
 @MainActor final class SolidRedactionTool: EditorTool {

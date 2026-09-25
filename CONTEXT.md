@@ -37,6 +37,9 @@ _Avoid_: Redaction
 An editor effect that enlarges part of a capture in place. It never conceals content.
 _Avoid_: zoom
 
+**Mark**:
+Anything drawn on a capture in the editor that stays an object after drawing: an annotation, a Solid redaction, a Blur or a Magnify box. A mark can be selected, moved, resized, deleted and restyled. A crop is not a mark.
+
 **OCR**:
 Extraction of text from a capture so that the text can be copied or otherwise used.
 
