@@ -201,12 +201,16 @@ tool() {  # select an editor tool; pressing the selected tool again deselects it
   "$H/drive" axfind frisket "$1" 2>/dev/null | grep -q 'value="1"' && return 0
   drv axpress frisket "$1" && nap 0.3
 }
+canvas_click() {  # canvas_click FX FY as a fraction of the image rectangle
+  drv click "$(at $IX "$1" $IW)" "$(at $IY "$2" $IH)"
+  nap 0.4
+}
 canvas_drag() {  # canvas_drag FX0 FY0 FX1 FY1 as fractions of the image rectangle
   drv drag "$(at $IX "$1" $IW)" "$(at $IY "$2" $IH)" "$(at $IX "$3" $IW)" "$(at $IY "$4" $IH)" 20
   nap 0.4
 }
 # Finish an edit through the close sheet: ⌘W, then Return (Finalize, the sheet's default). This path
-# works whatever has focus, including the label field, where Return is typing and not Done (D5).
+# works whatever has focus, including a label being typed, where Return ends the label and is not Done (D5).
 editor_done() {
   drv key 13 cmd; nap 0.8
   editor_up && key 36
@@ -300,8 +304,7 @@ row_editor_arrow_label() {
   pattern_up --show && capture_area $(( CX - 200 )) $(( CY - 250 )) $(( CX + 200 )) $(( CY + 250 )) && open_editor || return 1
   image_rect 400 500 || return 1
   tool "Arrow" && canvas_drag 0.3 0.9 0.7 0.9                       # arrow at row 450 of 500
-  tool "Text" && drv axfocus frisket "Annotation label text" && drv type "Label" \
-    && canvas_drag 0.2 0.08 0.5 0.1                                          # label at row 40
+  tool "Text" && canvas_click 0.2 0.08 && drv type "Label" && key 36 && nap 0.4   # label at row 40, typed on the image
   editor_copy && clip_to editor-arrow-label || return 1
   local band=$(( 100 * DS )) top arrow between
   top=$("$H/meter" band "$ev/editor-arrow-label.png" 0 "$band")
@@ -314,8 +317,7 @@ row_editor_arrow_label() {
 row_editor_label_text() {
   pattern_up --show && capture_pattern && open_editor || return 1
   image_rect 320 180 || return 1
-  tool "Text" && drv axfocus frisket "Annotation label text" && drv type 'v2.1 $4.99 -10%' \
-    && canvas_drag 0.05 0.35 0.9 0.55
+  tool "Text" && canvas_click 0.05 0.35 && drv type 'v2.1 $4.99 -10%' && key 36 && nap 0.4
   editor_done
   wait_for 6 card_present && wait_for 6 card_ready && drv axpress frisket "Copy recognized text" && nap 2 && drv clip-text "$ev/editor-label-text.txt" || return 1
   if [ "$DS" -ge 2 ]; then

@@ -7,7 +7,7 @@ enum EditorAction {
     case done, copy, save, undo, redo, closeUnchanged
 }
 
-/// Letter keys select tools and Return means Done, unless the label field is editing. ⌘C, ⌘S
+/// Letter keys select tools and Return means Done, unless a label is being typed. ⌘C, ⌘S
 /// ⌘Z and ⌘⇧Z arrive from the main menu through the responder chain; Esc arrives as cancelOperation.
 @MainActor final class EditorKeyWindow: NSWindow {
     var toolKey: ((Character) -> Bool)?
@@ -35,7 +35,7 @@ enum EditorAction {
         if canPerform?(action) ?? false { perform?(action) }
     }
 
-    /// Edit › Copy (⌘C) when the label field has no text selection to copy.
+    /// Edit › Copy (⌘C) when no label is being typed.
     @objc func copy(_ sender: Any?) { request(.copy) }
     /// File › Save (⌘S).
     @objc func saveEditedCapture(_ sender: Any?) { request(.save) }
@@ -108,7 +108,7 @@ enum EditorAction {
 /// Delete for the selected mark. What those do is `MarkEditor`'s, in the core.
 @MainActor final class EditorCanvasView: NSView {
     enum DragGuide {
-        case box, line, crop, label(String), conceal, soften
+        case box, line, crop, conceal, soften, none
     }
 
     var rendered: NSImage? { didSet { needsDisplay = true } }
@@ -124,6 +124,10 @@ enum EditorAction {
     var selection: (box: MarkBox, handles: [(handle: MarkHandle, x: Double, y: Double)])? { didSet { needsDisplay = true } }
     /// Every mark's VoiceOver label and box, in canvas points, in Tab order.
     var accessibleMarks: [(label: String, box: MarkBox, selected: Bool)] = []
+    /// The box of the label being typed, in canvas points (ticket 86).
+    var typingBox: MarkBox? { didSet { needsDisplay = true } }
+    /// Called when the canvas changes size, so the label being typed can follow the zoom.
+    var onResize: (() -> Void)?
     private var dragStart: CGPoint?
     private var dragCurrent: CGPoint?
     private var grabbing = false
@@ -140,7 +144,13 @@ enum EditorAction {
 
     override var isFlipped: Bool { true }
 
-    private var zoom: CGFloat {
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        onResize?()
+    }
+
+    /// View points per document point.
+    var zoom: CGFloat {
         guard documentSize.width > 0, documentSize.height > 0 else { return 0 }
         return min(bounds.width / documentSize.width, bounds.height / documentSize.height, 4)
     }
@@ -154,7 +164,8 @@ enum EditorAction {
     /// Five view points, in document points.
     private var tolerance: Double { zoom > 0 ? Double(5 / zoom) : 5 }
 
-    private func viewRect(_ box: MarkBox) -> CGRect {
+    /// A box in canvas points, in this view's coordinates.
+    func viewRect(_ box: MarkBox) -> CGRect {
         CGRect(x: imageRect.minX + box.x * zoom, y: imageRect.minY + box.y * zoom,
                width: box.width * zoom, height: box.height * zoom)
     }
@@ -197,6 +208,13 @@ enum EditorAction {
         rendered?.draw(in: imageRect, from: .zero, operation: .copy, fraction: 1, respectFlipped: true,
                        hints: [.interpolation: NSNumber(value: NSImageInterpolation.none.rawValue)])
         drawSelection()
+        if let typingBox {
+            NSColor.controlAccentColor.setStroke()
+            let outline = NSBezierPath(rect: viewRect(typingBox).insetBy(dx: -3, dy: -3))
+            outline.lineWidth = 1
+            outline.setLineDash([2, 2], count: 2, phase: 0)
+            outline.stroke()
+        }
         guard !grabbing, let start = dragStart, let current = dragCurrent else { return }
         let startView = CGPoint(x: imageRect.minX + start.x * zoom, y: imageRect.minY + start.y * zoom)
         let currentView = CGPoint(x: imageRect.minX + current.x * zoom, y: imageRect.minY + current.y * zoom)
@@ -211,12 +229,8 @@ enum EditorAction {
             line.lineWidth = 2
             NSColor(srgbRed: 1, green: 59 / 255, blue: 48 / 255, alpha: 1).setStroke()
             line.stroke()
-        case .label(let text):
-            let shown = text.isEmpty ? "Label" : text
-            shown.draw(at: startView, withAttributes: [
-                .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
-                .foregroundColor: NSColor(srgbRed: 1, green: 59 / 255, blue: 48 / 255, alpha: 1)
-            ])
+        case .none:
+            break
         case .crop:
             let kept = CGRect(x: min(startView.x, currentView.x), y: min(startView.y, currentView.y),
                               width: abs(currentView.x - startView.x), height: abs(currentView.y - startView.y))
@@ -316,6 +330,13 @@ enum EditorAction {
     private let marks: MarkEditor
     private var grab: MarkEditor.Grab?
     private let widthPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    /// The Text tool's contextual controls (ticket 86): size and style of new labels and the selected one.
+    private let labelSizePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let labelStylePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    /// The label being typed on the canvas, and the text view that takes the typing. The view only
+    /// holds the caret and selection; its text is clear, and the canvas shows the rendered label.
+    private var labelSession: LabelSession?
+    private var labelView: NSTextView?
     private let stylePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private var edits: DocumentEdits { document.edits }
     private let textTool = TextTool()
@@ -325,7 +346,6 @@ enum EditorAction {
     private let swatchStack = NSStackView()
     private let hintField = NSTextField(labelWithString: "")
     private let tools: [any EditorTool]
-    private let labelField = NSTextField(string: "A")
     /// Solid Redaction; the Select tool is first in the toolbar.
     private var activeTool: Int = 1
     private var toolButtons: [NSButton] = []
@@ -388,13 +408,27 @@ enum EditorAction {
             button.toolTip = "\(tool.title) (\(tool.keyEquivalent.uppercased()))"
             toolButtons.append(button)
         }
-        labelField.placeholderString = "Label"
-        labelField.stringValue = ""
-        labelField.setAccessibilityLabel("Annotation label text")
-        labelField.bezelStyle = .roundedBezel
-        labelField.controlSize = .small
-        labelField.frame.size = NSSize(width: 140, height: 22)
-        labelField.delegate = self
+        for size in LabelFormat.sizes {
+            labelSizePopUp.addItem(withTitle: "\(Int(size)) pt")
+            labelSizePopUp.lastItem?.representedObject = size
+        }
+        labelSizePopUp.controlSize = .small
+        labelSizePopUp.target = self
+        labelSizePopUp.action = #selector(changeLabelSize(_:))
+        labelSizePopUp.setAccessibilityLabel("Label size")
+        labelSizePopUp.toolTip = "Size of new labels, and of the selected one"
+        labelSizePopUp.sizeToFit()
+        for style in LabelStyle.allCases {
+            labelStylePopUp.addItem(withTitle: style.title)
+            labelStylePopUp.lastItem?.representedObject = style.rawValue
+            labelStylePopUp.lastItem?.setAccessibilityLabel("\(style.title) label")
+        }
+        labelStylePopUp.controlSize = .small
+        labelStylePopUp.target = self
+        labelStylePopUp.action = #selector(changeLabelStyle(_:))
+        labelStylePopUp.setAccessibilityLabel("Label style")
+        labelStylePopUp.toolTip = "Label style: Standard, Outlined or Box"
+        labelStylePopUp.sizeToFit()
         // The drawing tool's contextual controls (ticket 85): line width and arrow style for new marks,
         // and for the selected mark when there is one. Colour arrives with the palette (ticket 88).
         for width in DocumentAnnotation.lineWidths {
@@ -418,7 +452,6 @@ enum EditorAction {
         stylePopUp.setAccessibilityLabel("Arrow style")
         stylePopUp.toolTip = "Arrow style: Standard, Curved (drag the middle handle to bend it) or Double"
         stylePopUp.sizeToFit()
-        textTool.text = { [weak labelField] in labelField?.stringValue ?? "" }
         for (index, choice) in SolidRedaction.palette.enumerated() {
             let button = NSButton(image: Self.swatch(choice.pixel), target: self, action: #selector(chooseRedactionColour(_:)))
             button.setButtonType(.pushOnPushOff)
@@ -499,6 +532,7 @@ enum EditorAction {
         canvas.onPress = { [weak self] point, tolerance in self?.press(at: point, tolerance: tolerance) ?? false }
         canvas.onRelease = { [weak self] start, end, tolerance in self?.release(from: start, to: end, tolerance: tolerance) }
         canvas.onMarkKey = { [weak self] key in self?.markKey(key) ?? false }
+        canvas.onResize = { [weak self] in self?.placeLabelView() }
         hintField.frame = CGRect(x: 12, y: size.height - hintHeight + 6, width: size.width - 24, height: hintHeight - 10)
         hintField.autoresizingMask = [.width, .minYMargin]
         content.addSubview(canvas)
@@ -521,6 +555,7 @@ enum EditorAction {
 
     private func selectTool(letter: Character) -> Bool {
         guard let index = tools.firstIndex(where: { $0.keyEquivalent == String(letter) }) else { return false }
+        endLabel()
         activeTool = index
         refresh()
         return true
@@ -577,7 +612,23 @@ enum EditorAction {
             button.state = button.tag == activeTool ? .on : .off
             button.isEnabled = !finishing
         }
-        labelField.isEnabled = !finishing && tools[activeTool] is TextTool
+        if let session = labelSession, !session.isCurrent || finishing {
+            // An undo replaced the typing, or the editor is finishing: typing ends.
+            endLabel()
+            return
+        }
+        placeLabelView()
+        let labelFormat = labelSession?.format ?? marks.selectionLabel ?? (tools[activeTool] is TextTool ? textTool.format : nil)
+        labelSizePopUp.isEnabled = !finishing && labelFormat != nil
+        labelStylePopUp.isEnabled = !finishing && labelFormat != nil
+        if let labelFormat {
+            if let index = labelSizePopUp.itemArray.firstIndex(where: { $0.representedObject as? Double == labelFormat.size }) {
+                labelSizePopUp.selectItem(at: index)
+            }
+            if let index = labelStylePopUp.itemArray.firstIndex(where: { $0.representedObject as? String == labelFormat.style.rawValue }) {
+                labelStylePopUp.selectItem(at: index)
+            }
+        }
         canvas.selection = marks.selectionOutline
         canvas.accessibleMarks = marks.accessibleMarks.map { ($0.label, $0.box, $0.mark == marks.selection) }
         let fill = marks.selectionFill
@@ -669,9 +720,11 @@ enum EditorAction {
             hintField.stringValue = "Drag a rectangle outline. Drawing does not hide pixels."
             canvas.setAccessibilityLabel("Capture canvas. Drag to draw. Drawing does not hide pixels.")
         case is TextTool:
-            canvas.guide = .label(labelField.stringValue)
-            hintField.stringValue = "Type letters or digits, then click where the label should start. Drawing does not hide pixels."
-            canvas.setAccessibilityLabel("Capture canvas. Drag to draw. Drawing does not hide pixels.")
+            canvas.guide = .none
+            hintField.stringValue = labelSession == nil
+                ? "Click where the label should start, then type. Click a label to edit it; drag its side handle to wrap it. Labels do not hide pixels."
+                : "Type the label. Return or a click elsewhere ends it; Esc cancels an empty label. Labels do not hide pixels."
+            canvas.setAccessibilityLabel("Capture canvas. Click to type a label. Labels do not hide pixels.")
         case is BlurTool:
             canvas.guide = .soften
             hintField.stringValue = "Drag a box to soften the pixels inside it. Blur does not hide pixels. Use Solid Redaction to conceal."
@@ -702,16 +755,35 @@ enum EditorAction {
     /// the Text tool then places its label); a drag draws with the active tool.
     private func release(from start: CGPoint, to end: CGPoint, tolerance: Double) {
         guard !finishing else { return }
+        let isClick = hypot(end.x - start.x, end.y - start.y) <= tolerance / 2
         if let held = grab {
             grab = nil
-            marks.release(held, fromX: start.x, fromY: start.y, toX: end.x, toY: end.y, slop: tolerance / 2)
+            let changed = marks.release(held, fromX: start.x, fromY: start.y, toX: end.x, toY: end.y, slop: tolerance / 2)
+            // The Text tool edits a label clicked while it is selected.
+            if !changed, isClick, held.handle == nil, tools[activeTool] is TextTool,
+               let session = LabelSession(document: document, editing: held.mark) {
+                beginLabel(session)
+            }
             return
         }
-        if hypot(end.x - start.x, end.y - start.y) <= tolerance / 2 {
-            if marks.click(atX: end.x, y: end.y, tolerance: tolerance) || !(tools[activeTool] is TextTool) { return }
-        } else {
-            marks.deselect()
+        if tools[activeTool] is TextTool {
+            // A click on a label edits it; a click on another mark selects it; anywhere else, or at
+            // the start of a drag, a new label starts.
+            if isClick, let label = marks.label(atX: end.x, y: end.y, tolerance: tolerance),
+               let session = LabelSession(document: document, editing: label) {
+                beginLabel(session)
+                return
+            }
+            if isClick, marks.click(atX: end.x, y: end.y, tolerance: tolerance) { return }
+            let origin = (x: edits.crop?.x ?? 0, y: edits.crop?.y ?? 0)
+            beginLabel(LabelSession(document: document, x: start.x + origin.x, y: start.y + origin.y, format: textTool.format))
+            return
         }
+        if isClick {
+            marks.click(atX: end.x, y: end.y, tolerance: tolerance)
+            return
+        }
+        marks.deselect()
         var next = edits
         guard tools[activeTool].applyDrag(from: start, to: end, to: &next) else { return }
         document.apply(next)
@@ -766,6 +838,96 @@ enum EditorAction {
         if !marks.rewidthSelection(width) { refresh() }
     }
 
+    /// A size from the Text tool's menu: for new labels, the label being typed, or the selected label.
+    @objc private func changeLabelSize(_ sender: NSPopUpButton) {
+        guard !finishing, let size = sender.selectedItem?.representedObject as? Double else { return }
+        relabel { $0.with(size: size) }
+    }
+
+    @objc private func changeLabelStyle(_ sender: NSPopUpButton) {
+        guard !finishing, let raw = sender.selectedItem?.representedObject as? String,
+              let style = LabelStyle(rawValue: raw) else { return }
+        relabel { $0.with(style: style) }
+    }
+
+    private func relabel(_ change: (LabelFormat) -> LabelFormat?) {
+        if tools[activeTool] is TextTool, let format = change(textTool.format) { textTool.format = format }
+        if let session = labelSession {
+            if let format = change(session.format) { session.restyle(format) }
+            if let labelView { window.makeFirstResponder(labelView) }
+        } else if let selected = marks.selectionLabel, let format = change(selected) {
+            marks.relabelSelection(format)
+        }
+        refresh()
+    }
+
+    /// Starts typing a label: a clear text view over it takes the keys, with the caret, and every
+    /// change goes into the edits through the session, as one undo step (decision 77).
+    private func beginLabel(_ session: LabelSession) {
+        endLabel()
+        marks.deselect()
+        labelSession = session
+        let view = NSTextView(frame: .zero)
+        view.string = session.characters
+        view.isRichText = false
+        view.importsGraphics = false
+        view.allowsUndo = false
+        view.drawsBackground = false
+        view.textColor = .clear
+        view.insertionPointColor = .controlAccentColor
+        view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.isHorizontallyResizable = false
+        view.isVerticallyResizable = false
+        // Exactly the typed characters: no smart quotes, dashes, replacements or corrections.
+        view.isAutomaticQuoteSubstitutionEnabled = false
+        view.isAutomaticDashSubstitutionEnabled = false
+        view.isAutomaticTextReplacementEnabled = false
+        view.isAutomaticSpellingCorrectionEnabled = false
+        view.isContinuousSpellCheckingEnabled = false
+        view.isAutomaticTextCompletionEnabled = false
+        view.setAccessibilityLabel("Label text. Return ends the label.")
+        view.delegate = self
+        labelView = view
+        canvas.addSubview(view)
+        placeLabelView()
+        window.makeFirstResponder(view)
+        view.setSelectedRange(NSRange(location: (session.characters as NSString).length, length: 0))
+        refresh()
+    }
+
+    /// Ends typing. The session already wrote the label (or, if it is blank, nothing), so this only
+    /// removes the text view and selects the label, ready for its width handle and menus.
+    private func endLabel() {
+        guard let session = labelSession else { return }
+        labelSession = nil
+        let view = labelView
+        labelView = nil
+        view?.delegate = nil
+        if let view, window.firstResponder === view { window.makeFirstResponder(canvas) }
+        view?.removeFromSuperview()
+        canvas.typingBox = nil
+        if session.isCurrent, let mark = session.mark { marks.select(mark) }
+        refresh()
+    }
+
+    /// Puts the text view over the label being typed, at the canvas's zoom, and outlines its box.
+    private func placeLabelView() {
+        guard let session = labelSession, let view = labelView else { return }
+        let origin = (x: edits.crop?.x ?? 0, y: edits.crop?.y ?? 0)
+        let box = session.box
+        canvas.typingBox = MarkBox(x: box.x - origin.x, y: box.y - origin.y, width: box.width, height: box.height)
+        let zoom = canvas.zoom
+        let layout = LabelLayout(characters: session.characters, format: session.format)
+        let width = (session.format.wrapWidth ?? max(layout.textWidth, session.format.size)) * zoom
+        let text = MarkBox(x: session.x - origin.x, y: session.y - origin.y, width: 0, height: 0)
+        let corner = canvas.viewRect(text).origin
+        view.font = NSFont(name: LabelLayout.fontName, size: max(1, session.format.size * zoom))
+        view.textContainer?.containerSize = NSSize(width: session.format.wrapWidth == nil ? 1e6 : width,
+                                                   height: 1e6)
+        view.frame = CGRect(x: corner.x, y: corner.y, width: width + 4, height: max(1, layout.textHeight * zoom) + 2)
+    }
+
     @objc private func changeStyle(_ sender: NSPopUpButton) {
         guard !finishing, let raw = sender.selectedItem?.representedObject as? String,
               let style = ArrowStyle(rawValue: raw) else { return }
@@ -775,6 +937,7 @@ enum EditorAction {
 
     @objc private func selectTool(_ sender: NSButton) {
         guard !finishing else { return }
+        endLabel()
         activeTool = sender.tag
         refresh()
     }
@@ -838,6 +1001,7 @@ enum EditorAction {
 
     private func end(_ leave: EditorLeave) {
         guard !finishing, let finish else { return }
+        endLabel()
         finishing = true
         promptOpen = false
         refresh()
@@ -899,16 +1063,16 @@ extension EditorWindow: NSToolbarDelegate {
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolButtons.enumerated().map { NSToolbarItem.Identifier("tool-\($0.offset)") }
-            + [.init("redaction-colour"), .init("label"), .init("style"), .init("width"), .flexibleSpace, .init("undo"), .init("close")]
+            + [.init("redaction-colour"), .init("label-size"), .init("label-style"), .init("style"), .init("width"), .flexibleSpace,
+               .init("undo"), .init("close")]
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         let item = NSToolbarItem(itemIdentifier: identifier)
         switch identifier.rawValue {
-        case "label":
-            item.view = labelField
-            item.label = "Label"
+        case "label-size": item.view = labelSizePopUp; item.label = "Label Size"
+        case "label-style": item.view = labelStylePopUp; item.label = "Label Style"
         case "width": item.view = widthPopUp; item.label = "Line Width"
         case "redaction-colour": item.view = swatchStack; item.label = "Redaction Colour"
         case "style": item.view = stylePopUp; item.label = "Arrow Style"
@@ -925,21 +1089,28 @@ extension EditorWindow: NSToolbarDelegate {
     }
 }
 
-extension EditorWindow: NSTextFieldDelegate {
-    func controlTextDidChange(_ notification: Notification) {
-        guard tools[activeTool] is TextTool else { return }
-        canvas.guide = .label(labelField.stringValue)
+extension EditorWindow: NSTextViewDelegate {
+    func textDidChange(_ notification: Notification) {
+        guard let view = notification.object as? NSTextView, view === labelView else { return }
+        labelSession?.type(view.string)
     }
 
-    /// Return in the label field ends typing but never means Done; Return again then does.
-    /// Esc there closes an unchanged editor, as it does elsewhere, instead of offering completions.
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+    /// Leaving the text view (a click on the canvas or elsewhere) ends typing, after the click.
+    func textDidEndEditing(_ notification: Notification) {
+        guard let view = notification.object as? NSTextView else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.labelView === view else { return }
+            self.endLabel()
+        }
+    }
+
+    /// Return and Tab end the label without meaning Done; Esc ends it too, which cancels an empty
+    /// label (the session holds nothing for blank text). Option-Return types a line break.
+    func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         switch commandSelector {
-        case #selector(NSResponder.insertNewline(_:)):
-            window.makeFirstResponder(nil)
-            return true
-        case #selector(NSResponder.cancelOperation(_:)):
-            window.cancelOperation(nil)
+        case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)),
+             #selector(NSResponder.insertBacktab(_:)), #selector(NSResponder.cancelOperation(_:)):
+            endLabel()
             return true
         default:
             return false

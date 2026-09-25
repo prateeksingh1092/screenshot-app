@@ -7,9 +7,10 @@ the signed app.
 
 1. Capture, open the editor. Press **S**, drag a rectangle. Confirm it is an
    outline in the fixed red stroke, not a filled black redaction.
-2. Press **A**, drag an arrow. Press **T**, type a label in **Annotation
-   label text**, then click the canvas. Confirm the letters appear above any
-   Solid redaction and stay opaque.
+2. Press **A**, drag an arrow. Press **T**, click the canvas and type a label
+   on the image, then press Return (ticket 86: it ends the label, not the
+   editor). Confirm the letters appear above any Solid redaction and stay opaque.
 3. Done. Confirm Copy, Save, and History show the same annotations.
-4. VoiceOver: Arrow, Shape, Text, and the label field have spoken names.
+4. VoiceOver: Arrow, Shape, Text, the label text being typed, and the Label
+   Size and Label Style menus have spoken names.
    **S**, **A**, and **T** select the tools without a modifier.

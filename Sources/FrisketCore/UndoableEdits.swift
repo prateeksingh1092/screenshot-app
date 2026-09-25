@@ -36,8 +36,27 @@ import Foundation
         undoManager.setActionName(name)
     }
 
+    /// Applies `next` named `name`, folded into the previous step when that step was applied with the
+    /// same `key` and nothing has been undone, redone or applied since. Typing one label (ticket 86)
+    /// is therefore one undo step however many events it spans, as typing is in any Mac text view.
+    public func apply(_ next: DocumentEdits, named name: String, coalescing key: AnyHashable) {
+        guard next != edits else { return }
+        if coalescing == key, undoManager.canUndo, !undoManager.canRedo, undoManager.undoActionName == name {
+            edits = next
+            onChange?()
+            return
+        }
+        replace(with: next)
+        undoManager.setActionName(name)
+        coalescing = key
+    }
+
+    /// The key of the last step `apply(_:named:coalescing:)` registered, until anything else changes the edits.
+    private var coalescing: AnyHashable?
+
     /// Registers the inverse before changing, so undo registers redo and redo registers undo.
     private func replace(with next: DocumentEdits) {
+        coalescing = nil
         let previous = edits
         undoManager.registerUndo(withTarget: self) { target in
             MainActor.assumeIsolated { target.replace(with: previous) }

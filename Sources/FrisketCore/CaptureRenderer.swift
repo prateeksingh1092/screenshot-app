@@ -261,10 +261,6 @@ extension RGBABuffer {
 /// with font smoothing off. The editor preview (`CapturePreview.render`) and `flatten` both
 /// call this, so what the user sees is what is delivered.
 enum AnnotationPainter {
-    /// Labels use this pinned font, 18 pt per document point (decision 67).
-    static let labelFontName = "HelveticaNeue-Bold"
-    static let labelPointSize = 18.0
-
     enum Layer { case plate, ink }
 
     /// Draws one layer of every annotation over `buffer`, an `output`-sized crop mapped through `grid`.
@@ -331,7 +327,7 @@ enum AnnotationPainter {
     private static func inkColour(_ ink: RGBAPixel) -> CGColor {
         CGColor(srgbRed: CGFloat(ink.red) / 255, green: CGFloat(ink.green) / 255, blue: CGFloat(ink.blue) / 255, alpha: 1)
     }
-    private static let plateColour = CGColor(srgbRed: CGFloat(EditPainter.plate.red) / 255,
+    static let plateColour = CGColor(srgbRed: CGFloat(EditPainter.plate.red) / 255,
                                              green: CGFloat(EditPainter.plate.green) / 255,
                                              blue: CGFloat(EditPainter.plate.blue) / 255, alpha: 1)
 
@@ -370,18 +366,9 @@ enum AnnotationPainter {
                 }
             }
         case let .text(x, y, characters):
-            let font = CTFontCreateWithName(labelFontName as CFString, CGFloat(labelPointSize * scale), nil)
-            let attributes: [CFString: Any] = [kCTFontAttributeName: font, kCTForegroundColorFromContextAttributeName: true]
-            guard let string = CFAttributedStringCreate(nil, characters as CFString, attributes as CFDictionary) else { return }
-            let line = CTLineCreateWithAttributedString(string)
-            let top = point(x, y)
-            context.saveGState()
-            context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-            context.textPosition = CGPoint(x: top.x, y: top.y + CTFontGetAscent(font))
-            context.setTextDrawingMode(layer == .ink ? .fill : .stroke)
-            context.setLineWidth(2)
-            CTLineDraw(line, context)
-            context.restoreGState()
+            // Layout, wrapping and styles are the core's (ticket 86, `Labels.swift`).
+            drawLabel(characters, format: annotation.label, colour: annotation.colour, top: point(x, y), scale: scale,
+                      layer: layer, in: context)
         }
     }
 }

@@ -1,5 +1,4 @@
 import CoreGraphics
-import CoreText
 import Foundation
 
 /// One mark in the editor's edits (ticket 84): a Solid redaction, a Blur or Magnify box, or an
@@ -11,9 +10,10 @@ public enum MarkReference: Hashable, Sendable {
 }
 
 /// A handle on a selected mark. Boxes have four corners; an arrow has its tail and tip, and a Curved
-/// arrow also its middle, `bend` (ticket 85). A label has none until ticket 86 gives it a size.
+/// arrow also its middle, `bend` (ticket 85). A label has one on its right side, `trailing`, that
+/// sets the width its text wraps at (ticket 86).
 public enum MarkHandle: Hashable, Sendable {
-    case topLeft, topRight, bottomLeft, bottomRight, tail, tip, bend
+    case topLeft, topRight, bottomLeft, bottomRight, tail, tip, bend, trailing
 }
 
 /// A change to one mark. Each is one undo step.
@@ -28,6 +28,10 @@ public enum MarkChange: Equatable, Sendable {
     case rewidth(Double)
     /// A new style for an arrow or line (ticket 85).
     case restyle(ArrowStyle)
+    /// A new style, size or wrap width for a label (ticket 86).
+    case relabel(LabelFormat)
+    /// New characters for a label; blank text is refused (delete the label instead).
+    case retext(String)
 }
 
 /// A rectangle in document points.
@@ -80,8 +84,8 @@ extension DocumentEdits {
                 let minX = xs.min() ?? 0, minY = ys.min() ?? 0
                 return MarkBox(x: minX, y: minY, width: (xs.max() ?? 0) - minX, height: (ys.max() ?? 0) - minY)
             case let .text(x, y, characters):
-                let size = AnnotationPainter.labelSize(characters)
-                return MarkBox(x: x, y: y, width: size.width, height: size.height)
+                let box = LabelLayout(characters: characters, format: annotations[index].label).bounds
+                return MarkBox(x: x + box.x, y: y + box.y, width: box.width, height: box.height)
             }
         }
     }
@@ -96,7 +100,9 @@ extension DocumentEdits {
                 guard annotation.style == .curved else { return [(.tail, x0, y0), (.tip, x1, y1)] }
                 let middle = annotation.bend.handle(tail: CGPoint(x: x0, y: y0), tip: CGPoint(x: x1, y: y1))
                 return [(.tail, x0, y0), (.bend, middle.x, middle.y), (.tip, x1, y1)]
-            case .text: return []
+            case .text:
+                guard let box = bounds(of: mark) else { return [] }
+                return [(.trailing, box.x + box.width, box.y + box.height / 2)]
             case .rectangle: break
             }
         }
@@ -163,6 +169,7 @@ extension DocumentEdits {
             if case .recolour(let chosen) = change { colour = chosen } else { colour = old.colour }
             if case .rewidth = change { return nil }
             if case .restyle = change { return nil }
+            if case .relabel = change { return nil }
             guard let box = Self.box(MarkBox(x: old.x, y: old.y, width: old.width, height: old.height), change),
                   let redaction = SolidRedaction(x: box.x, y: box.y, width: box.width, height: box.height, colour: colour)
             else { return nil }
@@ -198,25 +205,35 @@ extension DocumentEdits {
             case .topRight: fixed = (box.x, box.y + box.height)
             case .bottomLeft: fixed = (box.x + box.width, box.y)
             case .bottomRight: fixed = (box.x, box.y)
-            case .tail, .tip, .bend: return nil
+            case .tail, .tip, .bend, .trailing: return nil
             }
             return MarkBox(x: min(fixed.x, x), y: min(fixed.y, y), width: abs(x - fixed.x), height: abs(y - fixed.y))
         case .recolour:
             return box
-        case .rewidth, .restyle, .delete:
+        case .rewidth, .restyle, .relabel, .retext, .delete:
             return nil
         }
     }
 
     private static func annotation(_ old: DocumentAnnotation, _ change: MarkChange) -> DocumentAnnotation? {
         var colour = old.colour, width = old.width, kind = old.kind, style = old.style, bend: ArrowBend? = old.bend
+        var label = old.label
         switch (change, old.kind) {
         case let (.recolour(ink), _):
             colour = ink
         case let (.rewidth(value), .rectangle), let (.rewidth(value), .arrow):
             width = value
-        case (.rewidth, .text), (.delete, _), (.restyle, .rectangle), (.restyle, .text):
+        case (.rewidth, .text), (.delete, _), (.restyle, .rectangle), (.restyle, .text), (.relabel, .rectangle),
+             (.relabel, .arrow), (.retext, .rectangle), (.retext, .arrow):
             return nil
+        case let (.relabel(format), .text):
+            label = format
+        case let (.retext(characters), .text(x, y, _)):
+            kind = .text(x: x, y: y, characters: characters)
+        case let (.resize(.trailing, handleX, _), .text(x, _, _)):
+            // The handle sits on the box's right edge, past the style's margin.
+            guard let format = old.label.with(wrapWidth: handleX - x - old.label.margin.horizontal) else { return nil }
+            label = format
         case let (.restyle(next), .arrow):
             // A Curved arrow keeps its bend; one that becomes Curved bows as a new one does.
             style = next
@@ -239,7 +256,7 @@ extension DocumentEdits {
             guard let box = box(MarkBox(x: x, y: y, width: w, height: h), change) else { return nil }
             kind = .rectangle(x: box.x, y: box.y, width: box.width, height: box.height)
         }
-        return DocumentAnnotation(kind, colour: colour, width: width, style: style, bend: bend)
+        return DocumentAnnotation(kind, colour: colour, width: width, style: style, bend: bend, label: label)
     }
 
     /// What the mark is called in the Undo menu: "Solid Redaction", "Blur", "Shape", "Label"…
@@ -288,21 +305,6 @@ extension DocumentEdits {
             case let .text(_, _, characters): return "Label, \(characters), at \(n(box.x - ox)), \(n(box.y - oy))"
             }
         }
-    }
-}
-
-extension AnnotationPainter {
-    /// A label's typographic size in document points, measured with the font it is drawn in.
-    static func labelSize(_ characters: String) -> (width: Double, height: Double) {
-        let font = CTFontCreateWithName(labelFontName as CFString, CGFloat(labelPointSize), nil)
-        let attributes: [CFString: Any] = [kCTFontAttributeName: font]
-        guard let string = CFAttributedStringCreate(nil, characters as CFString, attributes as CFDictionary) else {
-            return (0, labelPointSize)
-        }
-        let line = CTLineCreateWithAttributedString(string)
-        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-        let width = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
-        return (Double(width), Double(ascent + descent))
     }
 }
 
@@ -438,6 +440,26 @@ extension AnnotationPainter {
     @discardableResult public func restyleSelection(_ style: ArrowStyle) -> Bool {
         guard let mark = selection else { return false }
         return change(mark, .restyle(style), verb: "Restyle")
+    }
+
+    /// A new style, size or wrap width for the selected label (ticket 86).
+    @discardableResult public func relabelSelection(_ format: LabelFormat) -> Bool {
+        guard let mark = selection else { return false }
+        return change(mark, .relabel(format), verb: "Restyle")
+    }
+
+    /// The selected label's style, size and wrap width; nil when no label is selected.
+    public var selectionLabel: LabelFormat? {
+        guard case .annotation(let index)? = selection, case .text = edits.annotations[index].kind else { return nil }
+        return edits.annotations[index].label
+    }
+
+    /// The label under `(x, y)` in canvas points, if the topmost mark there is one: the Text tool
+    /// edits it rather than starting a new label.
+    public func label(atX x: Double, y: Double, tolerance: Double) -> MarkReference? {
+        guard let mark = edits.mark(atX: x + origin.x, y: y + origin.y, tolerance: tolerance),
+              case .annotation(let index) = mark, case .text = edits.annotations[index].kind else { return nil }
+        return mark
     }
 
     /// The selected mark's style, when it is an arrow or a line.
