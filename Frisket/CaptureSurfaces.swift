@@ -296,10 +296,23 @@ import FrisketCore
         Task {
             let result = await commands.execute(.copyRecognizedText(panel.revision))
             panel.model.busy = false
-            if case let .recognizedText(outcome) = result, case .copied = outcome.delivery {
-                notice("Copied \(outcome.characterCount) characters", "")
-            } else {
-                notice("Could not copy text", "No text was recognized, or the capture is no longer current.")
+            // Non-modal (DA-5): the Thumbnail's status line shows the result and VoiceOver announces it.
+            switch result {
+            case let .recognizedText(outcome):
+                if case .copied = outcome.delivery {
+                    panel.model.textNotice = "Copied \(outcome.characterCount) characters"
+                } else {
+                    panel.model.textNotice = "Could not copy text. Try again."
+                }
+            case .noTextFound:
+                panel.model.textNotice = "No text found"
+            default:
+                panel.model.textNotice = "Could not copy text. The capture changed."
+            }
+            let shown = panel.model.textNotice
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(4))
+                if panel.model.textNotice == shown { panel.model.textNotice = "" }
             }
         }
     }

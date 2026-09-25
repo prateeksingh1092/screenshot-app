@@ -3,6 +3,7 @@ import Foundation
 public enum DiagnosticEventName: String, Codable, Sendable {
     case historyRecovered, historyRecoveryFailed, historyImageMissing
     case capturePending, captureFailed, captureDiscarded, captureFinalized, finalizationFailed, deliverySucceeded, deliveryFailed, commandRejected
+    case noTextFound
 }
 
 public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done, deleteHistory, copyRecognizedText }
@@ -126,6 +127,9 @@ extension DiagnosticEvent {
             error = nil
         case .historyDeleted:
             name = .captureDiscarded
+            error = nil
+        case .noTextFound:
+            name = .noTextFound
             error = nil
         case .permissionRequired:
             name = .captureFailed

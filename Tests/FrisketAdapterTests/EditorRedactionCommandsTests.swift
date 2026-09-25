@@ -900,10 +900,9 @@ extension EditorRedactionCommandsTests {
         #expect(await clipboard.texts == ["CANARY"])
         #expect(await commands.execute(.done(original, try fixture.edits())) ==
             .edited(rendered, .notCommitted(.historyUnavailable)))
-        #expect(await commands.execute(.copyRecognizedText(rendered)) ==
-            .recognizedText(RecognizedTextOutcome(revision: rendered, characterCount: 0,
-                                                  delivery: .copied(ClipboardReceipt(changeCount: 2)))))
-        #expect(await clipboard.texts == ["CANARY", ""])
+        // Redaction hid the canary, so no text is left: nothing is written (D8).
+        #expect(await commands.execute(.copyRecognizedText(rendered)) == .noTextFound(rendered))
+        #expect(await clipboard.texts == ["CANARY"])
     }
 
     @Test func doneOnATallCaptureRedactsThroughStripEncode() async throws {

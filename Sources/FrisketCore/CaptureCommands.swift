@@ -92,6 +92,8 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case rejected(CommandRejection)
     case historyDeleted(CaptureID)
     case recognizedText(RecognizedTextOutcome)
+    /// Copy Text found no text. Nothing was written to the clipboard (D8, story 89).
+    case noTextFound(CaptureRevision)
 }
 
 /// The sole action interface. The coordinator owns lifecycle policy and memory.

@@ -377,8 +377,10 @@ row_copytext_none() {
   drv axpress frisket "Copy recognized text"; nap 2
   after=$("$H/drive" clip-count)
   "$H/drive" axfind frisket "Copied 0" >>"$log" 2>&1 && alert=1 && dismiss_alert
-  note "clipboard changeCount before=$before after=$after alert=$alert"
-  [ "$before" = "$after" ] && [ $alert -eq 0 ]
+  local shown=0
+  "$H/drive" axfind frisket "No text found" >>"$log" 2>&1 && shown=1
+  note "clipboard changeCount before=$before after=$after alert=$alert status=$shown"
+  [ "$before" = "$after" ] && [ $alert -eq 0 ] && [ $shown -eq 1 ]
 }
 
 row_stack() {
