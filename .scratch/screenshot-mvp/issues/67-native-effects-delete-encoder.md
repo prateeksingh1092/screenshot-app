@@ -6,6 +6,8 @@
 
 **Phase:** 2 (◆ Gate B)
 
+**Effort:** xhigh. Before starting, stop and ask Prateek to switch Claude Code to xhigh (decision 58).
+
 **Status:** ready-for-agent
 
 - [ ] Blur and Magnify never read outside their box or under a redaction, and their output hash is stable on x86_64.

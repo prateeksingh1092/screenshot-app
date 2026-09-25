@@ -13,6 +13,8 @@ The stitcher doc describes the result.
 
 **Phase:** 3 (O4; scope set at Gate A)
 
+**Effort:** xhigh. Before starting, stop and ask Prateek to switch Claude Code to xhigh (decision 58).
+
 **Status:** ready-for-agent
 
 - [ ] The round-trip tests pass for steady and mid-step scrolls, uniform bands and repeating content. A flick on periodic content is reported as ambiguous, never wrong.

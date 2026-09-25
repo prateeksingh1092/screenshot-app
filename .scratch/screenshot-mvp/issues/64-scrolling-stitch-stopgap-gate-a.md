@@ -13,6 +13,8 @@ Gate A follows: measure on the harness page and record the scope of ticket 70.
 
 **Phase:** 1 (◆ Gate A)
 
+**Effort:** xhigh. Before starting, stop and ask Prateek to switch Claude Code to xhigh (decision 58).
+
 **Status:** ready-for-agent
 
 - [ ] The steady and mid-step round-trip tests pass exactly without the known-defect mark.

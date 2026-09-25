@@ -6,6 +6,8 @@
 
 **Phase:** 2
 
+**Effort:** xhigh. Before starting, stop and ask Prateek to switch Claude Code to xhigh (decision 58).
+
 **Status:** ready-for-agent
 
 - [ ] The D6 test and the D1 annotation tests pass without the known-defect mark.

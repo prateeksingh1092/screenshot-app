@@ -163,6 +163,10 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
       - A no-network check is added.
       - `@_silgen_name` is banned, except for the listed D22 uses.
     - **Live matrix:** the unattended run drives the real screen and clipboard, so it runs only when Prateek says he is away. Until then, the Phase 0 gate reports the harness as built and dry-run only.
+    - **Effort level (Prateek, 2026-09-24):**
+      - Tickets run at high effort.
+      - Tickets 64, 65, 66, 67, 68 and 70 (the scrolling matcher and the native renderer) need xhigh. Before starting one, the coordinator stops and asks Prateek to switch; he changes the setting himself.
+      - Correction: commits `656d253` to `d96e7b8` say "medium effort", but they ran at xhigh.
 
 ## Evaluation update: Xcode question resolved narrowly
 

@@ -6,6 +6,8 @@
 
 **Phase:** 2
 
+**Effort:** xhigh. Before starting, stop and ask Prateek to switch Claude Code to xhigh (decision 58).
+
 **Status:** ready-for-agent
 
 - [ ] The D23 test passes without the known-defect mark, and a parity test covers `maxEdge` at or above the output size.

@@ -6,6 +6,8 @@
 
 **Phase:** 2
 
+**Effort:** xhigh. Before starting, stop and ask Prateek to switch Claude Code to xhigh (decision 58).
+
 **Status:** ready-for-agent
 
 - [ ] The privacy-checklist tests are written first:
