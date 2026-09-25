@@ -9,10 +9,12 @@ import FrisketCore
     @Published var saveFailed = false
     @Published var dragFailed = false
     @Published var copiedWhilePending = false
-    @Published var editingUnavailable = false
     @Published var dismissFailed = false
     @Published var keptInHistory = false
-    @Published var historyCommitted = false
+    /// The core's status for this Thumbnail (ticket 73); `CaptureSurfaces` applies it after every command.
+    @Published var status: ThumbnailStatus = .pending
+    @Published var editable = true
+    var historyCommitted: Bool { status == .finalized }
     /// The last Copy Text result, shown on the status line instead of a modal (D8, DA-5).
     @Published var textNotice = ""
     /// The Thumbnail has keyboard focus, so it draws a visible focus ring (D12).
@@ -106,11 +108,11 @@ private struct ThumbnailCardControls: View {
                          action: actions.save,
                          shortcut: "s",
                          label: model.saveFailed ? "Retry saving capture" : "Save capture")
-            if !model.historyCommitted && !model.editingUnavailable {
+            if model.editable {
                 symbolButton("pencil", action: actions.edit, shortcut: "e", label: "Edit capture")
             }
             symbolButton("text.viewfinder", action: actions.copyText, shortcut: "t", label: "Copy recognized text")
-            if !model.historyCommitted {
+            if model.status == .pending {
                 symbolButton("trash", action: actions.delete, shortcut: nil, label: "Delete pending capture")
                     .keyboardShortcut(.delete, modifiers: [])
             }
@@ -215,7 +217,6 @@ private final class ThumbnailCardPanel: NSPanel {
 
 @MainActor final class ThumbnailPanel {
     let revision: CaptureRevision
-    var displayID: UInt32?
     let model = ThumbnailModel()
     private let panel: ThumbnailCardPanel
     private var shown = false
@@ -223,6 +224,7 @@ private final class ThumbnailCardPanel: NSPanel {
     private var controlGlass: NSGlassEffectView?
     private var controlHost: NSHostingView<ThumbnailCard>?
     private var modelWatch: AnyCancellable?
+    private let actions: ThumbnailCardActions
 
     var onBecomeKey: (() -> Void)? {
         didSet { panel.onBecomeKey = onBecomeKey }
@@ -233,10 +235,10 @@ private final class ThumbnailCardPanel: NSPanel {
     var moveFocus: ((ThumbnailFocusMove) -> Void)?
     var isKey: Bool { panel.isKeyWindow }
 
-    init(revision: CaptureRevision, preview: CGImage, displayID: UInt32?, actions: ThumbnailCardActions,
+    init(revision: CaptureRevision, preview: CGImage, actions: ThumbnailCardActions,
          startDrag: @escaping (NSView, NSEvent) -> Void) {
         self.revision = revision
-        self.displayID = displayID
+        self.actions = actions
         panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 320, height: 360),
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         // D12: a non-activating panel can take keyboard focus from ⌘⇧2 while another app stays
@@ -258,18 +260,6 @@ private final class ThumbnailCardPanel: NSPanel {
             case .older: self?.moveFocus?(.older)
             }
         }
-        panel.setAccessibilityCustomActions([
-            NSAccessibilityCustomAction(name: "Copy capture") { [weak self] in self?.onBecomeKey?(); actions.copy(); return true },
-            NSAccessibilityCustomAction(name: "Save capture") { [weak self] in self?.onBecomeKey?(); actions.save(); return true },
-            NSAccessibilityCustomAction(name: "Edit capture") { [weak self] in self?.onBecomeKey?(); actions.edit(); return true },
-            NSAccessibilityCustomAction(name: "Copy recognized text") { [weak self] in self?.onBecomeKey?(); actions.copyText(); return true },
-            NSAccessibilityCustomAction(name: "Delete pending capture") { [weak self] in self?.onBecomeKey?(); actions.delete(); return true },
-            NSAccessibilityCustomAction(name: "Close thumbnail and keep capture in History") { [weak self] in
-                self?.onBecomeKey?()
-                actions.close()
-                return true
-            }
-        ])
         panel.isReleasedWhenClosed = false
         panel.isRestorable = false
         panel.hidesOnDeactivate = false
@@ -297,7 +287,6 @@ private final class ThumbnailCardPanel: NSPanel {
         well.wantsLayer = true
         well.layer?.cornerRadius = 8
         well.layer?.masksToBounds = true
-        well.setAccessibilityLabel("Pending capture preview")
         let container = NSView()
         container.addSubview(well)
         container.addSubview(glass)
@@ -307,9 +296,8 @@ private final class ThumbnailCardPanel: NSPanel {
         self.controlHost = hosting
         layoutChrome(image: image)
         panel.setAccessibilityRole(.window)
-        panel.setAccessibilityTitle("Pending capture")
-        panel.setAccessibilityLabel("Pending capture")
         panel.setAccessibilityElement(true)
+        syncAccessibility()
         modelWatch = model.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.syncChrome() }
         }
@@ -344,6 +332,40 @@ private final class ThumbnailCardPanel: NSPanel {
     private func syncChrome() {
         imageWell?.dragEnabled = !model.busy && !model.keptInHistory
         if let image = imageWell?.image { layoutChrome(image: image) }
+        syncAccessibility()
+    }
+
+    /// D16: the name says whether the capture is pending or kept in History, and a finalized
+    /// Thumbnail offers no Edit or Delete. Close finalizes a pending capture and only closes a finalized one.
+    private func syncAccessibility() {
+        let finalized = model.status == .finalized
+        let name = finalized ? "Capture kept in History" : "Pending capture"
+        panel.setAccessibilityTitle(name)
+        panel.setAccessibilityLabel(name)
+        imageWell?.setAccessibilityLabel("\(name) preview")
+        let actions = actions
+        var custom = [
+            NSAccessibilityCustomAction(name: "Copy capture") { [weak self] in self?.onBecomeKey?(); actions.copy(); return true },
+            NSAccessibilityCustomAction(name: "Save capture") { [weak self] in self?.onBecomeKey?(); actions.save(); return true }
+        ]
+        if model.editable {
+            custom.append(NSAccessibilityCustomAction(name: "Edit capture") { [weak self] in self?.onBecomeKey?(); actions.edit(); return true })
+        }
+        custom.append(NSAccessibilityCustomAction(name: "Copy recognized text") { [weak self] in
+            self?.onBecomeKey?(); actions.copyText(); return true
+        })
+        if !finalized {
+            custom.append(NSAccessibilityCustomAction(name: "Delete pending capture") { [weak self] in
+                self?.onBecomeKey?(); actions.delete(); return true
+            })
+        }
+        custom.append(NSAccessibilityCustomAction(name: finalized ? "Close thumbnail" : "Close thumbnail and keep capture in History") {
+            [weak self] in
+            self?.onBecomeKey?()
+            actions.close()
+            return true
+        })
+        panel.setAccessibilityCustomActions(custom)
     }
 
     var size: CGSize { panel.frame.size }

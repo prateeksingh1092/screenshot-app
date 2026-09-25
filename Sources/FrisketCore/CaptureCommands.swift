@@ -121,8 +121,9 @@ public struct CaptureCommandLayer: Sendable {
                                                   textRecognizer: textRecognizer, textClipboard: textClipboard)
     }
 
-    /// The thumbnail stack, newest first, with any exit the policy requires now.
-    public func thumbnails() async -> [ThumbnailCard] {
+    /// The Thumbnail stack, newest first: each card's status, any exit the policy requires now,
+    /// and the next time an exit becomes due.
+    public func thumbnails() async -> Thumbnails {
         await coordinator.thumbnails()
     }
 

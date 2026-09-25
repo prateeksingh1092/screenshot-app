@@ -14,26 +14,19 @@ actor CaptureLifecycleCoordinator {
     private let flattener: (any CaptureFlattening)?
     private let textRecognizer: (any TextRecognizer)?
     private let textClipboard: (any TextClipboard)?
-    private var finalized: Set<CaptureID> = []
-    private var deliveryCommits: [CaptureID: CommitOutcome] = [:]
+    /// One record per capture whose pixels are in memory, that is, whose Thumbnail is open.
+    private var pending: [CaptureID: PendingCapture] = [:]
+    /// What stays known about a capture once its pixels are released.
+    private var settled: [CaptureID: SettledCapture] = [:]
+    /// Transient locks, not states: a command is running on this capture.
     private var inProgress: Set<CaptureID> = []
     /// Captures whose Copy Text is running. Every command waits except Done: the stale-revision
     /// check already drops a Copy Text result that Done overtook (D25).
     private var recognizing: Set<CaptureID> = []
-    private var discarded: Set<CaptureID> = []
-    private enum DeliveryKind { case copy, save }
-    private var failedDeliveries: [CaptureID: Set<DeliveryKind>] = [:]
-    private var automaticExitSuppressed: Set<CaptureID> = []
-    private var delivered: Set<CaptureID> = []
-    private var images: [CaptureID: CaptureImage] = [:]
-    private var revisions: [CaptureID: UInt64] = [:]
-    private var copyReceipts: [CaptureID: ClipboardReceipt] = [:]
-    private var recoveryRequired: Set<CaptureID> = []
-    private var unfinishedRedactions: Set<CaptureID> = []
     private var stackFocused = false
     private var focusedCapture: CaptureID?
     private var screenLocked = false
-    // Holds exactly the captures in `images`; update both together.
+    // Holds exactly the captures in `pending`; update both together.
     private var stack: ThumbnailStack
     private let clock: @Sendable () -> ContinuousClock.Instant
 
@@ -80,8 +73,6 @@ actor CaptureLifecycleCoordinator {
         return await history.status(consumeNotice: consumeNotice)
     }
 
-    private func currentRevision(_ id: CaptureID) -> UInt64 { revisions[id] ?? 1 }
-
     func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {
         guard let history else { return .failure(.unavailable) }
         return await history.entries()
@@ -110,7 +101,7 @@ actor CaptureLifecycleCoordinator {
 
     func image(for revision: CaptureRevision) -> CaptureImage? {
         guard revision.number == currentRevision(revision.captureID) else { return nil }
-        return images[revision.captureID]
+        return pending[revision.captureID]?.image
     }
 
     func setThumbnailStackFocus(_ focused: Bool) {
@@ -173,15 +164,24 @@ actor CaptureLifecycleCoordinator {
         }
     }
 
-    func thumbnails() -> [ThumbnailCard] {
-        stack.cards(at: clock()).map { card in
-            let suppressed = automaticExitSuppressed.contains(card.revision.captureID)
-            let pauseTimeout = (stackFocused || screenLocked) && card.dueExit == .timeout
+    func thumbnails() -> Thumbnails {
+        let now = clock()
+        let paused = stackFocused || screenLocked
+        let cards = stack.cards(at: now).map { card in
+            let record = pending[card.revision.captureID]
+            let suppressed = record?.automaticExitSuppressed ?? false
+            let pauseTimeout = paused && card.dueExit == .timeout
+            let finalized = record?.finalized ?? false
             return ThumbnailCard(revision: card.revision, expiresAt: card.expiresAt,
                                  dueExit: (suppressed || pauseTimeout) ? nil : card.dueExit,
                                  automaticExitSuppressed: suppressed,
-                                 displayID: card.displayID)
+                                 displayID: card.displayID,
+                                 status: finalized ? .finalized : .pending,
+                                 editable: !finalized && record?.recoveryRequired != true)
         }
+        let timing = cards.filter { $0.dueExit == nil && !$0.automaticExitSuppressed }
+        let nextDueAt = paused ? nil : timing.compactMap(\.expiresAt).filter { $0 > now }.min()
+        return Thumbnails(cards: cards, nextDueAt: nextDueAt)
     }
 
     func execute(_ command: CaptureCommand) async -> CaptureCommandOutcome {
@@ -189,30 +189,24 @@ actor CaptureLifecycleCoordinator {
         case let .dismiss(revision):
             let id = revision.captureID
             guard !isBusy(id) else { return .rejected(.commandInProgress) }
-            guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
-            guard images[id] != nil || finalized.contains(id) else { return .rejected(.unknownCapture) }
+            guard !isDiscarded(id) else { return .rejected(.discardedCapture) }
+            guard pending[id] != nil || isFinalized(id) else { return .rejected(.unknownCapture) }
             guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
-            guard !unfinishedRedactions.contains(id) else { return .rejected(.editingUnavailable) }
-            guard !finalized.contains(id) || images[id] != nil else { return .rejected(.alreadyFinalized) }
-            guard let image = images[id] else { return .rejected(.unknownCapture) }
+            guard pending[id]?.unfinishedRedaction != true else { return .rejected(.editingUnavailable) }
+            guard let record = pending[id] else { return .rejected(.alreadyFinalized) }
             inProgress.insert(id)
             let outcome: CommitOutcome
-            if finalized.contains(id) { outcome = .committed }
+            if record.finalized { outcome = .committed }
             else {
-                outcome = await history?.finalize(AuthorizedFinalization(revision: revision, pngData: image.pngData))
+                outcome = await history?.finalize(AuthorizedFinalization(revision: revision, pngData: record.image.pngData))
                     ?? .notCommitted(.historyUnavailable)
             }
-            if outcome == .notCommitted(.recoveryRequired) { recoveryRequired.insert(id) }
+            if outcome == .notCommitted(.recoveryRequired) { pending[id]?.recoveryRequired = true }
             if outcome == .committed {
-                finalized.insert(id)
-                pendingBytes -= image.pngData.count
-                images.removeValue(forKey: id)
-                stack.remove(id)
-                failedDeliveries.removeValue(forKey: id)
-                automaticExitSuppressed.remove(id)
-                copyReceipts.removeValue(forKey: id)
+                pending[id]?.finalized = true
+                release(id)
             } else {
-                automaticExitSuppressed.insert(id)
+                pending[id]?.automaticExitSuppressed = true
             }
             inProgress.remove(id)
             return .finalized(revision, outcome)
@@ -220,15 +214,15 @@ actor CaptureLifecycleCoordinator {
             let commits: Bool = if case .done = command { true } else { false }
             let id = revision.captureID
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }   // not isBusy: Done may run during Copy Text, whose result the stale check drops
-            guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
-            guard images[id] != nil || finalized.contains(id) || delivered.contains(id) else { return .rejected(.unknownCapture) }
+            guard !isDiscarded(id) else { return .rejected(.discardedCapture) }
+            guard pending[id] != nil || isFinalized(id) || isDelivered(id) else { return .rejected(.unknownCapture) }
             guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
-            guard !finalized.contains(id) else { return .rejected(.alreadyFinalized) }
-            guard !recoveryRequired.contains(id) else { return .rejected(.editingUnavailable) }
-            guard let image = images[id] else { return .rejected(.alreadyDelivered) }
+            guard !isFinalized(id) else { return .rejected(.alreadyFinalized) }
+            guard !needsRecovery(id) else { return .rejected(.editingUnavailable) }
+            guard let image = pending[id]?.image else { return .rejected(.alreadyDelivered) }
             // Once redaction is submitted, a rejected render must not expose the
             // original to delivery or History. Only an accepted Done or Delete resolves it.
-            if !edits.redactions.isEmpty { unfinishedRedactions.insert(id) }
+            if !edits.redactions.isEmpty { pending[id]?.unfinishedRedaction = true }
             // Synchronous on purpose: no suspension separates the guards above from the
             // replacement below. If flatten ever becomes async, insert `inProgress` before the await.
             guard let flattener, let pngData = try? flattener.flatten(image.pngData, edits: edits),
@@ -240,24 +234,24 @@ actor CaptureLifecycleCoordinator {
             // The rendered revision replaces the original before any suspension, so no
             // later command, retry or History commit can reach the unredacted pixels.
             pendingBytes += pngData.count - image.pngData.count
-            images[id] = CaptureImage(pngData: pngData)
-            revisions[id] = next.number
+            pending[id]?.image = CaptureImage(pngData: pngData)
+            pending[id]?.revision = next.number
             stack.replace(next)
-            unfinishedRedactions.remove(id)
+            pending[id]?.unfinishedRedaction = false
             // Retry state belonged to the previous revision's Copy.
-            failedDeliveries.removeValue(forKey: id)
-            deliveryCommits.removeValue(forKey: id)
-            delivered.remove(id)
+            pending[id]?.failedDeliveries = []
+            pending[id]?.deliveryCommit = nil
+            pending[id]?.delivered = false
             inProgress.insert(id)
             var clipboardFailure: ClipboardFailure?
-            if !edits.redactions.isEmpty, let receipt = copyReceipts[id] {
+            if !edits.redactions.isEmpty, let receipt = pending[id]?.copyReceipt {
                 // Do this even if History is unavailable; clipboard privacy is independent
                 // of persistence. The adapter checks and writes without a suspension.
                 switch await clipboard.write(ClipboardImage(pngData: pngData, replacing: receipt)) {
                 case let .success(replacement):
-                    copyReceipts[id] = replacement
+                    pending[id]?.copyReceipt = replacement
                 case .failure(.changed):
-                    copyReceipts.removeValue(forKey: id)
+                    pending[id]?.copyReceipt = nil
                 case .failure(.unavailable):
                     clipboardFailure = .unavailable
                 }
@@ -268,45 +262,38 @@ actor CaptureLifecycleCoordinator {
             }
             let commit = await history?.finalize(AuthorizedFinalization(revision: next, pngData: pngData))
                 ?? .notCommitted(.historyUnavailable)
-            if commit == .committed { finalized.insert(id) }
-            if commit == .notCommitted(.recoveryRequired) { recoveryRequired.insert(id) }
-            if finalized.contains(id) || recoveryRequired.contains(id) { copyReceipts.removeValue(forKey: id) }
-            if commit != .committed { automaticExitSuppressed.insert(id) }
+            if commit == .committed { pending[id]?.finalized = true }
+            if commit == .notCommitted(.recoveryRequired) { pending[id]?.recoveryRequired = true }
+            if isFinalized(id) || needsRecovery(id) { pending[id]?.copyReceipt = nil }
+            if commit != .committed { pending[id]?.automaticExitSuppressed = true }
             inProgress.remove(id)
             return .edited(next, commit, clipboardFailure: clipboardFailure)
         case let .discard(id):
             guard !isBusy(id) else { return .rejected(.commandInProgress) }
-            guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
-            guard !finalized.contains(id) else { return .rejected(.alreadyFinalized) }
-            guard images[id] != nil else {
-                return .rejected(delivered.contains(id) ? .alreadyDelivered : .unknownCapture)
+            guard !isDiscarded(id) else { return .rejected(.discardedCapture) }
+            guard !isFinalized(id) else { return .rejected(.alreadyFinalized) }
+            guard pending[id] != nil else {
+                return .rejected(isDelivered(id) ? .alreadyDelivered : .unknownCapture)
             }
-            pendingBytes -= images[id]?.pngData.count ?? 0
-            images.removeValue(forKey: id)
-            stack.remove(id)
-            failedDeliveries.removeValue(forKey: id)
-            automaticExitSuppressed.remove(id)
-            copyReceipts.removeValue(forKey: id)
-            discarded.insert(id)
-            unfinishedRedactions.remove(id)
+            release(id, discarded: true)
             return .discarded(id)
         case let .deleteHistory(id):
             guard !isBusy(id) else { return .rejected(.commandInProgress) }
             // A pending capture has no History row. A finalized one may still have its Thumbnail open.
-            guard images[id] == nil || finalized.contains(id) else { return .rejected(.alreadyFinalized) }
+            guard pending[id] == nil || isFinalized(id) else { return .rejected(.alreadyFinalized) }
             inProgress.insert(id)   // D25: nothing else may use this capture while it is deleted
             let deleted = await history?.delete(id)
             inProgress.remove(id)
             switch deleted {
             case .success:
-                closeFinalizedThumbnail(id)   // D10: Delete closes the capture's open Thumbnail
+                release(id)   // D10: Delete closes the capture's open Thumbnail and releases its pixels
                 return .historyDeleted(id)
             case .failure, nil: return .rejected(.unknownCapture)
             }
         case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes), let .captureWindow(id, maximumBytes):
             guard !isBusy(id) else { return .rejected(.commandInProgress) }
-            guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
-            guard images[id] == nil, !delivered.contains(id), !finalized.contains(id) else { return .rejected(.duplicateCapture) }
+            guard !isDiscarded(id) else { return .rejected(.discardedCapture) }
+            guard pending[id] == nil, settled[id] == nil else { return .rejected(.duplicateCapture) }
             guard maximumBytes > 0 else { return .rejected(.invalidByteAllowance) }
             guard maximumBytes <= pendingByteLimit - pendingBytes else {
                 return .rejected(.pendingByteBudgetExceeded)
@@ -337,8 +324,7 @@ actor CaptureLifecycleCoordinator {
                 guard !image.pngData.isEmpty else { return .captureFailed(.emptyImage) }
                 guard image.pngData.count <= maximumBytes else { return .rejected(.pendingByteBudgetExceeded) }
                 pendingBytes += image.pngData.count
-                images[id] = image
-                revisions[id] = 1
+                pending[id] = PendingCapture(image: image)
                 stack.insert(CaptureRevision(captureID: id, number: 1), at: clock())
                 if let display = image.displayID { stack.assignDisplay(id, displayID: display) }
                 return .pending(CaptureRevision(captureID: id, number: 1))
@@ -359,7 +345,8 @@ actor CaptureLifecycleCoordinator {
                     case let .success(receipt): delivery = .copied(receipt)
                     case let .failure(error): delivery = .failed(error)
                     }
-                    return .copy(CopyOutcome(revision: revision, commit: commit, delivery: delivery))
+                    return .copy(CopyOutcome(revision: revision, commit: commit ?? .notCommitted(.historyUnavailable),
+                                             delivery: delivery))
                 })
         case let .save(revision), let .retrySave(revision):
             let retrying: Bool = if case .retrySave = command { true } else { false }
@@ -371,15 +358,16 @@ actor CaptureLifecycleCoordinator {
                     case let .success(receipt): delivery = .saved(receipt)
                     case let .failure(error): delivery = .failed(error)
                     }
-                    return .save(SaveOutcome(revision: revision, commit: commit, delivery: delivery))
+                    return .save(SaveOutcome(revision: revision, commit: commit ?? .notCommitted(.historyUnavailable),
+                                             delivery: delivery))
                 })
         case let .exitThumbnail(revision, exit):
             let id = revision.captureID
-            if images[id] != nil, !isBusy(id) {
-                guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
-                guard !unfinishedRedactions.contains(id) else { return .rejected(.editingUnavailable) }
+            if let record = pending[id], !isBusy(id) {
+                guard revision.number == record.revision else { return .rejected(.staleRevision) }
+                guard !record.unfinishedRedaction else { return .rejected(.editingUnavailable) }
                 if exit == .timeout || exit == .overflow {
-                    guard !automaticExitSuppressed.contains(id) else { return .rejected(.thumbnailExitNotDue) }
+                    guard !record.automaticExitSuppressed else { return .rejected(.thumbnailExitNotDue) }
                 }
                 if exit == .timeout {
                     guard !stackFocused, !screenLocked else { return .rejected(.thumbnailExitNotDue) }
@@ -392,92 +380,38 @@ actor CaptureLifecycleCoordinator {
             }
         case let .drag(revision, operation):
             guard operation == .copy else { return .rejected(.dragOperationRefused) }
-            let id = revision.captureID
-            guard !isBusy(id) else { return .rejected(.commandInProgress) }
-            guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
-            let pending = images[id]
-            let pngData: Data
-            let fromHistory: Bool
-            if let pending {
-                guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
-                guard !unfinishedRedactions.contains(id) else { return .rejected(.editingUnavailable) }
-                guard !delivered.contains(id) else { return .rejected(.alreadyDelivered) }
-                pngData = pending.pngData
-                fromHistory = false
-            } else {
-                switch await history?.finalizedImage(id) {
-                case let .success((number, data)):
-                    guard revision.number == number else { return .rejected(.staleRevision) }
-                    pngData = data
-                    fromHistory = true
-                default:
-                    return .rejected(delivered.contains(id) ? .alreadyDelivered : .unknownCapture)
-                }
-            }
-            inProgress.insert(id)
             // DA-3: hand off first. The promised file is written from memory, and only a drop
             // the destination accepted authorizes finalization.
-            var delivery: DragDelivery = .failed
-            if let drag {
-                do {
-                    delivery = try await drag.deliver(.copy, image: DragImage(pngData: pngData), events: DragSessionEvents())
-                } catch {
-                    delivery = .failed
-                }
-            }
-            if fromHistory {
-                inProgress.remove(id)
-                return .drag(DragOutcome(revision: revision, commit: .committed, delivery: delivery))
-            }
-            guard delivery == .copied else {
-                // A cancelled or failed drag commits nothing: the capture stays pending and its Thumbnail stays open.
-                automaticExitSuppressed.insert(id)
-                inProgress.remove(id)
-                let commit: CommitOutcome? = finalized.contains(id) ? .committed : deliveryCommits[id]
-                return .drag(DragOutcome(revision: revision, commit: commit, delivery: delivery))
-            }
-            let commit: CommitOutcome
-            if let prior = deliveryCommits[id] {
-                commit = prior
-            } else if finalized.contains(id) {
-                commit = .committed
-                deliveryCommits[id] = commit
-            } else {
-                commit = await history?.finalize(AuthorizedFinalization(revision: revision, pngData: pngData))
-                    ?? .notCommitted(.historyUnavailable)
-                deliveryCommits[id] = commit
-                if commit == .committed { finalized.insert(id) }
-            }
-            if commit == .notCommitted(.recoveryRequired) { recoveryRequired.insert(id) }
-            delivered.insert(id)
-            failedDeliveries.removeValue(forKey: id)
-            automaticExitSuppressed.remove(id)
-            pendingBytes -= pngData.count
-            images.removeValue(forKey: id)
-            stack.remove(id)
-            copyReceipts.removeValue(forKey: id)
-            inProgress.remove(id)
-            return .drag(DragOutcome(revision: revision, commit: commit, delivery: delivery))
+            return await deliver(revision, kind: .drag, retrying: false,
+                using: { [drag] request in
+                    let delivery = (try? await drag?.deliver(.copy, image: DragImage(pngData: request.pngData),
+                                                             events: DragSessionEvents())) ?? .failed
+                    return delivery == .copied ? .success(delivery) : .failure(DragNotAccepted())
+                },
+                outcome: { commit, result in
+                    .drag(DragOutcome(revision: revision, commit: commit, delivery: (try? result.get()) ?? .failed))
+                })
         }
     }
 
-    /// Every delivery shares authorization, commit caching, retry gating and byte ownership.
+    /// Every delivery (Copy, Save and drag) shares authorization, commit caching, retry gating and byte ownership.
+    /// Copy and Save commit before the adapter write. A drag commits only after the destination accepted
+    /// the drop (DA-3), and has no retry gate: dragging again is the retry.
     private func deliver<Receipt: Sendable, Failure: Error & Sendable>(
         _ revision: CaptureRevision, kind: DeliveryKind, retrying: Bool,
         using operation: @Sendable (AuthorizedFinalization) async -> Result<Receipt, Failure>,
-        outcome: (CommitOutcome, Result<Receipt, Failure>) -> CaptureCommandOutcome
+        outcome: (CommitOutcome?, Result<Receipt, Failure>) -> CaptureCommandOutcome
     ) async -> CaptureCommandOutcome {
         let id = revision.captureID
         guard !isBusy(id) else { return .rejected(.commandInProgress) }
-        guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
-        let pending = images[id]
+        guard !isDiscarded(id) else { return .rejected(.discardedCapture) }
         let pngData: Data
         let fromHistory: Bool
-        if let pending {
-            guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
-            guard !unfinishedRedactions.contains(id) else { return .rejected(.editingUnavailable) }
-            guard !delivered.contains(id) else { return .rejected(.alreadyDelivered) }
-            pngData = pending.pngData
+        if let record = pending[id] {
+            guard revision.number == record.revision else { return .rejected(.staleRevision) }
+            guard !record.unfinishedRedaction else { return .rejected(.editingUnavailable) }
+            guard !record.delivered else { return .rejected(.alreadyDelivered) }
+            pngData = record.image.pngData
             fromHistory = false
         } else {
             switch await history?.finalizedImage(id) {
@@ -486,79 +420,90 @@ actor CaptureLifecycleCoordinator {
                 pngData = data
                 fromHistory = true
             default:
-                return .rejected(delivered.contains(id) ? .alreadyDelivered : .unknownCapture)
+                return .rejected(isDelivered(id) ? .alreadyDelivered : .unknownCapture)
             }
         }
-        let previouslyFailed = failedDeliveries[id]?.contains(kind) == true
-        if fromHistory {
-            // History delivery is a new adapter write each time; retry belongs to pending captures.
-            if retrying { return .rejected(.retryNotAvailable) }
-        } else if retrying {
-            guard previouslyFailed else { return .rejected(.retryNotAvailable) }
-        } else if previouslyFailed {
-            return .rejected(.retryRequired)
+        if kind != .drag {
+            let previouslyFailed = pending[id]?.failedDeliveries.contains(kind) == true
+            if fromHistory {
+                // History delivery is a new adapter write each time; retry belongs to pending captures.
+                if retrying { return .rejected(.retryNotAvailable) }
+            } else if retrying {
+                guard previouslyFailed else { return .rejected(.retryNotAvailable) }
+            } else if previouslyFailed {
+                return .rejected(.retryRequired)
+            }
         }
         inProgress.insert(id)
         defer { inProgress.remove(id) }
         let request = AuthorizedFinalization(revision: revision, pngData: pngData)
-        // Retrying delivery never repeats a commit, including a failed one.
-        let commit: CommitOutcome
-        if fromHistory {
-            commit = .committed
-        } else if let prior = deliveryCommits[id] { commit = prior }
-        else if finalized.contains(id) {
-            commit = .committed
-            deliveryCommits[id] = commit
-        } else {
-            commit = await history?.finalize(request) ?? .notCommitted(.historyUnavailable)
-            deliveryCommits[id] = commit
-            if commit == .committed { finalized.insert(id) }
-        }
-        if commit == .notCommitted(.recoveryRequired) { recoveryRequired.insert(id) }
+        var commit: CommitOutcome? = fromHistory ? .committed : nil
+        if kind != .drag, !fromHistory { commit = await commitOnce(request) }
         let result = await operation(request)
+        if fromHistory { return outcome(commit, result) }
         switch result {
         case let .success(receipt):
-            failedDeliveries.removeValue(forKey: id)
-            if fromHistory { break }
-            delivered.insert(id)
+            if kind == .drag { commit = await commitOnce(request) }
+            pending[id]?.failedDeliveries = []
+            pending[id]?.delivered = true
             // A failed History commit leaves an editable Pending capture when a flattener
             // can replace the earlier copy. Keep its byte charge and receipt.
-            if kind == .copy, commit != .committed, !recoveryRequired.contains(id), flattener != nil,
+            if kind == .copy, commit != .committed, !needsRecovery(id), flattener != nil,
                let copyReceipt = receipt as? ClipboardReceipt {
-                copyReceipts[id] = copyReceipt
-                automaticExitSuppressed.insert(id)
+                pending[id]?.copyReceipt = copyReceipt
+                pending[id]?.automaticExitSuppressed = true
             } else {
-                automaticExitSuppressed.remove(id)
-                pendingBytes -= pngData.count
-                images.removeValue(forKey: id)
-                stack.remove(id)
-                copyReceipts.removeValue(forKey: id)
+                release(id)
             }
         case .failure:
-            failedDeliveries[id, default: []].insert(kind)
-            if !fromHistory { automaticExitSuppressed.insert(id) }
+            if kind == .drag {
+                // A cancelled or failed drag commits nothing: the capture stays pending and its Thumbnail stays open.
+                commit = isFinalized(id) ? .committed : pending[id]?.deliveryCommit
+            } else {
+                pending[id]?.failedDeliveries.insert(kind)
+            }
+            pending[id]?.automaticExitSuppressed = true
         }
         return outcome(commit, result)
+    }
+
+    /// The first delivery of a revision asks History to commit it; a retry or later delivery
+    /// reuses that outcome, including a failed one.
+    private func commitOnce(_ request: AuthorizedFinalization) async -> CommitOutcome {
+        let id = request.revision.captureID
+        let commit: CommitOutcome
+        if let prior = pending[id]?.deliveryCommit {
+            commit = prior
+        } else if isFinalized(id) {
+            commit = .committed
+            pending[id]?.deliveryCommit = commit
+        } else {
+            commit = await history?.finalize(request) ?? .notCommitted(.historyUnavailable)
+            pending[id]?.deliveryCommit = commit
+            if commit == .committed { pending[id]?.finalized = true }
+        }
+        if commit == .notCommitted(.recoveryRequired) { pending[id]?.recoveryRequired = true }
+        return commit
     }
 
     private func copyRecognizedText(_ revision: CaptureRevision) async -> CaptureCommandOutcome {
         let id = revision.captureID
         guard let textRecognizer, let textClipboard else { return .rejected(.recognitionUnavailable) }
         guard !isBusy(id) else { return .rejected(.commandInProgress) }
-        guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
+        guard !isDiscarded(id) else { return .rejected(.discardedCapture) }
         guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
         let image: CaptureImage
-        if let pending = images[id] {
-            image = pending
-        } else if finalized.contains(id), let stored = await historyImage(id) {
+        if let record = pending[id] {
+            image = record.image
+        } else if isFinalized(id), let stored = await historyImage(id) {
             image = stored
         } else {
-            return .rejected(delivered.contains(id) ? .alreadyDelivered : .unknownCapture)
+            return .rejected(isDelivered(id) ? .alreadyDelivered : .unknownCapture)
         }
         recognizing.insert(id)
         defer { recognizing.remove(id) }
         let text = await textRecognizer.recognize(image)
-        guard revision.number == currentRevision(id), images[id] != nil || finalized.contains(id) else {
+        guard revision.number == currentRevision(id), pending[id] != nil || isFinalized(id) else {
             return .rejected(.staleRevision)
         }
         // D8: no text leaves the clipboard exactly as it was.
@@ -575,17 +520,58 @@ actor CaptureLifecycleCoordinator {
 
     private func isBusy(_ id: CaptureID) -> Bool { inProgress.contains(id) || recognizing.contains(id) }
 
-    /// Releases a finalized capture's open Thumbnail and the pixels it holds, as a Thumbnail exit does.
-    private func closeFinalizedThumbnail(_ id: CaptureID) {
-        guard let image = images.removeValue(forKey: id) else { return }
-        pendingBytes -= image.pngData.count
+    private func currentRevision(_ id: CaptureID) -> UInt64 { pending[id]?.revision ?? settled[id]?.revision ?? 1 }
+    private func isFinalized(_ id: CaptureID) -> Bool { pending[id]?.finalized ?? settled[id]?.finalized ?? false }
+    private func isDelivered(_ id: CaptureID) -> Bool { pending[id]?.delivered ?? settled[id]?.delivered ?? false }
+    private func isDiscarded(_ id: CaptureID) -> Bool { settled[id]?.discarded ?? false }
+    private func needsRecovery(_ id: CaptureID) -> Bool {
+        pending[id]?.recoveryRequired ?? settled[id]?.recoveryRequired ?? false
+    }
+
+    /// Closes the capture's Thumbnail and releases its pixels. The settled map keeps how it ended.
+    private func release(_ id: CaptureID, discarded: Bool = false) {
+        guard let record = pending.removeValue(forKey: id) else { return }
+        pendingBytes -= record.image.pngData.count
         stack.remove(id)
-        failedDeliveries.removeValue(forKey: id)
-        automaticExitSuppressed.remove(id)
-        copyReceipts.removeValue(forKey: id)
-        unfinishedRedactions.remove(id)
+        settled[id] = SettledCapture(revision: record.revision, finalized: record.finalized,
+                                     delivered: record.delivered, recoveryRequired: record.recoveryRequired,
+                                     discarded: discarded)
     }
 }
+
+private enum DeliveryKind { case copy, save, drag }
+
+/// Everything the coordinator holds for one capture while its Thumbnail is open. There is no
+/// editing or delivering state: the core never sees editing, and a delivery is the `inProgress` lock.
+private struct PendingCapture {
+    var image: CaptureImage
+    var revision: UInt64 = 1
+    /// History committed this capture; its Thumbnail stays open after a failed delivery or a Done.
+    var finalized = false
+    /// A delivery took this revision while History could not commit it (Copy keeps it editable).
+    var delivered = false
+    /// The first delivery's commit; a retry or later delivery reuses it.
+    var deliveryCommit: CommitOutcome?
+    var failedDeliveries: Set<DeliveryKind> = []
+    /// A failed action requires an explicit user retry, so no automatic exit.
+    var automaticExitSuppressed = false
+    /// The clipboard write a redacting Done must replace.
+    var copyReceipt: ClipboardReceipt?
+    var recoveryRequired = false
+    /// Redaction was submitted and no Done or Delete has resolved it yet.
+    var unfinishedRedaction = false
+}
+
+/// What stays known about a capture after its pixels are released.
+private struct SettledCapture {
+    let revision: UInt64
+    let finalized: Bool
+    let delivered: Bool
+    let recoveryRequired: Bool
+    let discarded: Bool
+}
+
+private struct DragNotAccepted: Error {}
 
 /// Drag events need no bookkeeping: nothing is staged, and `deliver` returns `.copied`
 /// only after the promise write succeeded and the session ended.

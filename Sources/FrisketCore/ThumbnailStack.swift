@@ -103,6 +103,15 @@ public struct ThumbnailStackPolicy: Sendable {
     }
 }
 
+/// What a Thumbnail says about its capture. There is no editing or delivering status:
+/// the core never sees editing, and a delivery is a transient lock.
+public enum ThumbnailStatus: Equatable, Sendable {
+    /// In memory only. Delete is available, and Edit when the card is `editable`.
+    case pending
+    /// Kept in History. The Thumbnail stays open only after a failed delivery; Edit and Delete are gone.
+    case finalized
+}
+
 public struct ThumbnailCard: Equatable, Sendable {
     public let revision: CaptureRevision
     /// Arrival plus the delay on the injected clock; nil when auto-dismiss is never.
@@ -112,14 +121,35 @@ public struct ThumbnailCard: Equatable, Sendable {
     /// A failed action requires an explicit user retry; do not schedule automatic exits.
     public let automaticExitSuppressed: Bool
     public let displayID: UInt32?
+    public let status: ThumbnailStatus
+    /// Done can still render this capture: it is pending and History does not need recovery.
+    public let editable: Bool
     public init(revision: CaptureRevision, expiresAt: ContinuousClock.Instant?, dueExit: ThumbnailExit?,
-                automaticExitSuppressed: Bool = false, displayID: UInt32? = nil) {
+                automaticExitSuppressed: Bool = false, displayID: UInt32? = nil,
+                status: ThumbnailStatus = .pending, editable: Bool = true) {
         self.revision = revision
         self.expiresAt = expiresAt
         self.dueExit = dueExit
         self.automaticExitSuppressed = automaticExitSuppressed
         self.displayID = displayID
+        self.status = status
+        self.editable = editable
     }
+}
+
+/// The Thumbnail stack, newest first, and the next time a card's exit becomes due.
+public struct Thumbnails: RandomAccessCollection, Equatable, Sendable {
+    public let cards: [ThumbnailCard]
+    /// The earliest timeout still to come; nil when no card can time out (never, paused, or awaiting a retry).
+    /// A card whose exit is already due reports it in `dueExit` instead.
+    public let nextDueAt: ContinuousClock.Instant?
+    public init(cards: [ThumbnailCard], nextDueAt: ContinuousClock.Instant?) {
+        self.cards = cards
+        self.nextDueAt = nextDueAt
+    }
+    public var startIndex: Int { cards.startIndex }
+    public var endIndex: Int { cards.endIndex }
+    public subscript(position: Int) -> ThumbnailCard { cards[position] }
 }
 
 /// Pure ordering and exit policy for the cards of Pending captures.
