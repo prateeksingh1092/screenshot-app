@@ -9,9 +9,9 @@
 5. no event taps or global monitors;
 6. no network APIs.
 
-The redundant regex rules, the Snapzy provenance and identity checks and the stitcher fixtures are deleted. So is the dead code: Vision probe and stitcher leftovers, test-only public API, empty functions and files, the unread diagnostics (replaced by `os.Logger` with privacy annotations), and the Snapzy build scripts.
+The redundant regex rules, the Snapzy provenance and identity checks are deleted (ticket 87 already removed the stitcher, its fixtures and the Vision probe). So is the dead code: test-only public API, empty functions and files, the unread diagnostics (replaced by `os.Logger` with privacy annotations), and the Snapzy build scripts.
 
-**Blocked by:** 67, 70, 77
+**Blocked by:** 67, 77 (70 withdrawn by decision 60)
 
 **Phase:** 5 (O12, O17)
 

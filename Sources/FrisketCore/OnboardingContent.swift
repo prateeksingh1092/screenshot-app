@@ -37,7 +37,7 @@ public struct OnboardingContent: Equatable, Sendable {
         ),
         shortcuts: Statement(
             accessibilityLabel: "Capture shortcuts",
-            text: "Command–Shift–4 captures an area, Command–Shift–3 the full screen, Command–Shift–5 a window, and Command–Shift–6 a scrolling page. Command–Shift–2 focuses the latest thumbnail, and Command–Shift–1 opens History."
+            text: "Command–Shift–4 captures an area, Command–Shift–3 the full screen, and Command–Shift–5 a window. Command–Shift–2 focuses the latest thumbnail, and Command–Shift–1 opens History."
         ),
         continueTitle: "Continue",
         continueAccessibilityLabel: "Continue to the Screen Recording permission request",

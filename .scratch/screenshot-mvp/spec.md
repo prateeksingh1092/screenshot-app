@@ -10,7 +10,7 @@ Prateek takes screenshots all day on an Intel MacBook Pro running macOS 26 and n
 
 ## Solution
 
-Frisket is a native macOS menu-bar app that captures an area, a window, the full screen, or a manually scrolled page as a still image. Each capture appears as a floating thumbnail he can copy, save, drag, edit, or delete with the mouse or the keyboard. The editor adds annotations and solid redaction, and whatever leaves the editor is a flattened image in which redacted pixels are gone. Unedited and pending captures live only in memory; only finalized, flattened images reach disk, in a local History that keeps 30 days or 1 GB, whichever comes first. Text recognition runs on the rendered result, so redacted text can't be extracted. Nothing leaves the Mac: no accounts, network features, update feed, or telemetry.
+Frisket is a native macOS menu-bar app that captures an area, a window or the full screen as a still image (scrolling capture was removed by decision 60). Each capture appears as a floating thumbnail he can copy, save, drag, edit, or delete with the mouse or the keyboard. The editor adds annotations and solid redaction, and whatever leaves the editor is a flattened image in which redacted pixels are gone. Unedited and pending captures live only in memory; only finalized, flattened images reach disk, in a local History that keeps 30 days or 1 GB, whichever comes first. Text recognition runs on the rendered result, so redacted text can't be extracted. Nothing leaves the Mac: no accounts, network features, update feed, or telemetry.
 
 ## User Stories
 
@@ -19,7 +19,7 @@ Frisket is a native macOS menu-bar app that captures an area, a window, the full
 1. As a user, I want to capture a selected area with a global shortcut, so that I can grab exactly what I need.
 2. As a user, I want to capture a single window by clicking it, so that I get a clean image of that window alone.
 3. As a user, I want to capture the full screen of a display, so that I can record everything visible at once.
-4. As a user, I want to capture a page longer than the screen by scrolling it myself, so that I get one tall image of a chat or document.
+4. **Retired (decision 60).** As a user, I want to capture a page longer than the screen by scrolling it myself, so that I get one tall image of a chat or document.
 5. As a user, I want a crosshair on every display during area selection, so that I can start a selection wherever the content is.
 6. As a user, I want a pixel magnifier while selecting, so that I can place edges precisely.
 7. As a user, I want Shift to lock an axis, Option to grow from the centre, Space to move the selection, and arrow keys to nudge it, so that selecting feels like the built-in tool.
@@ -31,13 +31,13 @@ Frisket is a native macOS menu-bar app that captures an area, a window, the full
 13. As a user, I want to list apps whose windows are always left out of captures, such as my password manager, so that their contents never enter an image.
 14. As a user, I want window capture to cover the windows visible on my current Space, so that the behaviour is predictable.
 15. As a user, I want the overlay to work over full-screen apps and after switching Spaces, so that capture works wherever I am.
-16. As a user, I want scrolling capture to show a live preview while I scroll, so that I can see the result building up.
-17. As a user, I want scrolling capture to stop with a clear message when it reaches its pixel or memory limit, so that I'm never surprised by a truncated image.
-18. As a user, I want scrolling capture to work without granting Accessibility permission, so that Screen Recording is the only permission Frisket needs.
+16. **Retired (decision 60).** As a user, I want scrolling capture to show a live preview while I scroll, so that I can see the result building up.
+17. **Retired (decision 60).** As a user, I want scrolling capture to stop with a clear message when it reaches its pixel or memory limit, so that I'm never surprised by a truncated image.
+18. **Retired (decision 60).** As a user, I want scrolling capture to work without granting Accessibility permission, so that Screen Recording is the only permission Frisket needs.
 
 ### Shortcuts and permissions
 
-19. As a user, I want Command–Shift and a number to capture — ⌘⇧3 full screen, ⌘⇧4 area, ⌘⇧5 window, ⌘⇧6 scrolling — the same keys as the macOS screenshot tool, so that each key does exactly one thing.
+19. As a user, I want Command–Shift and a number to capture — ⌘⇧3 full screen, ⌘⇧4 area, ⌘⇧5 window, ~~⌘⇧6 scrolling~~ (the ⌘⇧6 part is **Retired (decision 60)**; ⌘⇧6 is left free) — the same keys as the macOS screenshot tool, so that each key does exactly one thing.
 20. As a user, I want to remap every shortcut, and be told when a mapping collides with an enabled system shortcut, so that I can set my own layout safely.
 21. As a new user, I want onboarding to explain the Screen Recording permission, what History keeps and for how long, and that Save keeps a permanent copy, so that I know what Frisket stores.
 22. As a user, I want Frisket to check permission before showing any overlay, so that I never draw a selection that can't be captured.
@@ -117,7 +117,7 @@ Frisket is a native macOS menu-bar app that captures an area, a window, the full
 78. As a VoiceOver user, I want every control labelled, except the contents of the image canvas, so that I can use the app by ear.
 79. As a user, I want the thumbnail to appear quickly after I finish a selection, so that capture feels instant.
 80. As a user, I want Frisket to use almost no CPU while idle and to keep the low-power GPU, so that it doesn't drain battery or heat this Mac.
-81. As a user, I want a long scrolling capture to stay within a bounded amount of memory, so that it doesn't bog down my 16 GB Mac.
+81. **Retired (decision 60).** As a user, I want a long scrolling capture to stay within a bounded amount of memory, so that it doesn't bog down my 16 GB Mac.
 
 ### Remediation behaviour (2026-09-24, decision 57)
 
@@ -133,8 +133,8 @@ These stories come from the live evaluation in `Plans/dreamy-giggling-barto.md`.
 89. As a user, I want Copy Text on an image with no text to leave my clipboard unchanged and show a non-modal "No text found", so that I don't lose what I copied (D8, DA-5).
 90. As a user, I want Thumbnails to be one fixed size and to stack without overlapping, so that I can see every pending capture (D9).
 91. As a user, I want History Delete to ask for confirmation, and to close the capture's open Thumbnail first, so that deletion is deliberate and always succeeds (D10, DA-4).
-92. As a user, I want the page to keep keyboard scrolling during a scrolling capture, and ⌘⇧6 pressed again to finish it, so that I can scroll with the keyboard (D11, DA-9).
-93. As a user, I want a scrolling capture to reproduce the page exactly, to ask me to slow down when a scroll is too fast or ambiguous while keeping the part already captured, and to stop at 32,768 px, so that I never get a silently wrong image (D3, D20, DA-6).
+92. **Retired (decision 60).** As a user, I want the page to keep keyboard scrolling during a scrolling capture, and ⌘⇧6 pressed again to finish it, so that I can scroll with the keyboard (D11, DA-9).
+93. **Retired (decision 60).** As a user, I want a scrolling capture to reproduce the page exactly, to ask me to slow down when a scroll is too fast or ambiguous while keeping the part already captured, and to stop at 32,768 px, so that I never get a silently wrong image (D3, D20, DA-6).
 94. As a user, I want ⌘⇧2 to move keyboard focus to the latest Thumbnail with a visible focus ring, so that I can act on it from the keyboard (D12).
 95. As a user, I want Frisket to leave macOS settings unchanged, show which macOS screenshot shortcuts to turn off, link to System Settings, and restore them only when I ask, so that I stay in control of my Mac (D13, DA-2).
 96. As a user, I want cropping never to leave a sliver of redacted content visible, so that Solid redaction always conceals (D18).
@@ -166,8 +166,8 @@ These stories come from the live evaluation in `Plans/dreamy-giggling-barto.md`.
 - **Capture lifecycle coordinator (deep module):** owns every Pending capture and its transitions, revision identity, and the decision to finalize, deliver, or discard. Its interface reports commit outcomes and delivery outcomes separately; retries refer to the same finalized revision; duplicate and stale commands are rejected safely. It enforces a global budget for pending bytes (refusing new scrolling captures beyond it) and, on quit, waits only for commits the user has authorized.
 - **Capture source:** ScreenCaptureKit only. Every capture uses a content filter that excludes Frisket's own app and the apps on the Capture exclusion list; there is no fallback that relies on window sharing flags. Shareable content is prefetched when a capture shortcut fires. Permission state is modelled explicitly: not asked, denied, granted, revoked while running, needs relaunch.
 - **Selection overlay:** a crosshair on every display, device-pixel magnifier, Shift, Option, Space, and arrow modifiers, Esc handled by the overlay's key panel without Frisket being active, selection confined to the origin display, window highlight excluding Frisket's panels, clean cancel on display unplug. Overlays are hidden before pixels are taken.
-- **Scrolling capture:** manual scrolling only. Frames are compared with the previous frame only; new rows are copied into fixed-size strips and frames are released promptly. The pending original is held as compressed strips in memory. The editor works on a tiled or downsampled proxy; rendering and PNG encoding proceed strip by strip. A v1 pixel cap is set only after the trial measures memory; reaching the cap or the memory budget stops the capture with a message.
-- **Stitcher:** a pure function from frame sequence to image, including static header and footer detection and alignment scoring. It reads frames from memory and writes no temporary files. Its Vision use is recorded in test results.
+- **Scrolling capture:** **Retired (decision 60).** Manual scrolling only. Frames are compared with the previous frame only; new rows are copied into fixed-size strips and frames are released promptly. The pending original is held as compressed strips in memory. The editor works on a tiled or downsampled proxy; rendering and PNG encoding proceed strip by strip. A v1 pixel cap is set only after the trial measures memory; reaching the cap or the memory budget stops the capture with a message.
+- **Stitcher:** **Retired (decision 60).** A pure function from frame sequence to image, including static header and footer detection and alignment scoring. It reads frames from memory and writes no temporary files. Its Vision use is recorded in test results.
 - **Document model and renderer:** the editor edits a document (base image, annotations, crop, Solid redactions). The renderer is a pure function from document to bitmap. Solid redaction is its own element type: a fixed colour at full opacity, no corner radius or stroke, drawn with a copy blend and no antialiasing, its rectangle snapped outward to whole output pixels after crop and scale, applied to the base layer before any pixel-sampling effect; sampling effects read the redacted composite.
 - **Editor:** AppKit, no document architecture, no autosave, no window restoration, no disk image caches, no Live Text on the original. Close with edits asks Finalize (Return, default), Delete capture (destructive), Cancel (Esc). Sudden termination is disabled while editors are open; Quit presents the same choice per editor; an interrupted logout or restart discards unanswered captures. Pre-crop display frames are discarded right after cropping.
 - **Thumbnail stack:** a non-activating panel on the capture display, over full-screen Spaces. A global "focus thumbnails" shortcut makes it key temporarily; arrows move between cards; single keys trigger copy, save, edit, Delete capture, and dismiss. Each card is a VoiceOver element with custom actions and an announcement on arrival. Auto-dismiss is configurable including never, and pauses under focus. The thumbnail is built from the in-memory image by downsampling and refreshed from the rendered revision after finalization. Every exit path has a defined outcome (see Further Notes).
@@ -187,7 +187,7 @@ These stories come from the live evaluation in `Plans/dreamy-giggling-barto.md`.
 
 - **Remediation seams (decision 57).** Tests for stories 82–101 run at these interfaces:
   - `CaptureFlattening.flatten`, and `CaptureRenderer.preview(...).render(edits)` for preview parity;
-  - `ScrollingCaptureSession.ingest`;
+  - `ScrollingCaptureSession.ingest` (**Retired (decision 60).**);
   - `WindowSelection(rows:)`;
   - the Thumbnail status from `thumbnails()`;
   - `HistoryStore.rows()`;
@@ -199,7 +199,7 @@ These stories come from the live evaluation in `Plans/dreamy-giggling-barto.md`.
 - **Redaction leak tests through seam 1:** fixtures place unique "canary" colours under each redaction; every output (clipboard, saved file, History image, drag file, thumbnail) is decoded in a fixed sRGB space, and every covered pixel must equal the fill with full opacity and no canary colour may appear anywhere. Cases cover 1x and 2x sources, fractional rectangles, crop, and an overlapping blur or magnifier.
 - **Crash recovery through seam 1:** a closed list of named commit points. Tier 1 injects a fault at each point in process, rebuilds over the same directory, runs recovery twice, and asserts invariants and size totals matching disk. Tier 2 uses a small helper executable that kills itself at a chosen point; at least one case per point. A test fails if a commit point exists without a matching case.
 - **Seam 2, the renderer:** pure pixel-exact tests of the Solid redaction rules and annotation rendering, including render-equivalence and frozen-snapshot cases.
-- **Seam 3, the stitcher:** synthetic generated frame tests with byte-exact expectations; a few recorded real scroll sequences (no personal content, provenance documented) with sticky headers and fixed footers, asserting properties such as height within tolerance and no duplicated bands; a synthetic 5120×57,600 capture that must complete without truncation or downscaling with peak physical footprint under 2 GB.
+- **Seam 3, the stitcher:** **Retired (decision 60).** Synthetic generated frame tests with byte-exact expectations; a few recorded real scroll sequences (no personal content, provenance documented) with sticky headers and fixed footers, asserting properties such as height within tolerance and no duplicated bands; a synthetic 5120×57,600 capture that must complete without truncation or downscaling with peak physical footprint under 2 GB.
 - **Real Vision checks:** a small, tagged, local-only set pairing a positive case (canary text recognized when unredacted) with a negative case (absent once redacted), recording the OS build.
 - **Static checks:** dependency allowlist, identity scrub, licence header and provenance consistency, no writes under the root before finalization, no free-text logging, planted-secret log test, no event taps or global monitors while idle.
 - **Manual checklist (scripted, recorded):** each run records date, OS build, commit, architectures and code signature, display layout, and permission state, with no personal pixels. It uses a bundled test-pattern window at known coordinates and a script that checks output dimensions and marker pixels. Required cases: each Screen Recording state (not asked, denied, granted, revoked while running, after re-signing, needs relaunch); the built-in Retina display plus the external 1x display, including a display at negative coordinates and unplugging mid-selection; overlays over full-screen apps and across Space switches; Esc without activation; Full Keyboard Access and VoiceOver completing all thumbnail actions; each default shortcut triggering exactly one tool with system shortcuts enabled; a permission grant surviving two rebuilds.
@@ -225,7 +225,7 @@ These stories come from the live evaluation in `Plans/dreamy-giggling-barto.md`.
 
 ## Further Notes
 
-- **Stitcher trial (before the scrolling-capture work):** extract Snapzy's stitcher into a scratch package, convert its tests to Swift Testing, and check that it compiles alone, passes on this Intel Mac, and completes the synthetic 5120×57,600 capture under 2 GB after moving to strip storage. Port it only if that costs less than a fresh implementation; otherwise write it fresh against the same tests. The trial involves builds and needs Prateek's approval when scheduled.
+- **Stitcher trial (before the scrolling-capture work):** **Retired (decision 60).** Extract Snapzy's stitcher into a scratch package, convert its tests to Swift Testing, and check that it compiles alone, passes on this Intel Mac, and completes the synthetic 5120×57,600 capture under 2 GB after moving to strip storage. Port it only if that costs less than a fresh implementation; otherwise write it fresh against the same tests. The trial involves builds and needs Prateek's approval when scheduled.
 - **Prerequisites needing Prateek's approval at the time:** installing Xcode 26.6 (downloaded from Apple and signature-checked), creating the Personal Team signing identity, any build, app launch, screen capture, or clipboard use.
 - **Exit outcomes (confirmed by Prateek as decision 44):** closing the editor without edits behaves like dismissing an unedited thumbnail (finalized to History, per decision 5). Thumbnail exits: timeout, swipe, close, overflow, and Esc dismiss (finalize to History); Delete capture discards; quit finalizes unedited thumbnails; display unplug moves the thumbnail to a remaining display; screen lock leaves it pending.
 - The macOS periodic "bypassing the private window picker" alert can't be suppressed for this kind of app; Frisket must stay out of its way.

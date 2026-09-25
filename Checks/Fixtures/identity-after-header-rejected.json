@@ -1,5 +1,5 @@
 {
   "check": "identity",
-  "files": {"Sources/FrisketCore/Stitcher.swift": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\nlet label = \"Snapzy\"\n"},
-  "expected": ["Sources/FrisketCore/Stitcher.swift: upstream identity outside a licence header or notice"]
+  "files": {"Sources/FrisketCore/Ported.swift": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\nlet label = \"Snapzy\"\n"},
+  "expected": ["Sources/FrisketCore/Ported.swift: upstream identity outside a licence header or notice"]
 }

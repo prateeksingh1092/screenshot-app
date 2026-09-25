@@ -166,17 +166,6 @@ func mouse(_ t: CGEventType, _ p: CGPoint, _ f: CGEventFlags = [], clicks: Int64
     e.post(tap: .cghidEventTap)
 }
 
-/// Line-unit wheel events with a nil source: NSScrollView ignores the pixel-unit events `scroll` sends.
-func wheel(_ p: CGPoint, lines: Int32, count: Int, delay: Int) {
-    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
-    ms(50)
-    for _ in 0..<count {
-        let e = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0)!
-        e.location = p
-        e.post(tap: .cghidEventTap); ms(delay)
-    }
-}
-
 // MARK: AX helpers
 func ax(_ e: AXUIElement, _ a: String) -> CFTypeRef? {
     var v: CFTypeRef?
@@ -382,9 +371,6 @@ func displayScale(_ id: CGDirectDisplayID) -> Int {
                 mouse(.leftMouseDragged, CGPoint(x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t), f); ms(16)
             }
             ms(80); mouse(.leftMouseUp, p1, f); ms(120)
-        case "wheel":  // wheel X Y LINES [COUNT] [DELAYMS]: positive LINES scroll toward the top
-            let p = point(0); requireOnDisplay(p)
-            wheel(p, lines: Int32(d(2)), count: a.count > 3 ? Int(d(3)) : 1, delay: a.count > 4 ? Int(d(4)) : 30)
         case "seq":  // each arg is one step, run in this process so button state persists
             for step in a {
                 let t = step.split(separator: " ").map(String.init)
@@ -477,16 +463,6 @@ func displayScale(_ id: CGDirectDisplayID) -> Int {
             let v = AXValueCreate(.cgPoint, &pt)!
             let r = AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, v)
             print("move -> \(r.rawValue) now " + describe(w))
-        case "scrollpos":  // scrollpos PID: the vertical scroller value (0 top … 1 bottom) of the first scroll area
-            let pid = pidArgument(a[0])
-            func walk(_ e: AXUIElement, _ depth: Int) -> AXUIElement? {
-                if axString(e, kAXRoleAttribute) == "AXScrollBar", axString(e, kAXOrientationAttribute) == "AXVerticalOrientation" { return e }
-                guard depth < 10 else { return nil }
-                for c in children(e) { if let f = walk(c, depth + 1) { return f } }
-                return nil
-            }
-            guard let bar = windows(pid).lazy.compactMap({ walk($0, 0) }).first, let value = axString(bar, kAXValueAttribute) else { die("no vertical scroller") }
-            print(value)
         case "cardact":  // cardact Y ACTION: a custom AX action on the Frisket Thumbnail whose top edge is at Y
             let wantY = d(0); let sub = a[1]
             for w in windows(frisketPID()) {

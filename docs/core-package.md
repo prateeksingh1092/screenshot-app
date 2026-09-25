@@ -52,17 +52,6 @@ Ticket 06 also executes these Swift Testing tests with Xcode 26.5 (17F42),
 Swift 6.3.2, on the same x86_64 macOS build. There is no XCTest substitution.
 **arm64 not executed.**
 
-## Scrolling capture stitcher
-
-The stitcher in `Sources/FrisketCore/Stitcher/` is Frisket's own code.
-`docs/ported-files.json` is empty, and nothing from the read-only reference
-project ships. Ticket 34 retired `Trials/StitcherTrial/` and moved the
-regression tests and opt-in probes to the core test target. See
-[stitcher.md](stitcher.md) for the pure sequence interface, ownership, current
-commands, and limitations; [the fixture guide](../Tests/Fixtures/ScrollingCapture/README.md)
-defines the recording format. Real-sequence acceptance remains pending
-authorized recordings.
-
 ## Static-check interface
 
 The test target invokes `Checks/check_repository.py` through `/usr/bin/python3`.
@@ -114,15 +103,13 @@ done
 
 The inventory includes root `Package.swift`, `Sources/`, `Frisket/`,
 `Resources/` and `Tests/`. The retired trial has no special inventory or
-exceptions. On-disk stitcher fixtures verify source identity/import discovery
-and source/test provenance discovery. The generated-cache fixture verifies that
-root `.build/` output is not attributed as source.
+exceptions. The generated-cache fixture verifies that root `.build/` output is
+not attributed as source.
 
 Manifest evaluation uses `xcrun swift`, honoring the caller's `DEVELOPER_DIR`
 (and defaulting to pinned Xcode). Only the root Frisket manifest remains.
 
-`docs/ported-files.json` is an empty list. The scrolling stitcher is Frisket's
-own code, so it has no upstream provenance entry. `adaptedSHA256` is still
+`docs/ported-files.json` is an empty list. `adaptedSHA256` is still
 checked for any entry that declares it. A tampered-hash
 fixture fails even when the licence header is unchanged.
 When an approved ticket ports a file, retain its original header verbatim and
@@ -168,11 +155,6 @@ bundle `io.github.prateeksingh1092.frisket`. `scripts/release-universal.sh`
 signs with the existing Apple Development identity, writes
 `arm64 built and signed, never executed`, and never installs or launches.
 v1 is not declared until Codex assesses the verification report.
-
-For the stitcher the upstream files had descriptive banners, not per-file licence
-text. The complete upstream BSD licence is prepended, each original banner is
-preserved, and `licenseHeader` records both. `originalSHA256` records each
-unmodified upstream source as additional evidence.
 
 ## Ticket 06 command interface
 
@@ -240,8 +222,7 @@ Two additional lexical checks run with the existing checks and fixtures:
   core, all diagnostics use the closed event interface; no assertion message or
   system-log string route is used.
 - `capture-memory` forbids platform imports and known filesystem capabilities
-  in the memory-only core, allowing CoreGraphics/Vision only under `Stitcher/`,
-  and checks the image-only, write-only clipboard
+  in the memory-only core and checks the image-only, write-only clipboard
   declaration. A future `StorageAdapter/` is the sole disk-capable exception;
   direct references from the lifecycle remain forbidden. Capture and Copy have
   no app-owned root, file store, or filesystem capability in this ticket.
@@ -592,36 +573,6 @@ acceptance is pending in [the synthetic-only checklist](manual-checks/21-window-
 SDK evidence came from installed `SCShareableContent.h`, `SCStream.h` and
 `CGWindow.h`; no network research was performed.
 
-## Ticket 35 scrolling capture
-
-`captureScrolling(CaptureID, maximumBytes:)` is seam 1. A `ScrollingFrameFeed`
-stand-in supplies manual viewports; there is no synthetic scrolling, event tap,
-or global monitor. `ScrollingCaptureSession` keeps the pending original as
-LZFSE strips plus the previous viewport, then releases each frame. Done returns
-that image through the existing thumbnail, Copy, and History commands. Cancel
-releases the reservation and keeps nothing.
-
-`CaptureBudgets.v1` names the limits. The pending session holds **256 MB** of
-encoded bytes. A still capture reserves **128 MB** and uses a separate **128 MB**
-decoded RGBA ceiling. A scrolling capture reserves **128 MB** as its encoded
-ceiling. `ScrollingCaptureBudget.v1` keeps the pixel cap at **294,912,000**
-(5,120 × 57,600) and the process peak at **2,000,000,000** bytes. That peak is
-not reduced to the encoded reservation. `ScrollingCaptureBudget.forCapture`
-copies the peak and sets `encodedByteCeiling` from the command's `maximumBytes`.
-
-Pixel cap, encoded ceiling, and memory budget each stop with
-`ScrollingCaptureNotice.message` and keep the section that fit. The encoded
-notice is “Scrolling capture stopped at the size limit. The image includes only
-the section that fit.” Starting is refused with `pendingByteBudgetExceeded`
-when the pending session cannot reserve `maximumBytes`; the feed is not called.
-
-The app menu **Capture Scrolling Page** selects a region with the existing
-overlay, then samples that region through `ScreenCapturePolicy` and
-`SCScreenshotManager.captureImage`. Live preview, Done, and Cancel are a
-nonactivating panel. The automated peak is `sh scripts/scrolling-memory-run.sh`
-(opt-in, skipped by the normal suite). Live scrolling on the synthetic page is
-[the manual check](manual-checks/35-scrolling-capture.md).
-
 ## Ticket 17 History database failure
 
 `historyAvailability()` reports the last open or migration outcome without
@@ -665,7 +616,10 @@ after Solid redaction. The tagged local Vision pair is
 build and requires CANARY before redaction and its absence after. See
 [manual checks](manual-checks/33-copy-recognized-text.md).
 
-## Ticket 36 editing a long scrolling capture
+## Ticket 36 editing a tall capture
+
+Scrolling capture was removed (decision 60), so no capture is taller than one
+display. The strip path below stays until ticket 67 replaces it.
 
 `DocumentRenderer.forEachStrip` paints 256-row output windows (plus a one-row
 halo when effects are present) and never retains the full rendered bitmap.

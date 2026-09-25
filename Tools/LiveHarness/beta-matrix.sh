@@ -234,7 +234,6 @@ reset_state() {  # best effort between rows: no overlay, no editor, no alert, no
   fi
   dismiss_alert
   close_editor
-  drv axpress frisket "Cancel scrolling capture"
   close_cards
   wait_for 5 no_cards || note "Thumbnails still open after closing them"
   pkill -x pattern 2>/dev/null
@@ -292,47 +291,6 @@ row_full() {
   drv move "$CX" "$CY"; hotkey 3
   wait_for 6 card_present && card_copy && clip_to full \
     && "$H/pattern" --verify-full "$ev/full.png" $(( DW * DS )) $(( DH * DS )) "$DS" >>"$log" 2>&1
-}
-
-# A 700×530 Selection inside the scroll page's document area. Wheel steps are in lines;
-# the first live run calibrates them (README).
-scroll_start() {
-  pattern_up --show-scroll || return 1
-  read -r SX SY SW SH <<<"$(pattern_bounds)"
-  drv move $(( SX + 400 )) $(( SY + 300 )); hotkey 6; nap 1
-  select_rect $(( SX + 20 )) $(( SY + 40 )) $(( SX + 720 )) $(( SY + 570 ))
-  # The scrolling session starts when the mouse button comes up. Return would mean Done at once.
-  wait_for 4 scroll_panel_up || { note "no scrolling panel"; return 1; }
-  nap 1
-}
-scroll_panel_up() { "$H/drive" axfind frisket "Done with scrolling capture" >/dev/null 2>&1; }
-scroll_finish() {
-  drv axpress frisket "Done with scrolling capture" || return 1
-  wait_for 8 card_present && card_copy && clip_to "$1"
-}
-row_scroll_steady() {
-  scroll_start || return 1
-  local step
-  for step in 1 2 3 4; do drv wheel $(( SX + 400 )) $(( SY + 300 )) -4; nap 1.2; done   # a step well under the 530-row viewport
-  scroll_finish scroll-steady && "$H/meter" blocks "$ev/scroll-steady.png" "$DS" $(( 530 * DS )) >>"$log" 2>&1
-}
-row_scroll_flick() {
-  scroll_start || return 1
-  drv wheel $(( SX + 400 )) $(( SY + 300 )) -40; nap 1.5
-  if "$H/drive" axfind frisket "Slow down" >>"$log" 2>&1; then
-    note "Slow down shown"; drv axpress frisket "Cancel scrolling capture"; return 0
-  fi
-  scroll_finish scroll-flick && "$H/meter" blocks "$ev/scroll-flick.png" "$DS" $(( 530 * DS )) >>"$log" 2>&1
-}
-row_scroll_keys() {
-  scroll_start || return 1
-  local before after
-  before=$("$H/drive" scrollpos pattern)
-  key 121; nap 0.8
-  after=$("$H/drive" scrollpos pattern)
-  note "scroller before=$before after=$after"
-  drv axpress frisket "Cancel scrolling capture"
-  awk "BEGIN { exit !($after > $before) }"
 }
 
 row_editor_arrow_label() {
@@ -531,7 +489,7 @@ for display in $displays; do
     case $verdict in
       FAIL|XPASS|ERROR|SKIP)
         { echo; echo "## $verdict $id on $display ($defects)"; echo "$check"; echo
-          echo '```'; grep -vE '^not found: (OK|Cancel scrolling capture)$' "$log" | tail -15 | cut -c1-200; echo '```'
+          echo '```'; grep -vE '^not found: OK$' "$log" | tail -15 | cut -c1-200; echo '```'
           ls "$ev" | grep -E "^$id(-failed)?\.png$" | sed "s#^#evidence: $ev/#"; } >>"$failures" ;;
     esac
     [ "$verdict" = SKIP ] && continue

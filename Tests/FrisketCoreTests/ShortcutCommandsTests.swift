@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import FrisketCore
 
@@ -12,7 +13,7 @@ import Testing
     #expect(commands.active[.captureFullScreen] == ShortcutBinding(keyCode: 20, modifiers: 768))
     #expect(commands.active[.captureArea] == ShortcutBinding(keyCode: 21, modifiers: 768))
     #expect(commands.active[.captureWindow] == ShortcutBinding(keyCode: 23, modifiers: 768))
-    #expect(commands.active[.captureScrolling] == ShortcutBinding(keyCode: 22, modifiers: 768))
+    #expect(!commands.active.values.contains(ShortcutBinding(keyCode: 22, modifiers: 768)))
 }
 
 @MainActor @Test func commandShiftScreenshotDefaultsStayInactiveWhileMacOSOwnsThem() {
@@ -27,11 +28,9 @@ import Testing
     #expect(commands.active[.captureArea] == nil)
     #expect(commands.active[.captureFullScreen] == nil)
     #expect(commands.active[.captureWindow] == nil)
-    #expect(commands.active[.captureScrolling] == nil)
     #expect(commands.failures[.captureArea] == .systemCollision)
     #expect(commands.failures[.captureFullScreen] == .systemCollision)
     #expect(commands.failures[.captureWindow] == .systemCollision)
-    #expect(commands.failures[.captureScrolling] == .systemCollision)
 }
 
 /// DA-2: once the user turns the macOS shortcuts off in System Settings, starting again registers them.
@@ -46,7 +45,7 @@ import Testing
     commands.start()
     #expect(commands.active[.captureArea] == ShortcutBinding(keyCode: 21, modifiers: 768))
     #expect(commands.failures.isEmpty)
-    #expect(commands.permits(.captureScrolling))
+    #expect(commands.permits(.captureWindow))
 }
 
 @MainActor @Test func unchangedLegacyDefaultsMigrateToCommandShiftNumbers() {
@@ -160,4 +159,18 @@ func shortcutFailedRemapNeverChangesActiveOrSavedBinding(failure: ShortcutFailur
     let desired = [ShortcutBinding(keyCode: 21, modifiers: 768), ShortcutBinding(keyCode: 18, modifiers: 768)]
     let enabled = [ShortcutBinding(keyCode: 21, modifiers: 768)]
     #expect(SystemScreenshotHotkeys.collisions(desired: desired, systemEnabled: enabled) == [desired[0]])
+}
+
+/// Decision 60 retired the scrolling shortcut. A preference saved before then still names it;
+/// the other saved shortcuts must survive instead of the whole preference being dropped.
+@Test func savedShortcutsFromBeforeScrollingWasRemovedKeepTheirOtherBindings() throws {
+    let saved = Data(#"["captureArea",{"keyCode":0,"modifiers":256},"captureScrolling",{"keyCode":22,"modifiers":768}]"#.utf8)
+    #expect(ShortcutAction.savedBindings(from: saved) == [.captureArea: ShortcutBinding(keyCode: 0, modifiers: 256)])
+}
+
+@Test func savedShortcutsRoundTripThroughTheirEncoding() throws {
+    let bindings: [ShortcutAction: ShortcutBinding] = [.captureWindow: ShortcutBinding(keyCode: 1, modifiers: 256),
+                                                      .showHistory: ShortcutBinding(keyCode: 18, modifiers: 768)]
+    #expect(ShortcutAction.savedBindings(from: try ShortcutAction.encoded(bindings)) == bindings)
+    #expect(ShortcutAction.savedBindings(from: Data("not json".utf8)).isEmpty)
 }

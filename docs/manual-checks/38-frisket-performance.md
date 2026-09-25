@@ -116,7 +116,6 @@ v1 comparator is **macOS Screenshot only** (decision 54). Snapzy Release does no
 | Active low-power GPU evidence | Pending | Pending | Confirmation required | Pending |
 | Clock resolution / overhead / display calibration | Pending | Pending | No numeric error claim yet | Pending |
 
-Scrolling peak memory is outside this capture-to-thumbnail measurement; its
-existing <2 GB placeholder is unchanged. Ticket 40 and Prateek must fill the
+Ticket 40 and Prateek must fill the
 comparison, resolve non-comparable endpoints, choose targets and only then record
 accepted ratification in decisions.md. This ticket does not ratify any target.

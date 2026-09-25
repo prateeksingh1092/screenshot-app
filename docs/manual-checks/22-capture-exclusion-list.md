@@ -24,9 +24,8 @@ Record arm64 as not executed until an Apple-silicon run exists.
 4. Remove the app in Settings, capture again, and verify its marker returns
    while Frisket stays excluded. Remove all entries and confirm empty state.
 5. Inspect local diagnostics: no application names or bundle identifiers.
-6. When window and scrolling capture are integrated, repeat using the same
-   listed synthetic app. An excluded window must never produce its pixels;
-   every scrolling frame and preview must obey the shared content filter.
+6. When window capture is integrated, repeat using the same
+   listed synthetic app. An excluded window must never produce its pixels.
 
-Window and scrolling capture commands do not exist in this ticket's base.
+Window capture commands do not exist in this ticket's base.
 Those runtime cases remain pending integration, as do all checks above.

@@ -5,7 +5,7 @@ import QuartzCore
 import ImageIO
 import UniformTypeIdentifiers
 
-@MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform, ScrollingRegionCapturing {
+@MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
     private(set) var spaceGeneration: UInt64 = 0
     private var applicationGeneration: UInt64 = 0
     private lazy var overlay = SelectionOverlay()
@@ -137,7 +137,6 @@ import UniformTypeIdentifiers
         guard connectedDisplays().contains(where: { $0.id == request.displayID }) else {
             throw CapturePlatformError.unavailable
         }
-        // Scrolling capture samples this same region; it does not open another capture route.
         let image: CGImage
         do {
             image = try await available.captureImage(request, additionalExclusions: exclusions())

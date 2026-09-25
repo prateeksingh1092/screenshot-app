@@ -10,11 +10,8 @@ Capturing visible content on a Mac, preparing it for use, and delivering the res
 A still image obtained from a selected area, window, or entire screen.
 _Avoid_: Recording (which implies moving images)
 
-**Scrolling capture**:
-A single still image assembled from successive views of content that extends beyond the visible area.
-
 **Selection**:
-The rectangle chosen on screen for an area capture or a scrolling capture.
+The rectangle chosen on screen for an area capture.
 _Avoid_: Region, crop (crop happens in the editor)
 
 **Origin display**:

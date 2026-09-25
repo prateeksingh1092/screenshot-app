@@ -21,7 +21,6 @@ import FrisketCore
     private var windowPlatform: WindowScreenCapturePlatform?
     private var commands: CaptureCommandLayer?
     private var dragAdapter: FilePromiseDragAdapter?
-    private var scrolling: ManualScrollingCapture?
     private var statusItem: NSStatusItem?
     private var historySettings: HistorySettings?
     private var thumbnailSettings: ThumbnailSettings?
@@ -62,8 +61,6 @@ import FrisketCore
         self.windowPlatform = windowPlatform
         let dragAdapter = FilePromiseDragAdapter(writer: DragPromiseWriter())
         self.dragAdapter = dragAdapter
-        let scrolling = ManualScrollingCapture(platform: platform, bundleIdentifier: identity.bundleIdentifier)
-        self.scrolling = scrolling
         let pasteboard = PasteboardAdapter(destination: GeneralPasteboardDestination())
         commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency, decodedByteCeiling: budgets.stillDecodedBytes),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency, decodedByteCeiling: budgets.stillDecodedBytes),
@@ -74,7 +71,6 @@ import FrisketCore
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
             drag: dragAdapter, thumbnailPolicy: thumbnailSettings.policy,
             codec: PNGBitmapCodec(),
-            scrollingFrames: scrolling, scrollingPreview: scrolling,
             textRecognizer: VisionTextRecognizer(), textClipboard: pasteboard)
         if let commands {
             historySettings.connect(commands)
@@ -91,7 +87,7 @@ import FrisketCore
                     self.notice("History is off", HistoryFailureNotice.text(failure))
                 }
             }
-            let presentation = CaptureSurfaces(commands: commands, drag: dragAdapter, latency: latency, scrolling: scrolling,
+            let presentation = CaptureSurfaces(commands: commands, drag: dragAdapter, latency: latency,
                 areaDisplayID: { [weak platform] in platform?.captureDisplayID },
                 windowDisplayID: { [weak windowPlatform] in windowPlatform?.captureDisplayID },
                 notify: { [weak self] title, message in self?.notice(title, message) },
@@ -131,7 +127,6 @@ import FrisketCore
         add("Capture Area", action: #selector(captureArea), to: menu)
         add("Capture Window", action: #selector(captureWindow), to: menu)
         add("Capture Full Screen", action: #selector(captureFullScreen), to: menu)
-        add("Capture Scrolling Page", action: #selector(captureScrolling), to: menu)
         menu.addItem(.separator())
         add("Focus Latest Thumbnail", action: #selector(focusThumbnail), to: menu)
         add("Copy Latest Capture", action: #selector(copyLatest), to: menu)
@@ -171,7 +166,6 @@ import FrisketCore
             case .captureArea: self.captureArea()
             case .captureWindow: self.captureWindow()
             case .captureFullScreen: self.captureFullScreen()
-            case .captureScrolling: self.captureScrolling()
             case .focusThumbnails: self.focusThumbnail()
             case .showHistory: self.showHistory()
             }
@@ -256,7 +250,6 @@ import FrisketCore
             (.captureArea, #selector(captureArea)),
             (.captureWindow, #selector(captureWindow)),
             (.captureFullScreen, #selector(captureFullScreen)),
-            (.captureScrolling, #selector(captureScrolling)),
             (.focusThumbnails, #selector(focusThumbnail)),
             (.showHistory, #selector(showHistory)),
         ]
@@ -324,15 +317,6 @@ import FrisketCore
 
     @objc private func captureWindow() {
         captures?.start(.captureWindow(CaptureID(), maximumBytes: CaptureBudgets.v1.stillEncodedBytes))
-    }
-
-    @objc private func captureScrolling() {
-        // DA-9: pressing ⌘⇧6 again while a scrolling capture runs finishes it.
-        if let scrolling, scrolling.isRunning {
-            scrolling.finish()
-            return
-        }
-        captures?.start(.captureScrolling(CaptureID(), maximumBytes: CaptureBudgets.v1.scrollingEncodedBytes))
     }
 
     @objc private func focusThumbnail() { captures?.focusThumbnail() }

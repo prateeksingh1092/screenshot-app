@@ -1,6 +1,6 @@
 # Frisket
 
-Frisket is a menu-bar screenshot app for macOS. It captures an area, a window, the full screen, or a scrolling page, then lets you copy, save, edit, or keep the image in a local History.
+Frisket is a menu-bar screenshot app for macOS. It captures an area, a window or the full screen, then lets you copy, save, edit, or keep the image in a local History.
 
 It runs on Intel and Apple silicon. The current floor is **macOS 26**.
 
@@ -13,7 +13,6 @@ Quit any other screenshot app that uses these keys, including CleanShot. Frisket
 | ⌘⇧4 | Capture an area |
 | ⌘⇧5 | Capture a window |
 | ⌘⇧3 | Capture the full screen |
-| ⌘⇧6 | Capture a scrolling page |
 | ⌘⇧2 | Focus the latest thumbnail |
 | ⌘⇧1 | Open History |
 

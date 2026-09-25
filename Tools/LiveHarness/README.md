@@ -4,7 +4,7 @@ Tools that drive the installed Frisket against synthetic patterns and measure wh
 They reproduced D1–D26 in the 2026-09-24 live beta (`.scratch/visual-pass/beta/`). Ticket 48
 moved them here from `/tmp/frisket-beta`.
 
-**Only synthetic content, only when Prateek is away.** The matrix types, clicks, scrolls and
+**Only synthetic content, only when Prateek is away.** The matrix types, clicks and
 uses the clipboard on the real screen. Run it only after Prateek has said he's away. Never point
 it at personal windows.
 
@@ -18,9 +18,9 @@ Tools/LiveHarness/build.sh      # → .build/live-harness/{pattern,drive,meter,s
 
 | Tool | Source | What it does |
 |---|---|---|
-| `pattern` | `Tools/FrisketTestPattern.swift` | Synthetic windows: `--show`, `--show-all`, `--show-window`, `--show-full-screen`, `--show-scroll`, each with `[--display ID\|main\|builtin\|external]` (or `FRISKET_PATTERN_DISPLAY`). Verifiers: `--verify`, `--verify-full`, `--verify-redacted`. `--render-scroll OUT 1\|2` writes the scroll page offscreen as a meter reference |
-| `drive` | `drive.swift` | Keys, typing, pointer, wheel, AX reads and presses, window lists, clipboard save/restore, raw pixel reads. Run `drive` with no arguments for usage, or read the `switch` in `main` |
-| `meter` | `meter.swift` | Pixel meters: `px`, `scan` (red/blue runs and markers), `redink` and `band` (annotation ink), `blocks` (checks that a scrolling capture of the scroll page is exact) |
+| `pattern` | `Tools/FrisketTestPattern.swift` | Synthetic windows: `--show`, `--show-all`, `--show-window`, `--show-full-screen`, each with `[--display ID\|main\|builtin\|external]` (or `FRISKET_PATTERN_DISPLAY`). Verifiers: `--verify`, `--verify-full`, `--verify-redacted` |
+| `drive` | `drive.swift` | Keys, typing, pointer, AX reads and presses, window lists, clipboard save/restore, raw pixel reads. Run `drive` with no arguments for usage, or read the `switch` in `main` |
+| `meter` | `meter.swift` | Pixel meters: `px`, `scan` (red/blue runs and markers), `redink` and `band` (annotation ink) |
 | `sckwins` | `sckwins.swift` | ScreenCaptureKit's list of small windows, with bundle IDs (D2: the cursor window has an empty bundle ID) |
 | `sheet` | `sheet.swift` | A labelled contact sheet of evidence PNGs |
 
@@ -29,7 +29,7 @@ Tools/LiveHarness/build.sh      # → .build/live-harness/{pattern,drive,meter,s
 ```sh
 Tools/LiveHarness/beta-matrix.sh --dry-run                  # prints the plan; touches nothing
 Tools/LiveHarness/beta-matrix.sh --live                     # every row, both displays
-Tools/LiveHarness/beta-matrix.sh --live --display external --row scroll-steady
+Tools/LiveHarness/beta-matrix.sh --live --display external --row area
 ```
 
 Before `--live`, launch the installed Frisket (`~/Applications/Frisket.app`); the script refuses
@@ -49,9 +49,8 @@ restores it on every exit path, including Ctrl-C. It deletes the saved copy only
 successful restore. The only files it deletes are exports that its own `history-save` row
 just created. Test captures stay in Frisket's History, as they did in the beta.
 
-**Calibration.** Several steps depend on UI geometry that tickets 50–64 change: wheel lines per
-step, where a label lands with the Text tool, and the confirmation-button labels. The first
-`--live` run records each step in the row logs. Adjust the row functions from those logs, not
+**Calibration.** Several steps depend on UI geometry that tickets 50–64 change: where a label
+lands with the Text tool, and the confirmation-button labels. The first `--live` run records each step in the row logs. Adjust the row functions from those logs, not
 from guesses.
 
 ## Safety rails (in `drive`, not the caller)
@@ -79,8 +78,6 @@ fire only for events posted at the HID tap, which is what `drive` does.
 
 - **Retina halving.** On the built-in display a screenshot pixel is half a point, so divide screenshot coordinates by 2 before pointing. `drive displays` prints each display's scale.
 - **Stopping the pattern.** Use `pkill -x pattern`. `pkill -f …/pattern` misses relative launches.
-- **Scrolling.** Pixel-unit wheel events don't move an `NSScrollView`. Use `drive wheel`: line units, nil source. Positive lines scroll toward the top.
-- **Scroll page.** `--show-scroll` opens at its top, with block 1 first (fixed in ticket 48; the old page opened at its bottom). Blocks are 400 rows apart: 90 red, 90 blue, then an 8-row marker 164 rows below the block top.
 - **Preselection.** Frisket preselects the last Selection, and a press inside it goes through to the app underneath (D4). Start each drag outside the previous Selection. Don't drag twice in one activation: a second drag doesn't replace the first Selection (candidate D28), so `select_rect` drags once.
 - **AX press vs real click.** An AX press on a Thumbnail's Edit doesn't activate Frisket, and the editor can open behind other windows. Use `drive axclick frisket "Edit capture"`, which sends a real click at the element's centre.
 - **Privacy.** Crop evidence to the test windows (`seq "shot X Y W H FILE"`), because the desktop shows personal file names. Save the clipboard before a run and restore it after (`drive clip-save` / `clip-restore`); the matrix does both.

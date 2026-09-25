@@ -18,7 +18,6 @@ public enum CaptureCommand: Sendable {
     case capture(CaptureID, maximumBytes: Int)
     case captureFullScreen(CaptureID, maximumBytes: Int)
     case captureWindow(CaptureID, maximumBytes: Int)
-    case captureScrolling(CaptureID, maximumBytes: Int)
     case copy(CaptureRevision)
     case retryCopy(CaptureRevision)
     case save(CaptureRevision)
@@ -93,8 +92,6 @@ public enum CaptureCommandOutcome: Equatable, Sendable {
     case rendered(CaptureRevision, clipboardFailure: ClipboardFailure? = nil)
     case captureFailed(CaptureSourceFailure)
     case permissionRequired(CapturePermissionState)
-    case scrollingLimited(CaptureRevision, ScrollingCaptureNotice)
-    case scrollingRefused(ScrollingCaptureNotice)
     case rejected(CommandRejection)
     case historyDeleted(CaptureID)
     case recognizedText(RecognizedTextOutcome)
@@ -115,17 +112,12 @@ public struct CaptureCommandLayer: Sendable {
                 thumbnailPolicy: ThumbnailStackPolicy = ThumbnailStackPolicy(),
                 clock: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
                 codec: (any BitmapCodec)? = nil,
-                scrollingFrames: (any ScrollingFrameFeed)? = nil,
-                scrollingPreview: (any ScrollingPreviewSurface)? = nil,
-                scrollingBudget: ScrollingCaptureBudget = .v1,
                 textRecognizer: (any TextRecognizer)? = nil,
                 textClipboard: (any TextClipboard)? = nil) {
         self.diagnostics = diagnostics
         coordinator = CaptureLifecycleCoordinator(permission: permission, source: source, fullScreenSource: fullScreenSource, windowSource: windowSource, clipboard: clipboard,
                                                   pendingByteLimit: pendingByteLimit, history: history, exporter: exporter, drag: drag,
                                                   thumbnailPolicy: thumbnailPolicy, clock: clock, codec: codec,
-                                                  scrollingFrames: scrollingFrames, scrollingPreview: scrollingPreview,
-                                                  scrollingBudget: scrollingBudget,
                                                   textRecognizer: textRecognizer, textClipboard: textClipboard)
     }
 
