@@ -24,7 +24,8 @@ import Testing
             .map { (start.x + $0.0, start.y + $0.1) }
     }
 
-    /// Every kind of grab: a move of each mark, a corner, an arrow's tip and bend, a label's wrap handle.
+    /// Every kind of grab: a move of each mark, a corner, an arrow's tip and bend, a label's wrap and
+    /// corner handles.
     private static let grabs: [(mark: MarkReference, x: Double, y: Double, handle: MarkHandle?)] = [
         (.redaction(0), 8, 8, nil),
         (.redaction(0), 14, 12, .bottomRight),
@@ -43,6 +44,8 @@ import Testing
         grabs.append((.annotation(1), bend.x, bend.y, .bend))
         let trailing = try #require(base.handles(of: .annotation(2)).first { $0.handle == .trailing })
         grabs.append((.annotation(2), trailing.x, trailing.y, .trailing))
+        let corner = try #require(base.handles(of: .annotation(2)).first { $0.handle == .bottomRight })
+        grabs.append((.annotation(2), corner.x, corner.y, .bottomRight))
         let slop = 0.5
         for grabbed in grabs {
             let undoManager = UndoManager()

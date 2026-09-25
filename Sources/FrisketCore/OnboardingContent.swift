@@ -44,4 +44,15 @@ public struct OnboardingContent: Equatable, Sendable {
         laterTitle: "Later",
         laterAccessibilityLabel: "Close onboarding and show it again on the next launch"
     )
+
+    /// The copy for this showing. Onboarding that was completed and is reopened from the menu's
+    /// "What Frisket Stores…" item does not come back on the next launch, so its dismiss button
+    /// is Close and says where to find it again (ticket 101).
+    public static func current(for completion: OnboardingCompletion) -> OnboardingContent {
+        guard completion.isComplete else { return current }
+        var copy = current
+        copy.laterTitle = "Close"
+        copy.laterAccessibilityLabel = "Close onboarding. Reopen it with What Frisket Stores… in the Frisket menu bar menu"
+        return copy
+    }
 }

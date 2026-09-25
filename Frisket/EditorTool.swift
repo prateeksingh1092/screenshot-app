@@ -50,7 +50,8 @@ enum EditorToolRole: Equatable {
     let symbolName = "square.fill"
     let kind = EditorToolKind.solidRedaction
     let role = EditorToolRole.conceal
-    /// The fill for new redactions: a palette colour, black until the user picks another (decision 61).
+    /// The fill for new redactions: a palette colour, the last one chosen in any editor, else black
+    /// (decisions 61 and 93).
     var colour = SolidRedaction.fill
     var colourName: String { SolidRedaction.palette.first { $0.pixel == colour }?.name ?? "Black" }
 

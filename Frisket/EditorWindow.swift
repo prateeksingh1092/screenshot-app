@@ -350,6 +350,9 @@ enum EditorAction {
     private var edits: DocumentEdits { document.edits }
     private let textTool = TextTool()
     private let redactionTool = SolidRedactionTool()
+    private let arrowTool = ArrowTool()
+    private let lineTool = LineTool()
+    private let shapeTool = RectangleTool()
     /// The Solid redaction palette (ticket 88): one swatch per colour, for the tool and a selected redaction.
     private var swatchButtons: [NSButton] = []
     private let swatchStack = NSStackView()
@@ -357,8 +360,8 @@ enum EditorAction {
     /// and to recolour the selected one or the label being typed.
     private var inkButtons: [NSButton] = []
     private let inkStack = NSStackView()
-    /// The ink for new marks, shared by every ink tool. Red until the user picks another; not
-    /// remembered between editors (ticket 100 does that).
+    /// The ink for new marks, shared by every ink tool. The last one chosen in any editor, else Red
+    /// (ticket 100, decision 93).
     private var ink = DocumentAnnotation.stroke
     /// The style bar (ticket 92): the style controls that apply to the selected mark or the active
     /// tool, in the content area so none of them falls into the toolbar's overflow menu.
@@ -397,7 +400,7 @@ enum EditorAction {
         marks = MarkEditor(document)
         self.finish = finish
         pixelSize = CGSize(width: preview.captureWidth, height: preview.captureHeight)
-        tools = [SelectTool(), redactionTool, CropTool(), ArrowTool(), LineTool(), RectangleTool(), textTool, BlurTool(),
+        tools = [SelectTool(), redactionTool, CropTool(), arrowTool, lineTool, shapeTool, textTool, BlurTool(),
                  MagnifyTool()]
         documentSize = CGSize(width: self.pixelSize.width / scale, height: self.pixelSize.height / scale)
         canvas = EditorCanvasView(documentSize: documentSize)
@@ -406,6 +409,7 @@ enum EditorAction {
         window = EditorKeyWindow(contentRect: CGRect(x: 0, y: 0, width: 640, height: 480),
                                  styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init()
+        apply(EditorStyles.load { UserDefaults.standard.object(forKey: $0.rawValue) })
         window.title = "Edit Capture"
         window.isRestorable = false
         window.tabbingMode = .disallowed
@@ -434,6 +438,9 @@ enum EditorAction {
             labelSizePopUp.addItem(withTitle: "\(Int(size)) pt")
             labelSizePopUp.lastItem?.representedObject = size
         }
+        labelSizePopUp.addItem(withTitle: "")
+        labelSizePopUp.lastItem?.tag = Self.scaledSizeTag
+        labelSizePopUp.lastItem?.isHidden = true
         labelSizePopUp.controlSize = .small
         labelSizePopUp.target = self
         labelSizePopUp.action = #selector(changeLabelSize(_:))
@@ -687,6 +694,14 @@ enum EditorAction {
         labelSizePopUp.isEnabled = !finishing && labelFormat != nil
         labelStylePopUp.isEnabled = !finishing && labelFormat != nil
         if let labelFormat {
+            // A size set by the corner handle (ticket 101) that the menu does not offer shows in the
+            // menu's last item, which is hidden otherwise.
+            if let item = labelSizePopUp.lastItem, item.tag == Self.scaledSizeTag {
+                let offered = LabelFormat.sizes.contains(labelFormat.size)
+                item.isHidden = offered
+                item.title = offered ? "" : "\(Int(labelFormat.size)) pt"
+                item.representedObject = offered ? nil : labelFormat.size
+            }
             if let index = labelSizePopUp.itemArray.firstIndex(where: { $0.representedObject as? Double == labelFormat.size }) {
                 labelSizePopUp.selectItem(at: index)
             }
@@ -916,11 +931,35 @@ enum EditorAction {
                                         .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
+    /// The tag of the label size menu's last item, for a size only the corner handle sets.
+    private static let scaledSizeTag = 1
+
+    /// Opens with the last-used styles (ticket 100, decision 93): each tool draws as the last editor's would.
+    private func apply(_ styles: EditorStyles) {
+        redactionTool.colour = styles.redactionColour
+        ink = styles.ink
+        for case let tool as InkTool in tools { tool.ink = styles.ink }
+        arrowTool.style = styles.arrowStyle
+        arrowTool.width = styles.arrowWidth
+        lineTool.width = styles.lineWidth
+        shapeTool.width = styles.shapeWidth
+        textTool.format = styles.labelFormat
+    }
+
+    /// Stores the styles the tools would draw with now, for the next editor, here or after a relaunch.
+    private func rememberStyles() {
+        let styles = EditorStyles(redactionColour: redactionTool.colour, ink: ink, arrowStyle: arrowTool.style,
+                                  arrowWidth: arrowTool.width, lineWidth: lineTool.width, shapeWidth: shapeTool.width,
+                                  labelFormat: textTool.format)
+        styles.store { UserDefaults.standard.set($1, forKey: $0.rawValue) }
+    }
+
     /// A palette colour becomes the tool's fill for new redactions and recolours a selected one.
     @objc private func chooseRedactionColour(_ sender: NSButton) {
         guard !finishing, SolidRedaction.palette.indices.contains(sender.tag) else { return }
         let choice = SolidRedaction.palette[sender.tag]
         redactionTool.colour = choice.pixel
+        rememberStyles()
         if marks.selectionFill != nil { marks.recolourSelection(choice.pixel) }
         refresh()
     }
@@ -932,6 +971,7 @@ enum EditorAction {
         let choice = DocumentAnnotation.palette[sender.tag]
         ink = choice.pixel
         for case let tool as InkTool in tools { tool.ink = choice.pixel }
+        rememberStyles()
         if let labelSession {
             labelSession.recolour(choice.pixel)
         } else if marks.selectionInk != nil {
@@ -957,6 +997,7 @@ enum EditorAction {
     @objc private func changeWidth(_ sender: NSPopUpButton) {
         guard !finishing, let width = sender.selectedItem?.representedObject as? Double else { return }
         (tools[activeTool] as? LineWidthTool)?.width = width
+        rememberStyles()
         if !marks.rewidthSelection(width) { refresh() }
     }
 
@@ -973,7 +1014,10 @@ enum EditorAction {
     }
 
     private func relabel(_ change: (LabelFormat) -> LabelFormat?) {
-        if tools[activeTool] is TextTool, let format = change(textTool.format) { textTool.format = format }
+        if tools[activeTool] is TextTool, let format = change(textTool.format) {
+            textTool.format = format
+            rememberStyles()
+        }
         if let session = labelSession {
             if let format = change(session.format) { session.restyle(format) }
             if let labelView { window.makeFirstResponder(labelView) }
@@ -1057,7 +1101,10 @@ enum EditorAction {
     @objc private func changeStyle(_ sender: NSPopUpButton) {
         guard !finishing, let raw = sender.selectedItem?.representedObject as? String,
               let style = ArrowStyle(rawValue: raw) else { return }
-        if let arrow = tools[activeTool] as? ArrowTool, !(arrow is LineTool) { arrow.style = style }
+        if let arrow = tools[activeTool] as? ArrowTool, !(arrow is LineTool) {
+            arrow.style = style
+            rememberStyles()
+        }
         if !marks.restyleSelection(style) { refresh() }
     }
 

@@ -118,7 +118,7 @@ import Testing
         let editor = MarkEditor(try Self.document([try #require(DocumentAnnotation(.text(x: 10, y: 10, characters: text)))]))
         editor.select(.annotation(0))
         let one = try #require(editor.selectionOutline)
-        #expect(one.handles.map(\.handle) == [.trailing])
+        #expect(one.handles.map(\.handle) == [.trailing, .bottomRight])
         let handle = one.handles[0]
         #expect(handle.x == one.box.x + one.box.width && handle.y == one.box.y + one.box.height / 2)
 
@@ -146,6 +146,64 @@ import Testing
         #expect(narrow.handle == .trailing)
         editor.release(narrow, fromX: side.x, fromY: side.y, toX: 0, toY: side.y)
         #expect(editor.selectionLabel?.wrapWidth == LabelFormat.defaultSize)
+    }
+
+    /// Ticket 101's fifth criterion (audit item 7): the corner handle scales the label's size (and
+    /// its wrap width) from the text's corner, as one "Resize Label" undo step, and the live drag
+    /// shows exactly what mouse-up commits.
+    @Test func theCornerHandleScalesTheLabelAsOneUndoStep() throws {
+        let wrapped = try #require(LabelFormat(style: .box, size: 18, wrapWidth: 60))
+        let label = try #require(DocumentAnnotation(.text(x: 10, y: 10, characters: "Scale me"), label: wrapped))
+        let document = try Self.document([label])
+        let editor = MarkEditor(document)
+        editor.select(.annotation(0))
+        let before = try #require(editor.selectionOutline)
+        let corner = try #require(before.handles.first { $0.handle == .bottomRight })
+        #expect(corner.x == before.box.x + before.box.width && corner.y == before.box.y + before.box.height)
+
+        let grab = try #require(editor.press(atX: corner.x, y: corner.y, tolerance: 3, anyMark: false))
+        #expect(grab.handle == .bottomRight)
+        // Twice the box's size, measured from its top-left corner.
+        let toX = before.box.x + before.box.width * 2, toY = before.box.y + before.box.height * 2
+        let live = try #require(editor.provisional(grab, fromX: corner.x, fromY: corner.y, toX: toX, toY: toY))
+        #expect(document.edits.annotations == [label], "the live drag commits nothing")
+        #expect(editor.release(grab, fromX: corner.x, fromY: corner.y, toX: toX, toY: toY))
+        #expect(document.edits == live, "mouse-up commits what the drag showed")
+        Self.endEvent()
+        #expect(document.undoManager.undoActionName == "Resize Label")
+        let format = try #require(editor.selectionLabel)
+        #expect(format.size == 36 && format.style == .box && format.wrapWidth == 120)
+        guard case let .text(x, y, characters) = document.edits.annotations[0].kind else {
+            Issue.record("still a label"); return
+        }
+        #expect(x == 10 && y == 10 && characters == "Scale me", "the text keeps its corner and characters")
+
+        // Sizes stay whole points within the label limits.
+        let shrink = try #require(editor.selectionOutline?.handles.first { $0.handle == .bottomRight })
+        let small = try #require(editor.press(atX: shrink.x, y: shrink.y, tolerance: 3, anyMark: false))
+        editor.release(small, fromX: shrink.x, fromY: shrink.y, toX: 0, toY: 0)
+        Self.endEvent()
+        #expect(editor.selectionLabel?.size == 6)
+        let grow = try #require(editor.selectionOutline?.handles.first { $0.handle == .bottomRight })
+        let large = try #require(editor.press(atX: grow.x, y: grow.y, tolerance: 3, anyMark: false))
+        editor.release(large, fromX: grow.x, fromY: grow.y, toX: 5000, toY: 5000)
+        Self.endEvent()
+        #expect(editor.selectionLabel?.size == 144)
+        let odd = try #require(editor.selectionOutline)
+        let third = try #require(odd.handles.first { $0.handle == .bottomRight })
+        let tweak = try #require(editor.press(atX: third.x, y: third.y, tolerance: 3, anyMark: false))
+        editor.release(tweak, fromX: third.x, fromY: third.y, toX: odd.box.x + odd.box.width * 0.33,
+                       toY: odd.box.y + odd.box.height * 0.33)
+        Self.endEvent()
+        let size = try #require(editor.selectionLabel?.size)
+        #expect(size == size.rounded() && size > 40 && size < 55, "\(size)")
+
+        // Each drag was one step; undo walks back through them to the original label.
+        for _ in 0..<3 { document.undoManager.undo() }
+        #expect(editor.selectionLabel?.size == 36, "three undos leave the first drag")
+        document.undoManager.undo()
+        #expect(document.edits.annotations == [label])
+        #expect(!document.undoManager.canUndo)
     }
 
     @Test func sizeAndStyleRestyleTheSelectedLabelAsOneStepEach() throws {

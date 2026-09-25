@@ -24,6 +24,29 @@ private let repository = URL(fileURLWithPath: #filePath)
         #expect(!copy.laterAccessibilityLabel.isEmpty)
     }
 
+    /// Ticket 101's open item: reopened from "What Frisket Stores…" after it was completed,
+    /// onboarding does not come back on the next launch, so its dismiss button must not say it will.
+    @Test func aReopenedOnboardingDoesNotPromiseToShowAgainOnLaunch() {
+        let first = OnboardingContent.current(for: OnboardingCompletion(isComplete: false))
+        #expect(first == .current)
+        #expect(first.laterAccessibilityLabel.contains("next launch"))
+        #expect(FirstLaunch.surface(onboarding: OnboardingCompletion(isComplete: false), systemAlertPending: false,
+                                    dismissedForLaunch: false) == .onboarding, "an incomplete one does return")
+
+        let reopened = OnboardingContent.current(for: OnboardingCompletion(isComplete: true))
+        #expect(!reopened.laterAccessibilityLabel.contains("next launch"))
+        #expect(!reopened.laterAccessibilityLabel.contains("again"))
+        #expect(reopened.laterTitle == "Close")
+        #expect(reopened.laterAccessibilityLabel.contains("What Frisket Stores"))
+        #expect(FirstLaunch.surface(onboarding: OnboardingCompletion(isComplete: true), systemAlertPending: false) == .ready,
+                "a completed one does not return on launch")
+        // Everything else is the same copy.
+        var same = reopened
+        same.laterTitle = first.laterTitle
+        same.laterAccessibilityLabel = first.laterAccessibilityLabel
+        #expect(same == first)
+    }
+
     @Test func onboardingAppearsOnceAndStaysOffAPendingSystemAlert() {
         let first = OnboardingCompletion(isComplete: false)
         #expect(first.shouldPresent)

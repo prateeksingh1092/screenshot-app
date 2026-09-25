@@ -11,7 +11,8 @@ public enum MarkReference: Hashable, Sendable {
 
 /// A handle on a selected mark. Boxes have four corners; an arrow has its tail and tip, and a Curved
 /// arrow also its middle, `bend` (ticket 85). A label has one on its right side, `trailing`, that
-/// sets the width its text wraps at (ticket 86).
+/// sets the width its text wraps at (ticket 86), and one at its bottom-right corner that scales its
+/// size (ticket 101).
 public enum MarkHandle: Hashable, Sendable {
     case topLeft, topRight, bottomLeft, bottomRight, tail, tip, bend, trailing
 }
@@ -102,7 +103,8 @@ extension DocumentEdits {
                 return [(.tail, x0, y0), (.bend, middle.x, middle.y), (.tip, x1, y1)]
             case .text:
                 guard let box = bounds(of: mark) else { return [] }
-                return [(.trailing, box.x + box.width, box.y + box.height / 2)]
+                return [(.trailing, box.x + box.width, box.y + box.height / 2),
+                        (.bottomRight, box.x + box.width, box.y + box.height)]
             case .rectangle: break
             }
         }
@@ -234,6 +236,9 @@ extension DocumentEdits {
             // The handle sits on the box's right edge, past the style's margin.
             guard let format = old.label.with(wrapWidth: handleX - x - old.label.margin.horizontal) else { return nil }
             label = format
+        case let (.resize(.bottomRight, handleX, handleY), .text(x, y, characters)):
+            guard let format = scaled(old.label, text: (x, y, characters), toX: handleX, y: handleY) else { return nil }
+            label = format
         case let (.restyle(next), .arrow):
             // A Curved arrow keeps its bend; one that becomes Curved bows as a new one does.
             style = next
@@ -257,6 +262,22 @@ extension DocumentEdits {
             kind = .rectangle(x: box.x, y: box.y, width: box.width, height: box.height)
         }
         return DocumentAnnotation(kind, colour: colour, width: width, style: style, bend: bend, label: label)
+    }
+
+    /// A label scaled by its corner handle (ticket 101): the box's top-left corner stays, and the
+    /// scale is the drag's projection on the box's diagonal. The size is whole points within the
+    /// label limits, and a wrap width scales with it, so the text wraps at the same words.
+    private static func scaled(_ format: LabelFormat, text: (x: Double, y: Double, characters: String),
+                               toX handleX: Double, y handleY: Double) -> LabelFormat? {
+        let box = LabelLayout(characters: text.characters, format: format).bounds
+        let left = text.x + box.x, top = text.y + box.y
+        let diagonal = box.width * box.width + box.height * box.height
+        guard diagonal > 0 else { return nil }
+        let scale = ((handleX - left) * box.width + (handleY - top) * box.height) / diagonal
+        guard scale.isFinite else { return nil }
+        let size = min(144, max(6, (format.size * scale).rounded()))
+        let ratio = size / format.size
+        return LabelFormat(style: format.style, size: size, wrapWidth: format.wrapWidth.map { $0 * ratio })
     }
 
     /// What the mark is called in the Undo menu: "Solid Redaction", "Blur", "Shape", "Label"…
