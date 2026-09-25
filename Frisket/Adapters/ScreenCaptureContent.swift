@@ -1,5 +1,5 @@
 import AppKit
-@preconcurrency import ScreenCaptureKit
+import ScreenCaptureKit
 
 /// ScreenCaptureKit's immutable snapshot and screenshot API boundary.
 /// Fixtures replace this boundary without requesting permission or screen pixels.

@@ -1,5 +1,5 @@
 import Foundation
-@preconcurrency import ScreenCaptureKit
+import ScreenCaptureKit
 
 /// Shared policy for the frozen preview and final capture. Callers retain
 /// their own size budgets, pixel-format needs, and image handling.

@@ -1,7 +1,7 @@
 import Foundation
 import FrisketCore
 
-@MainActor protocol WindowCapturePlatform: AnyObject {
+@MainActor public protocol WindowCapturePlatform: AnyObject {
     /// Await shareable-content preparation before any selection UI is created.
     /// Returns both listings unjoined; `WindowSelection(rows:)` joins and filters them.
     func prepareWindows() async throws -> WindowRows
@@ -13,13 +13,13 @@ import FrisketCore
     func finishCapture()
 }
 
-@MainActor final class WindowCaptureSource: CapturePixelSource {
+@MainActor public final class WindowCaptureSource: CapturePixelSource {
     private let platform: any WindowCapturePlatform
     private let ownProcessID: Int32
     private let bundleIdentifier: String
     private let exclusions: @MainActor () -> Set<String>
 
-    init(platform: any WindowCapturePlatform, ownProcessID: Int32, bundleIdentifier: String,
+    public init(platform: any WindowCapturePlatform, ownProcessID: Int32, bundleIdentifier: String,
          exclusions: @escaping @MainActor () -> Set<String> = { [] }) {
         self.platform = platform
         self.ownProcessID = ownProcessID
@@ -27,7 +27,7 @@ import FrisketCore
         self.exclusions = exclusions
     }
 
-    func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
+    public func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
         defer { platform.finishCapture() }
         do {
             let rows = try await platform.prepareWindows()

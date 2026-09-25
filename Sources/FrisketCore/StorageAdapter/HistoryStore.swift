@@ -312,10 +312,12 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
                     SELECT capture_identifier, revision, width, height, finalized_at FROM history
                     ORDER BY finalized_at DESC, id DESC
                     """).map { row in
-                    guard let uuid = UUID(uuidString: row["capture_identifier"]) else { throw HistoryFailure.unavailable }
-                    return HistoryItem(captureID: CaptureID(uuid), revision: UInt64(row["revision"] as Int64),
-                                       width: row["width"], height: row["height"],
-                                       finalizedAt: Date(timeIntervalSince1970: row["finalized_at"]))
+                    guard let uuid = UUID(uuidString: try row.decode(forColumn: "capture_identifier")) else {
+                        throw HistoryFailure.unavailable
+                    }
+                    return HistoryItem(captureID: CaptureID(uuid), revision: try Self.revision(of: row),
+                                       width: try row.decode(forColumn: "width"), height: try row.decode(forColumn: "height"),
+                                       finalizedAt: Date(timeIntervalSince1970: try row.decode(forColumn: "finalized_at")))
                 }
             }
             return .success(rows ?? [])
@@ -462,15 +464,15 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
             let usage = try usageBytes(database)
             let row = try database.read { try Row.fetchOne($0, sql: "SELECT * FROM history_retention WHERE id = 1") }
             guard let row else { throw HistoryFailure.unavailable }
-            let last: Double? = row["last_quota_eviction"]
-            let pending: Bool = row["quota_notice_pending"]
+            let last: Double? = try row.decode(forColumn: "last_quota_eviction")
+            let pending: Bool = try row.decode(forColumn: "quota_notice_pending")
             if consumeNotice && pending {
                 try database.write { try $0.execute(sql: "UPDATE history_retention SET quota_notice_pending = 0 WHERE id = 1") }
                 try checkpoint(database)
             }
             return .success(HistoryUsage(limits: limits, usageBytes: usage,
                 lastQuotaEviction: last.map(Date.init(timeIntervalSince1970:)), quotaNoticePending: pending,
-                ageEvictionDeferred: row["age_deferred"]))
+                ageEvictionDeferred: try row.decode(forColumn: "age_deferred")))
         } catch let failure as HistoryFailure { return .failure(failure) }
         catch { return .failure(.unavailable) }
     }
@@ -506,8 +508,9 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
     }
 
     private func usageBytes(_ database: DatabaseQueue) throws -> Int64 {
-        var total = try database.read { try Int64.fetchOne($0,
-            sql: "SELECT COALESCE(SUM(image_bytes + thumbnail_bytes), 0) FROM history")! }
+        let rows = try database.read { try Int64.fetchOne($0,
+            sql: "SELECT COALESCE(SUM(image_bytes + thumbnail_bytes), 0) FROM history") }
+        guard var total = rows else { throw HistoryFailure.unavailable }
         for suffix in ["", "-wal", "-shm"] {
             let file = root.appendingPathComponent("history.sqlite" + suffix)
             if suffix.isEmpty || FileManager.default.fileExists(atPath: file.path) {
@@ -815,12 +818,20 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
                          arguments: [id.rawValue.uuidString]).map(entry(from:))
     }
 
+    /// Every column is decoded with GRDB's throwing `decode`: an unreadable value is a
+    /// `HistoryFailure`, never a trap in GRDB's non-optional subscript.
     private static func entry(from row: Row) throws -> HistoryEntry {
-        let identifier: String = row["capture_identifier"]
+        let identifier: String = try row.decode(forColumn: "capture_identifier")
         guard let uuid = UUID(uuidString: identifier), uuid.uuidString == identifier else { throw HistoryFailure.unavailable }
-        return HistoryEntry(key: row["id"], captureID: CaptureID(uuid), revision: UInt64(row["revision"] as Int64),
-            width: row["width"], height: row["height"], imageBytes: row["image_bytes"], thumbnailBytes: row["thumbnail_bytes"],
-            finalizedAt: Date(timeIntervalSince1970: row["finalized_at"]))
+        return HistoryEntry(key: try row.decode(forColumn: "id"), captureID: CaptureID(uuid), revision: try revision(of: row),
+            width: try row.decode(forColumn: "width"), height: try row.decode(forColumn: "height"),
+            imageBytes: try row.decode(forColumn: "image_bytes"), thumbnailBytes: try row.decode(forColumn: "thumbnail_bytes"),
+            finalizedAt: Date(timeIntervalSince1970: try row.decode(forColumn: "finalized_at")))
+    }
+
+    private static func revision(of row: Row) throws -> UInt64 {
+        guard let revision = UInt64(exactly: try row.decode(Int64.self, forColumn: "revision")) else { throw HistoryFailure.unavailable }
+        return revision
     }
 
     private func logicalSize(_ location: URL) throws -> Int64 {

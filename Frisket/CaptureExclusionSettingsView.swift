@@ -1,4 +1,5 @@
 import AppKit
+import FrisketAdapters
 import SwiftUI
 import UniformTypeIdentifiers
 

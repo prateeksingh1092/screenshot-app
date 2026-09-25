@@ -16,8 +16,8 @@ import FrisketCore
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        retentionDays = defaults.object(forKey: "historyRetentionDays") as? Int ?? 30
-        maximumMegabytes = defaults.object(forKey: "historyMaximumMegabytes") as? Int ?? 1000
+        retentionDays = defaults.object(forKey: PreferenceKey.historyRetentionDays.rawValue) as? Int ?? 30
+        maximumMegabytes = defaults.object(forKey: PreferenceKey.historyMaximumMegabytes.rawValue) as? Int ?? 1000
     }
 
     var limits: HistoryLimits {
@@ -38,8 +38,8 @@ import FrisketCore
         let selected = limits
         retentionDays = selected.retentionDays
         maximumMegabytes = Int(selected.maximumBytes / 1_000_000)
-        defaults.set(retentionDays, forKey: "historyRetentionDays")
-        defaults.set(maximumMegabytes, forKey: "historyMaximumMegabytes")
+        defaults.set(retentionDays, forKey: PreferenceKey.historyRetentionDays.rawValue)
+        defaults.set(maximumMegabytes, forKey: PreferenceKey.historyMaximumMegabytes.rawValue)
         Task {
             _ = await history.maintain(limits: selected)
             await refresh()

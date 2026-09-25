@@ -1,12 +1,12 @@
 import AppKit
 import FrisketCore
-@preconcurrency import ScreenCaptureKit
+import ScreenCaptureKit
 import QuartzCore
 import ImageIO
 import UniformTypeIdentifiers
 
-@MainActor final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
-    private(set) var spaceGeneration: UInt64 = 0
+@MainActor public final class ScreenCapturePlatform: AreaCapturePlatform, FullScreenCapturePlatform {
+    public private(set) var spaceGeneration: UInt64 = 0
     private var applicationGeneration: UInt64 = 0
     private lazy var overlay = SelectionOverlay()
     private let permission: ScreenCapturePermissionAdapter
@@ -19,13 +19,22 @@ import UniformTypeIdentifiers
     private let connectedDisplays: @MainActor () -> [SelectionDisplay]
     private let applicationNotifications: NotificationCenter
     private let exclusions: @MainActor () -> Set<String>
+    /// The app's platform: live shareable content, the connected screens and workspace notifications.
+    public convenience init(permission: ScreenCapturePermissionAdapter, exclusions: @escaping @MainActor () -> Set<String>) {
+        self.init(permission: permission, exclusions: exclusions,
+                  loadContent: {
+                      ShareableScreenCaptureContent(content: try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true))
+                  },
+                  connectedDisplays: { NSScreen.screens.compactMap(\.selectionDisplay) },
+                  applicationNotifications: NSWorkspace.shared.notificationCenter)
+    }
+
+    /// The test seam: synthetic content, displays and notifications.
     init(permission: ScreenCapturePermissionAdapter,
          exclusions: @escaping @MainActor () -> Set<String> = { [] },
-         loadContent: @escaping @MainActor () async throws -> any ScreenCaptureContent = {
-             ShareableScreenCaptureContent(content: try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true))
-         },
-         connectedDisplays: @escaping @MainActor () -> [SelectionDisplay] = { NSScreen.screens.compactMap(\.selectionDisplay) },
-         applicationNotifications: NotificationCenter = NSWorkspace.shared.notificationCenter) {
+         loadContent: @escaping @MainActor () async throws -> any ScreenCaptureContent,
+         connectedDisplays: @escaping @MainActor () -> [SelectionDisplay],
+         applicationNotifications: NotificationCenter) {
         self.permission = permission
         self.exclusions = exclusions
         self.loadContent = loadContent
@@ -33,7 +42,7 @@ import UniformTypeIdentifiers
         self.applicationNotifications = applicationNotifications
     }
 
-    func prefetchShareableContent() async throws {
+    public func prefetchShareableContent() async throws {
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(spaceChanged),
             name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
@@ -53,7 +62,7 @@ import UniformTypeIdentifiers
         guard refreshed == .granted else { throw CaptureSourceFailure.permissionRequired(refreshed) }
     }
 
-    func prepareSelection() async {
+    public func prepareSelection() async {
         // One pointer read, not a monitor. A drag may start on any connected display.
         let pointer = NSEvent.mouseLocation
         let screens = NSScreen.screens
@@ -65,9 +74,9 @@ import UniformTypeIdentifiers
         hideSelection()
     }
 
-    func discardSelectionPreviews() {}
+    public func discardSelectionPreviews() {}
 
-    func selectArea() async -> AreaSelection? {
+    public func selectArea() async -> AreaSelection? {
         // A change on ANY display during preparation invalidates the whole layout.
         areaLayout?.updateDisplays(connectedDisplays())
         guard areaLayout?.isCancelled == false else { return nil }
@@ -75,11 +84,11 @@ import UniformTypeIdentifiers
                                     spaceGeneration: { self.spaceGeneration })
     }
 
-    func displayUnderPointer() -> SelectionDisplay? {
+    public func displayUnderPointer() -> SelectionDisplay? {
         CaptureDisplays(connectedDisplays()).display(at: NSEvent.mouseLocation)   // D14: top row included
     }
 
-    func hideSelection() {
+    public func hideSelection() {
         overlay.hide()
         CATransaction.flush()
     }
@@ -95,7 +104,7 @@ import UniformTypeIdentifiers
         discardSelectionPreviews()
     }
 
-    func finishCapture() {
+    public func finishCapture() {
         NSWorkspace.shared.notificationCenter.removeObserver(self,
             name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
@@ -143,7 +152,7 @@ import UniformTypeIdentifiers
         return image
     }
 
-    func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
+    public func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
         let image = try await captureRegion(request)
         let bytes = NSMutableData()
         guard let encoder = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil) else {

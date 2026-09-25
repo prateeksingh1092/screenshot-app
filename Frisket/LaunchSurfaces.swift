@@ -1,4 +1,5 @@
 import AppKit
+import FrisketAdapters
 import FrisketCore
 
 @MainActor final class LaunchSurfaces {

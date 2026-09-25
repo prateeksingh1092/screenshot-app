@@ -1,8 +1,9 @@
 # Frisket core package
 
-`Frisket` is a Swift 6.3 package with one static library, `FrisketCore`, and
-the core test target `FrisketCoreTests`, plus a test-only `FrisketAdapters`
-module and `FrisketAdapterTests` compiling the app adapter sources. It targets macOS 26.
+`Frisket` is a Swift 6.3 package with two static libraries, `FrisketCore` and
+`FrisketAdapters` (the app's AppKit, ScreenCaptureKit and Vision adapters in
+`Frisket/Adapters/`, linked by the app since ticket 77), and the test targets
+`FrisketCoreTests` and `FrisketAdapterTests`. It targets macOS 26.
 GRDB 7.11.1 is its only external dependency, pinned to the official HTTPS source
 and linked statically. `HistoryCrashHelper` is a test-only executable under
 `Tests/Helpers/`, built as a dependency of the core tests and absent from the

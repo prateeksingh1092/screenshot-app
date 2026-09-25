@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import FrisketAdapters
 import FrisketCore
 
 @MainActor final class CarbonHotKey: ShortcutSystem {
@@ -20,13 +21,13 @@ import FrisketCore
     func enabledShortcuts() throws -> [ShortcutBinding] { try SystemShortcutReader.enabled() }
 
     func load() -> [ShortcutAction: ShortcutBinding] {
-        guard let data = defaults.data(forKey: "globalShortcuts.v1") else { return [:] }
+        guard let data = defaults.data(forKey: PreferenceKey.globalShortcuts.rawValue) else { return [:] }
         return ShortcutAction.savedBindings(from: data)
     }
 
     func save(_ bindings: [ShortcutAction: ShortcutBinding]) {
         guard let data = try? ShortcutAction.encoded(bindings) else { return }
-        defaults.set(data, forKey: "globalShortcuts.v1")
+        defaults.set(data, forKey: PreferenceKey.globalShortcuts.rawValue)
     }
 
     func replace(_ action: ShortcutAction, with binding: ShortcutBinding) throws {

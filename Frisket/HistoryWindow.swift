@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import FrisketAdapters
 import FrisketCore
 
 @MainActor final class HistoryWindowModel: ObservableObject {

@@ -12,8 +12,8 @@ import FrisketCore
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let stored = ThumbnailAutoDismissPreference.load(
-            never: defaults.bool(forKey: ThumbnailAutoDismissPreference.neverKey),
-            seconds: defaults.object(forKey: ThumbnailAutoDismissPreference.secondsKey))
+            never: defaults.bool(forKey: PreferenceKey.thumbnailAutoDismissNever.rawValue),
+            seconds: defaults.object(forKey: PreferenceKey.thumbnailAutoDismissSeconds.rawValue))
         never = stored.never
         seconds = stored.seconds
     }
@@ -37,8 +37,8 @@ import FrisketCore
         let selected = preference
         never = selected.never
         seconds = selected.seconds
-        defaults.set(selected.never, forKey: ThumbnailAutoDismissPreference.neverKey)
-        defaults.set(selected.seconds, forKey: ThumbnailAutoDismissPreference.secondsKey)
+        defaults.set(selected.never, forKey: PreferenceKey.thumbnailAutoDismissNever.rawValue)
+        defaults.set(selected.seconds, forKey: PreferenceKey.thumbnailAutoDismissSeconds.rawValue)
         Task {
             await commands?.setThumbnailPolicy(ThumbnailStackPolicy(autoDismiss: selected.autoDismiss))
             applying = false

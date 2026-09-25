@@ -1,4 +1,5 @@
 import AppKit
+import FrisketAdapters
 import FrisketCore
 
 @main @MainActor enum FrisketApp {

@@ -52,20 +52,25 @@ class ReleaseProjectTests(unittest.TestCase):
 
 
 class BuildGraphTests(unittest.TestCase):
-    """Ticket 42: the app and the package tests compile the core from one graph."""
+    """Tickets 42 and 77: the app and the package tests compile the core and adapters from one graph."""
 
-    def test_app_links_the_package_core_product_and_compiles_no_core_copy(self):
+    def test_app_links_the_package_products_and_compiles_no_copy(self):
         items = objects()
         targets = [item for item in items.values() if item.get("isa") == "PBXNativeTarget"]
         self.assertEqual([target["name"] for target in targets], ["Frisket"])
         products = [items[ref]["productName"] for ref in targets[0].get("packageProductDependencies", [])]
-        self.assertEqual(products, ["FrisketCore"])
+        self.assertEqual(products, ["FrisketCore", "FrisketAdapters"])
         packages = [item for item in items.values() if "SwiftPackageReference" in item.get("isa", "")]
         self.assertEqual([(p["isa"], p.get("relativePath")) for p in packages],
                          [("XCLocalSwiftPackageReference", ".")])
         folders = [item.get("path") for item in items.values()
                    if item.get("isa") == "PBXFileSystemSynchronizedRootGroup"]
         self.assertNotIn("Sources/FrisketCore", folders)
+        excluded = {name for item in items.values() if item.get("isa") == "PBXFileSystemSynchronizedBuildFileExceptionSet"
+                    for name in item.get("membershipExceptions", [])}
+        adapters = {f"Adapters/{path.name}" for path in (ROOT / "Frisket" / "Adapters").glob("*.swift")}
+        self.assertTrue(adapters)
+        self.assertLessEqual(adapters, excluded)
 
     def test_sdk_follows_xcode_and_signing_identity_is_not_tracked(self):
         for name, rows in configurations().items():

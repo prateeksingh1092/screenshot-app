@@ -7,7 +7,7 @@ import FrisketCore
 }
 
 extension NSScreen {
-    var selectionDisplay: SelectionDisplay? {
+    public var selectionDisplay: SelectionDisplay? {
         guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
         return SelectionDisplay(id: number.uint32Value, frame: frame, scale: backingScaleFactor)
     }

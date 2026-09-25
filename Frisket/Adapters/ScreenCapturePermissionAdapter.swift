@@ -4,40 +4,41 @@ import FrisketCore
 import ScreenCaptureKit
 
 /// The platform and request-history seam. Test adapters never touch TCC or defaults.
-@MainActor protocol ScreenRecordingAccess: AnyObject {
+@MainActor public protocol ScreenRecordingAccess: AnyObject {
     var hasRequested: Bool { get set }
     func preflight() -> Bool
     func request() -> Bool
 }
 
-@MainActor final class SystemScreenRecordingAccess: ScreenRecordingAccess {
+@MainActor public final class SystemScreenRecordingAccess: ScreenRecordingAccess {
+    public init() {}
     // Standard defaults are scoped to the running bundle identity. This marker is
     // request history, never a cached grant or a substitute for OS authorization.
-    private let key = "screenRecordingPermissionWasRequested"
-    var hasRequested: Bool {
+    private let key = PreferenceKey.screenRecordingRequested.rawValue
+    public var hasRequested: Bool {
         get { UserDefaults.standard.bool(forKey: key) }
         set { UserDefaults.standard.set(newValue, forKey: key) }
     }
-    func preflight() -> Bool { CGPreflightScreenCaptureAccess() }
-    func request() -> Bool { CGRequestScreenCaptureAccess() }
+    public func preflight() -> Bool { CGPreflightScreenCaptureAccess() }
+    public func request() -> Bool { CGRequestScreenCaptureAccess() }
 }
 
-@MainActor final class ScreenCapturePermissionAdapter: CapturePermissionSource {
+@MainActor public final class ScreenCapturePermissionAdapter: CapturePermissionSource {
     private let access: any ScreenRecordingAccess
     private var policy: CapturePermissionPolicy
-    init(access: any ScreenRecordingAccess) {
+    public init(access: any ScreenRecordingAccess) {
         self.access = access
         policy = CapturePermissionPolicy(hasRequested: access.hasRequested)
     }
 
-    func capturePermission() -> CapturePermissionState { refresh() }
+    public func capturePermission() -> CapturePermissionState { refresh() }
 
-    func refresh() -> CapturePermissionState {
+    public func refresh() -> CapturePermissionState {
         observe(.preflight(access.preflight()))
     }
 
     /// Only the explicit recovery action calls this, with selection UI absent.
-    func requestPermission() -> CapturePermissionState {
+    public func requestPermission() -> CapturePermissionState {
         let state = refresh()
         guard policy.canRequest else { return state }
         // Persist before invoking the OS, which may terminate this process.

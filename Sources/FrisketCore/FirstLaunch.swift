@@ -2,7 +2,6 @@
 /// key, never a file under the History root. Onboarding closes before any
 /// permission request, and it stays hidden while a system alert is pending.
 public struct OnboardingCompletion: Equatable, Sendable {
-    public static let preferenceKey = "hasCompletedOnboarding"
     public var isComplete: Bool
 
     public init(isComplete: Bool) {

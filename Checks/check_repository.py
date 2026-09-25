@@ -322,8 +322,32 @@ def app_source_issues(root):
             visit(child, path, ancestors | {identifier})
 
     visit(objects[project["rootObject"]]["mainGroup"], pathlib.PurePosixPath(), set())
-    return [f"{path}: explicit app-source reference; use the synchronized Frisket folder"
-            for path in sorted(paths)]
+    issues = [f"{path}: explicit app-source reference; use the synchronized Frisket folder"
+              for path in sorted(paths)]
+    # Ticket 77: the app links the FrisketAdapters package product and compiles no adapter
+    # source itself, so every adapter line the app runs is the one the package tests.
+    for identifier, item in sorted(objects.items()):
+        if item.get("isa") != "PBXFileSystemSynchronizedRootGroup" or item.get("path") != "Frisket":
+            continue
+        for target_id, target in sorted(objects.items()):
+            if target.get("isa") != "PBXNativeTarget" or identifier not in target.get("fileSystemSynchronizedGroups", []):
+                continue
+            excluded = set()
+            for exception in item.get("exceptions", []):
+                exception_set = objects[exception]
+                if exception_set.get("target") == target_id:
+                    excluded.update(exception_set.get("membershipExceptions", []))
+            # Xcode ignores a folder name here, so each adapter file is listed.
+            adapters = sorted(path.relative_to(root / "Frisket").as_posix()
+                              for path in (root / "Frisket" / "Adapters").glob("*.swift"))
+            for adapter in adapters:
+                if adapter not in excluded:
+                    issues.append(f"Frisket/{adapter}: the app target compiles an adapter source; "
+                                  "list it in the Frisket folder's membership exceptions")
+            products = {objects[dependency].get("productName") for dependency in target.get("packageProductDependencies", [])}
+            if "FrisketAdapters" not in products:
+                issues.append("Frisket/Adapters: the app target does not link the FrisketAdapters product")
+    return issues
 
 
 def upstream_identity(text):

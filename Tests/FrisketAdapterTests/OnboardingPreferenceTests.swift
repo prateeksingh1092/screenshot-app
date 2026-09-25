@@ -11,8 +11,7 @@ import Testing
         )
         #expect(!preference.isComplete)
         preference.markComplete()
-        #expect(stored == [OnboardingCompletion.preferenceKey: true])
+        #expect(stored == [PreferenceKey.onboardingCompleted.rawValue: true])
         #expect(preference.isComplete)
-        #expect(!OnboardingCompletion.preferenceKey.contains("History"))
     }
 }

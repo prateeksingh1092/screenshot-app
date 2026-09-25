@@ -4,8 +4,9 @@ import ImageIO
 import Vision
 
 /// On-device Vision OCR. The recognized string is returned to the command layer only.
-struct VisionTextRecognizer: TextRecognizer {
-    func recognize(_ image: CaptureImage) async -> String {
+public struct VisionTextRecognizer: TextRecognizer {
+    public init() {}
+    public func recognize(_ image: CaptureImage) async -> String {
         let source = CGImageSourceCreateWithData(image.pngData as CFData, nil)
         guard let cgImage = source.flatMap({ CGImageSourceCreateImageAtIndex($0, 0, nil) }) else { return "" }
         let request = VNRecognizeTextRequest()

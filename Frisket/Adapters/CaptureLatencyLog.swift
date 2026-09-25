@@ -4,7 +4,7 @@ import FrisketCore
 
 /// Opt-in numeric instrumentation. No image, identifier, path or error payloads.
 /// One instance per app process; the app serializes captures on the main actor.
-@MainActor final class CaptureLatencyLog {
+@MainActor public final class CaptureLatencyLog {
     private var recorder: CaptureLatencyRecorder
     private var enabled: Bool
     private let write: (Data) throws -> Void
@@ -16,20 +16,20 @@ import FrisketCore
         self.write = write
     }
 
-    static func standardOutput() -> CaptureLatencyLog {
+    public static func standardOutput() -> CaptureLatencyLog {
         CaptureLatencyLog(enabled: ProcessInfo.processInfo.environment["FRISKET_CAPTURE_LATENCY"] == "1",
             clock: { clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) },
             write: { try FileHandle.standardOutput.write(contentsOf: $0) })
     }
 
-    func selectionAccepted() {
+    public func selectionAccepted() {
         guard enabled else { return }
         recorder.selectionAccepted()
     }
 
-    func cancel() { recorder.cancel() }
+    public func cancel() { recorder.cancel() }
 
-    func thumbnailSubmitted() {
+    public func thumbnailSubmitted() {
         guard enabled, let row = recorder.thumbnailSubmitted() else { return }
         do { try write(Data(row.utf8)) }
         catch { enabled = false } // Fail closed: incomplete sessions cannot become reports.

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import FrisketAdapters
 import FrisketCore
 
 @MainActor final class ThumbnailModel: ObservableObject {
