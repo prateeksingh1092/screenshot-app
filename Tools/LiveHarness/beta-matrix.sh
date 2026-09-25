@@ -669,8 +669,13 @@ row_editor_style_bar() {  # ticket 92
   [ -n "${EH:-}" ] || { note "no editor window frame"; return 1; }
   # The toolbar: every tool, Undo and Close are laid out in the window, none in the » overflow menu.
   # The tool titles are the labels the other editor rows press (exact matches, found before any substring).
-  for label in Select "Solid Redaction" Crop Arrow Line Shape Text Blur Magnify Undo Close; do   # toolbar items expose their item labels, not the buttons' own
+  for label in Select "Solid Redaction" Crop Arrow Line Shape Text Blur Magnify ; do
     inside_editor "$label" || ok=1
+  done
+  # Undo and Close by their toolbar item labels, searched only in the editor window: the Thumbnail's × is also "Close…".
+  for label in Undo Close; do
+    "$H/drive" axdump frisket 3 2>/dev/null | awk '/title="Edit Capture"/ {e=1; next} /^role="AXWindow"/ {e=0} e' \
+      | grep -q "role=\"AXButton\" desc=\"$label\"" || { note "toolbar $label not in the editor window"; ok=1; }
   done
   tool "Solid Redaction"; inside_editor "Redaction colour" || ok=1
   tool "Arrow"; inside_editor "Arrow style" || ok=1

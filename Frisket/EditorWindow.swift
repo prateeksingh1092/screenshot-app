@@ -618,10 +618,16 @@ enum EditorAction {
 
     private func selectTool(letter: Character) -> Bool {
         guard let index = tools.firstIndex(where: { $0.keyEquivalent == String(letter) }) else { return false }
+        switchTool(to: index)
+        return true
+    }
+
+    /// A new drawing tool drops the selection, so the style bar shows that tool's controls, not the old mark's.
+    private func switchTool(to index: Int) {
         endLabel()
+        if !(tools[index] is SelectTool) { _ = marks.deselect() }
         activeTool = index
         refresh()
-        return true
     }
 
     private func configure(_ button: NSButton, action: Selector, label: String, tip: String) {
@@ -1110,9 +1116,7 @@ enum EditorAction {
 
     @objc private func selectTool(_ sender: NSButton) {
         guard !finishing else { return }
-        endLabel()
-        activeTool = sender.tag
-        refresh()
+        switchTool(to: sender.tag)
     }
 
     @objc private func undo() {
