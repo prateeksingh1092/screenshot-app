@@ -6,7 +6,6 @@ import FrisketCore
     private let commands: CaptureCommandLayer
     private let dragAdapter: FilePromiseDragAdapter
     private let latency: CaptureLatencyLog
-    private let scrolling: ManualScrollingCapture
     private let areaDisplayID: () -> UInt32?
     private let windowDisplayID: () -> UInt32?
     private let notify: (String, String) -> Void
@@ -28,13 +27,12 @@ import FrisketCore
     var hasThumbnail: Bool { !panels.isEmpty }
 
     init(commands: CaptureCommandLayer, drag: FilePromiseDragAdapter, latency: CaptureLatencyLog,
-         scrolling: ManualScrollingCapture, areaDisplayID: @escaping () -> UInt32?,
+         areaDisplayID: @escaping () -> UInt32?,
          windowDisplayID: @escaping () -> UInt32?, notify: @escaping (String, String) -> Void,
          refreshHistory: @escaping () async -> Void) {
         self.commands = commands
         self.dragAdapter = drag
         self.latency = latency
-        self.scrolling = scrolling
         self.areaDisplayID = areaDisplayID
         self.windowDisplayID = windowDisplayID
         self.notify = notify
@@ -57,14 +55,9 @@ import FrisketCore
         guard !isCapturing, !isTerminating, canStart() else { return }
         isCapturing = true
         Task {
-            defer { latency.cancel(); isCapturing = false; scrolling.hide(); onCaptureFinished() }
+            defer { latency.cancel(); isCapturing = false; onCaptureFinished() }
             let result = await commands.execute(command)
             switch result {
-            case let .scrollingLimited(revision, notice):
-                self.notice("Scrolling capture stopped", notice.message)
-                await showThumbnail(revision, command: command)
-            case let .scrollingRefused(notice):
-                self.notice("Scrolling capture stopped", notice.message)
             case let .pending(revision):
                 await showThumbnail(revision, command: command)
             case .captureFailed(.cancelled): break

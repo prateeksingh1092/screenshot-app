@@ -1,10 +1,11 @@
+import Foundation
+
 public enum ShortcutAction: String, CaseIterable, Codable, Sendable {
     case showHistory
     case focusThumbnails
     case captureFullScreen
     case captureArea
     case captureWindow
-    case captureScrolling
 
     public var title: String {
         switch self {
@@ -13,12 +14,11 @@ public enum ShortcutAction: String, CaseIterable, Codable, Sendable {
         case .captureFullScreen: "Capture Full Screen"
         case .captureArea: "Capture Area"
         case .captureWindow: "Capture Window"
-        case .captureScrolling: "Capture Scrolling Page"
         }
     }
 
     /// Command–Shift and a number, matching the macOS screenshot row and CleanShot.
-    /// 1 History, 2 thumbnails, 3 full screen, 4 area, 5 window, 6 scrolling.
+    /// 1 History, 2 thumbnails, 3 full screen, 4 area, 5 window. ⌘⇧6 is left free (decision 60).
     public var defaultBinding: ShortcutBinding {
         let code: UInt32 = switch self {
         case .showHistory: 18
@@ -26,7 +26,6 @@ public enum ShortcutAction: String, CaseIterable, Codable, Sendable {
         case .captureFullScreen: 20
         case .captureArea: 21
         case .captureWindow: 23
-        case .captureScrolling: 22
         }
         return ShortcutBinding(keyCode: code, modifiers: 768) // Command–Shift
     }
@@ -37,7 +36,33 @@ public enum ShortcutAction: String, CaseIterable, Codable, Sendable {
         case .captureArea: ShortcutBinding(keyCode: 21, modifiers: 6400)
         case .captureFullScreen: ShortcutBinding(keyCode: 20, modifiers: 6400)
         case .focusThumbnails: ShortcutBinding(keyCode: 17, modifiers: 6400)
-        case .showHistory, .captureWindow, .captureScrolling: nil
+        case .showHistory, .captureWindow: nil
+        }
+    }
+}
+
+extension ShortcutAction {
+    /// The saved-shortcuts preference: JSON of `[ShortcutAction: ShortcutBinding]`.
+    public static func encoded(_ bindings: [ShortcutAction: ShortcutBinding]) throws -> Data {
+        try JSONEncoder().encode(bindings)
+    }
+
+    /// Reads the saved-shortcuts preference. An action Frisket no longer has, such as the
+    /// retired scrolling capture (decision 60), is skipped; the other bindings are kept.
+    public static func savedBindings(from data: Data) -> [ShortcutAction: ShortcutBinding] {
+        (try? JSONDecoder().decode(SavedShortcuts.self, from: data))?.bindings ?? [:]
+    }
+}
+
+/// A dictionary with non-String keys encodes as a flat array: key, value, key, value.
+private struct SavedShortcuts: Decodable {
+    var bindings: [ShortcutAction: ShortcutBinding] = [:]
+    init(from decoder: any Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        while !container.isAtEnd {
+            let name = try container.decode(String.self)
+            let binding = try container.decode(ShortcutBinding.self)
+            if let action = ShortcutAction(rawValue: name) { bindings[action] = binding }
         }
     }
 }

@@ -4,7 +4,7 @@ Not run by the implementer. Use only an approved signed build and synthetic test
 
 Record date, macOS build, reviewed commit, architecture, code signature, keyboard layout, display layout and Screen Recording permission state. Record each result and any duplicate activation. Record which architecture ran. arm64 stays unexecuted until an Apple silicon run exists.
 
-1. Quit any other screenshot app that uses ⌘⇧3/4/5/6, including CleanShot. Start Frisket with fresh shortcut preferences. The menu shows ⌘⇧4 Capture Area, ⌘⇧5 Capture Window, ⌘⇧3 Capture Full Screen, ⌘⇧6 Capture Scrolling Page, ⌘⇧2 Focus Latest Thumbnail, and ⌘⇧1 History. If macOS still had those screenshot shortcuts, Frisket turns them off.
+1. Quit any other screenshot app that uses ⌘⇧3/4/5, including CleanShot. Start Frisket with fresh shortcut preferences. The menu shows ⌘⇧4 Capture Area, ⌘⇧5 Capture Window, ⌘⇧3 Capture Full Screen, ⌘⇧2 Focus Latest Thumbnail, and ⌘⇧1 History. If macOS still had those screenshot shortcuts, Frisket turns them off.
 2. Press Command–Shift–4 once: exactly one Frisket Area selector, no macOS screenshot UI. The selector shows the selection size. Cancel with Esc.
 3. Press Command–Shift–3 once against the test pattern: exactly one Frisket Full Screen capture, no macOS screenshot.
 4. Press Command–Shift–5: exactly one Frisket window selector. Cancel with Esc. Press Command–Shift–2: focus the latest thumbnail exactly once, with no capture. Press Command–Shift–1: History opens, with no capture. Check with another application frontmost and across Spaces.

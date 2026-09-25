@@ -20,13 +20,12 @@ import FrisketCore
     func enabledShortcuts() throws -> [ShortcutBinding] { try SystemShortcutReader.enabled() }
 
     func load() -> [ShortcutAction: ShortcutBinding] {
-        guard let data = defaults.data(forKey: "globalShortcuts.v1"),
-              let values = try? JSONDecoder().decode([ShortcutAction: ShortcutBinding].self, from: data) else { return [:] }
-        return values
+        guard let data = defaults.data(forKey: "globalShortcuts.v1") else { return [:] }
+        return ShortcutAction.savedBindings(from: data)
     }
 
     func save(_ bindings: [ShortcutAction: ShortcutBinding]) {
-        guard let data = try? JSONEncoder().encode(bindings) else { return }
+        guard let data = try? ShortcutAction.encoded(bindings) else { return }
         defaults.set(data, forKey: "globalShortcuts.v1")
     }
 

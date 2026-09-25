@@ -4,11 +4,6 @@
 //   meter scan FILE [COL] [MARKCOL]  red/blue runs down COL and black marker runs down MARKCOL
 //   meter redink FILE [BAND]         annotation-red pixels per BAND-row band (default 100)
 //   meter band FILE START END        annotation-red pixels in rows START..<END
-//   meter blocks FILE SCALE [MINHEIGHT]
-//       Checks a scrolling capture of the pattern's --show-scroll page. Every complete block
-//       must be 90 red + 90 blue rows (×SCALE) with its 8-row marker 164 rows below the block
-//       top, blocks must be 400 rows apart, and the image must be at least MINHEIGHT rows.
-//       Exit 0 when exact, 1 otherwise.
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -61,7 +56,7 @@ func bestColumn(_ img: Image, _ test: ((Int, Int, Int)) -> Bool) -> Int? {
 }
 
 let a = Array(CommandLine.arguments.dropFirst())
-guard a.count >= 2 else { fputs("usage: meter px|scan|redink|band|blocks FILE …\n", stderr); exit(2) }
+guard a.count >= 2 else { fputs("usage: meter px|scan|redink|band FILE …\n", stderr); exit(2) }
 let img = Image(a[1])
 func int(_ i: Int, _ fallback: Int? = nil) -> Int {
     if i < a.count, let v = Int(a[i]) { return v }
@@ -89,34 +84,6 @@ case "band":
     var n = 0
     for y in start..<max(start, end) { for x in 0..<img.width where isInk(img.rgb(x, y)) { n += 1 } }
     print(n)
-case "blocks":
-    let scale = int(2), minHeight = int(3, 0)
-    guard let column = bestColumn(img, isRed), let markColumn = bestColumn(img, isMarker) else {
-        print("FAIL: no pattern blocks found"); exit(1)
-    }
-    let colour = runs(img, column: column) { isRed($0) ? "R" : isBlue($0) ? "B" : "." }
-    let marks = runs(img, column: markColumn) { isMarker($0) ? "M" : "." }
-    var problems: [String] = []
-    if img.height < minHeight { problems.append("height \(img.height) < selected \(minHeight)") }
-    // A block is complete when its red run doesn't touch the top edge and its blue run doesn't touch the bottom.
-    var starts: [Int] = []
-    for (i, run) in colour.enumerated() where run.kind == "R" && run.start > 0 {
-        guard i + 1 < colour.count, colour[i + 1].kind == "B", colour[i + 1].start == run.start + run.length,
-              colour[i + 1].start + colour[i + 1].length < img.height else { continue }
-        starts.append(run.start)
-        if run.length != 90 * scale { problems.append("block at \(run.start): red \(run.length) rows, expected \(90 * scale)") }
-        if colour[i + 1].length != 90 * scale { problems.append("block at \(run.start): blue \(colour[i + 1].length) rows, expected \(90 * scale)") }
-        let marker = marks.first { $0.start >= run.start && $0.start < run.start + 180 * scale }
-        if marker?.start != run.start + 164 * scale || marker?.length != 8 * scale {
-            problems.append("block at \(run.start): marker \(marker.map { "\($0.start)+\($0.length)" } ?? "missing"), expected \(run.start + 164 * scale)+\(8 * scale)")
-        }
-    }
-    for (previous, next) in zip(starts, starts.dropFirst()) where next - previous != 400 * scale {
-        problems.append("blocks at \(previous) and \(next) are \(next - previous) rows apart, expected \(400 * scale)")
-    }
-    if starts.isEmpty { problems.append("no complete block") }
-    print("\(img.width)x\(img.height) complete blocks at \(starts)")
-    if problems.isEmpty { print("PASS: every complete block is exact") } else { problems.forEach { print("FAIL: \($0)") }; exit(1) }
 default:
     fputs("unknown meter \(a[0])\n", stderr); exit(2)
 }

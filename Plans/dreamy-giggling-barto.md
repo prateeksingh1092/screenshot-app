@@ -325,7 +325,7 @@ This phase ships value before the re-architecture. The steps are independent and
 - **Green:** D1 (interim), D2, D3 (stopgap), D4, D5 (interim), D7, D8, D9/O10, D10, D11, D12, D13 (interim), D14, D18, D19, D25; the live matrix passes these rows on both displays.
 - **Known-red, tagged** in the test names: D3 (full round-trip with a flick), D6, D20, D21, D22, D23, fixed in Phases 2–3.
 
-◆ **Gate A:** after the D3 stopgap, measure it on the harness page (target 400/90/90/8, as CleanShot achieved) and decide the scope of the O4 rework.
+◆ **Gate A:** **Removed by decision 60** (scrolling capture removed, ticket 87). Was: after the D3 stopgap, measure it on the harness page (target 400/90/90/8, as CleanShot achieved) and decide the scope of the O4 rework.
 
 ### Phase 2: Native rendering and editor (M–L)
 
@@ -359,6 +359,8 @@ This phase ships value before the re-architecture. The steps are independent and
 **Exit:** the D1, D6, D18, D21, D22 and D23 tests and the privacy checklist are green through the native path; `EditorMemoryRunTests` is under budget at 5120×32,768; the live matrix passes on both displays. ◆ **Gate B:** if peak memory fails, switch to the per-strip `CGContext` fallback before deleting the old encoder.
 
 ### Phase 3: Scrolling capture rework (M–L; scope set at Gate A)
+
+**Removed by decision 60.** Scrolling capture was removed (ticket 87; tag `scrolling-capture-last`). Tickets 64, 70, 71 and 72 are withdrawn. The text below is kept as history.
 
 - **Matcher (O4).**
   - Candidate delta from Vision `VNTranslationalImageRegistrationRequest` on downsampled frames (the macshot/Capso/ScrollSnap approach), verified by a dense pixel score (all columns, or strided ≥ 1/4) over the overlap.

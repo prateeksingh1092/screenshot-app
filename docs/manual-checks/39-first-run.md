@@ -64,7 +64,7 @@ checklists; this file is the recorded index.
 | `default-shortcut-full-screen` | [24](24-shortcuts.md) step 3 (⌃⌥⌘3) |
 | `default-shortcut-focus-thumbnails` | [24](24-shortcuts.md) step 4 (⌃⌥⌘T) |
 
-Window and scrolling capture are menu-only; they are not default shortcuts.
+Window capture is menu-only; it is not a default shortcut.
 Mark a case `blocked` when the hardware (second display, fresh TCC account)
 is absent rather than inventing a pass.
 

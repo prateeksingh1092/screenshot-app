@@ -1,5 +1,8 @@
 # 36 — Editing a long scrolling capture
 
+**Retired (decision 60).** Scrolling capture was removed in ticket 87, so step 1
+cannot be run. The strip render path stays until ticket 67 replaces it.
+
 Automated seams cover strip render, strip PNG encode, a downsampled editor
 proxy, and a tall canary through Done. The opt-in peak is
 `sh scripts/editor-memory-run.sh` (`FRISKET_EDITOR_MEMORY_RUN=1`).

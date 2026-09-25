@@ -1,12 +1,12 @@
 {
   "check": "provenance",
-  "files": {"Sources/FrisketCore/Stitcher.swift": "struct Stitcher {}\n"},
+  "files": {"Sources/FrisketCore/Ported.swift": "struct Ported {}\n"},
   "entries": [{
-    "path": "Sources/FrisketCore/Stitcher.swift",
+    "path": "Sources/FrisketCore/Ported.swift",
     "upstreamURL": "https://github.com/duongductrong/Snapzy",
     "revision": "1234567890123456789012345678901234567890",
-    "originalPath": "Snapzy/ScrollingCaptureStitcher.swift",
+    "originalPath": "Snapzy/Ported.swift",
     "licenseHeader": "// Copyright (c) 2026, Trong Duong Duc\n// SPDX-License-Identifier: BSD-3-Clause\n"
   }, {"path": "Sources/FrisketCore/Missing.swift"}],
-  "expected": ["Sources/FrisketCore/Stitcher.swift: original licence header missing or changed", "Sources/FrisketCore/Missing.swift: provenance file is missing"]
+  "expected": ["Sources/FrisketCore/Ported.swift: original licence header missing or changed", "Sources/FrisketCore/Missing.swift: provenance file is missing"]
 }

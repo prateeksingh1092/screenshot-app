@@ -137,7 +137,8 @@ separate root and TCC identity.
 ## Scope and operator checks
 
 Global shortcuts are **Command–Shift and a number** (decision 55): ⌘⇧4 area,
-⌘⇧3 full screen, ⌘⇧5 window, ⌘⇧6 scrolling, ⌘⇧2 latest thumbnail, ⌘⇧1 History.
+⌘⇧3 full screen, ⌘⇧5 window, ⌘⇧2 latest thumbnail, ⌘⇧1 History. ⌘⇧6 is
+left free (decision 60).
 They are registered with Carbon. If macOS still has the screenshot number row
 enabled, Frisket turns those symbolic hotkeys off. A registration
 failure displays a notice; the menu still works. Remapping and the richer

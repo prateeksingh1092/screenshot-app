@@ -37,39 +37,6 @@ import ImageIO
     }
 }
 
-@MainActor private final class ScrollPatternView: NSView {
-    // Flipped so the page opens at its top (block 1) and scrolling down reveals blocks 2–6.
-    // Each block is 400 rows apart: 90 rows red|green, 90 rows blue|white, and an 8×8 black
-    // marker 164 rows below the block's top, 8 columns in from its left edge.
-    override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor(srgbRed: 0.15, green: 0.15, blue: 0.15, alpha: 1).setFill()
-        bounds.fill()
-        for index in 0..<6 {
-            let originY = CGFloat(index) * 400 + 40
-            let region = CGRect(x: (bounds.width - 320) / 2, y: originY, width: 320, height: 180)
-            let quadrants: [(CGFloat, CGFloat, NSColor)] = [
-                (0, 0, NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)),
-                (160, 0, NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)),
-                (0, 90, NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)),
-                (160, 90, NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
-            ]
-            for (x, y, color) in quadrants {
-                color.setFill()
-                CGRect(x: region.minX + x, y: region.minY + y, width: 160, height: 90).fill()
-            }
-            NSColor.black.setFill()
-            CGRect(x: region.minX + 8, y: region.minY + 164, width: 8, height: 8).fill()
-            "Synthetic scroll \(index + 1) of 6".draw(at: CGPoint(x: 32, y: originY + 200),
-                withAttributes: [.font: NSFont.systemFont(ofSize: 18), .foregroundColor: NSColor.white])
-        }
-    }
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { NSApp.terminate(nil) } else { super.keyDown(with: event) }
-    }
-}
-
 /// The display to show patterns on: `--display ID|main|builtin|external`, else
 /// `FRISKET_PATTERN_DISPLAY`, else the main display. ID is a CGDirectDisplayID.
 @MainActor private func targetScreen(_ choice: String?) -> NSScreen? {
@@ -120,42 +87,9 @@ import ImageIO
             }
             return
         }
-        if args.count == 4, args[1] == "--render-scroll", let scale = Int(args[3]), [1, 2].contains(scale) {
-            // Offscreen reference for Tools/LiveHarness meters: no window is shown.
-            let view = ScrollPatternView(frame: NSRect(x: 0, y: 0, width: 800, height: 2400))
-            guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 800 * scale, pixelsHigh: 2400 * scale,
-                                             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                             colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)?.retagging(with: .sRGB) else { exit(1) }
-            rep.size = view.bounds.size
-            view.cacheDisplay(in: view.bounds, to: rep)
-            guard let png = rep.representation(using: .png, properties: [:]),
-                  (try? png.write(to: URL(fileURLWithPath: args[2]))) != nil else { exit(1) }
-            return
-        }
-        guard args.count == 2, ["--show", "--show-all", "--show-full-screen", "--full-screen", "--show-window", "--show-scroll"].contains(args[1]) else {
-            fputs("Usage: FrisketTestPattern --show | --show-all | --show-full-screen | --full-screen | --show-window | --show-scroll [--display ID|main|builtin|external] | --render-scroll OUT.png 1|2 | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2 | --verify-redacted /path/to/image.png 1|2\n", stderr)
+        guard args.count == 2, ["--show", "--show-all", "--show-full-screen", "--full-screen", "--show-window"].contains(args[1]) else {
+            fputs("Usage: FrisketTestPattern --show | --show-all | --show-full-screen | --full-screen | --show-window [--display ID|main|builtin|external] | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2 | --verify-redacted /path/to/image.png 1|2\n", stderr)
             exit(2)
-        }
-        if args[1] == "--show-scroll" {
-            let app = NSApplication.shared
-            app.setActivationPolicy(.regular)
-            guard let screen = targetScreen(display) else { fputs("No such display\n", stderr); exit(1) }
-            let window = PatternWindow(contentRect: NSRect(x: screen.visibleFrame.midX - 400, y: screen.visibleFrame.midY - 300, width: 800, height: 600),
-                                       styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.colorSpace = .sRGB
-            window.title = "Frisket Synthetic Scroll Page"
-            let document = ScrollPatternView(frame: NSRect(x: 0, y: 0, width: 800, height: 2400))
-            let scroll = NSScrollView(frame: window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 800, height: 600))
-            scroll.hasVerticalScroller = true
-            scroll.documentView = document
-            scroll.autoresizingMask = [.width, .height]
-            window.contentView = scroll
-            document.scroll(.zero)
-            window.makeKeyAndOrderFront(nil)
-            window.makeFirstResponder(document)
-            app.activate(ignoringOtherApps: true)
-            withExtendedLifetime(window) { app.run() }
-            return
         }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)

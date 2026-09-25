@@ -203,8 +203,6 @@ def capture_memory_issues(files):
         imports = re.findall(r'\bimport\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(\w+)', code)
         disk_symbols = r'\b(?:URL|NSURL|FileManager|FileHandle|OutputStream|InputStream|UserDefaults|Process|Bundle|NSFileCoordinator|StorageAdapter|GRDB|Darwin|Glibc|POSIX|fopen|freopen|open|openat|creat|fwrite|pwrite|writev|unlink|rename|mkdir|mmap)\b'
         allowed_imports = {"Foundation", "Synchronization"}
-        if path.startswith("Sources/FrisketCore/Stitcher/"):
-            allowed_imports |= {"CoreGraphics", "Vision", "ImageIO"}
         if (any(module not in allowed_imports for module in imports)
                 or re.search(disk_symbols, code)
                 or re.search(r'\.\s*write\s*\(\s*to\s*:', code)):

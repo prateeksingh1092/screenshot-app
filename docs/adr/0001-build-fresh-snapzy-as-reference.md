@@ -22,5 +22,12 @@ Decision 48 accepted a port after ticket 05 met the synthetic memory gate and
 the coordinator verified Vision outside the sandbox. That port was later
 removed. The stitcher that ships is Frisket-owned code, and
 `docs/ported-files.json` is empty. Real recorded sequence acceptance remains
-pending authorized captures; see [the stitcher documentation](../stitcher.md).
+pending authorized captures; see the stitcher documentation (`docs/stitcher.md`, deleted by ticket 87).
 The broader fresh-build decision remains in force.
+
+## Superseded note: scrolling capture removed (decision 60, 2026-09-25)
+
+Scrolling capture has been removed from Frisket (ticket 87), so the stitcher and
+its documentation no longer exist. The last commit that has them is tagged
+`scrolling-capture-last`. The sections above are kept as history. The
+fresh-build decision itself is unchanged.

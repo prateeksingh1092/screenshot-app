@@ -34,7 +34,7 @@ import Testing
 }
 
 /// The production ScreenCapturePlatform with only its on-screen UI (overlay and pointer) stubbed.
-@MainActor private final class HeadlessPlatform: AreaCapturePlatform, FullScreenCapturePlatform, ScrollingRegionCapturing {
+@MainActor private final class HeadlessPlatform: AreaCapturePlatform, FullScreenCapturePlatform {
     let real: ScreenCapturePlatform
     private let display = SelectionDisplay(id: 1, frame: CGRect(x: 0, y: 0, width: 4, height: 2), scale: 1)
 
@@ -55,7 +55,6 @@ import Testing
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
         try await real.capture(request, maximumBytes: maximumBytes)
     }
-    func captureRegion(_ request: AreaCaptureRequest) async throws -> CGImage { try await real.captureRegion(request) }
     func finishCapture() { real.finishCapture() }
 }
 
@@ -63,7 +62,7 @@ import Testing
     private let frisket = "test.frisket"
     private let exclusionList: Set<String> = ["test.synthetic-vault", "test.synthetic-notes"]
 
-    @Test(arguments: ["area", "full screen", "scrolling"])
+    @Test(arguments: ["area", "full screen"])
     func contentFilterExcludesFrisketAndTheExclusionList(mode: String) async throws {
         let recorder = FilterRecorder()
         let list = exclusionList
@@ -77,16 +76,9 @@ import Testing
         case "area":
             let source = AreaCaptureSource(platform: platform, bundleIdentifier: frisket, exclusions: { list })
             _ = try await source.capture(maximumBytes: 100_000).get()
-        case "full screen":
+        default:
             let source = FullScreenCaptureSource(platform: platform, bundleIdentifier: frisket, exclusions: { list })
             _ = try await source.capture(maximumBytes: 100_000).get()
-        default:
-            let capture = ManualScrollingCapture(platform: platform, bundleIdentifier: frisket)
-            defer { capture.hide() }
-            guard case .viewport = await capture.nextFrame() else {
-                Issue.record("Expected one sampled viewport")
-                return
-            }
         }
         #expect(recorder.excluded == [exclusionList.union([frisket])])
     }

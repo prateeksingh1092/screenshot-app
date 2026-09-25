@@ -1,8 +1,8 @@
 # 75: One Region request for every capture mode
 
-**What to build:** Area, full-screen and scrolling capture use one Region request computed in the core, which carries the display ID. `WindowSelection(rows:)` owns the join and filter of window listings. Together they replace the seven-step ordering, the copied scrolling geometry and the display-ID side channels.
+**What to build:** Area and full-screen capture use one Region request computed in the core, which carries the display ID. `WindowSelection(rows:)` owns the join and filter of window listings. Together they replace the seven-step ordering and the display-ID side channels (scrolling capture was removed by decision 60, ticket 87).
 
-**Blocked by:** 49, 50, 72
+**Blocked by:** 49, 50 (72 withdrawn by decision 60)
 
 **Phase:** 4 (candidates #6, #7)
 

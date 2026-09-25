@@ -107,7 +107,7 @@ struct ShortcutSettingsView: View {
 
     var body: some View {
         Section("Global shortcuts") {
-            Text("Command–Shift and a number. ⌘⇧4 captures an area, ⌘⇧3 the full screen, ⌘⇧5 a window, and ⌘⇧6 a scrolling page. ⌘⇧2 focuses the latest thumbnail. ⌘⇧1 opens History.")
+            Text("Command–Shift and a number. ⌘⇧4 captures an area, ⌘⇧3 the full screen, and ⌘⇧5 a window. ⌘⇧2 focuses the latest thumbnail. ⌘⇧1 opens History.")
             Text("Click Change and press the keys. Include Command, Control, or Option.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
