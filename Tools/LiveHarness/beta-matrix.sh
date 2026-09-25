@@ -69,6 +69,13 @@ for tool in pattern drive meter; do
   [ -x "$H/$tool" ] || { echo "missing $H/$tool: run Tools/LiveHarness/build.sh" >&2; exit 2; }
 done
 "$H/drive" frisket >/dev/null 2>&1 || { echo "Frisket ($bundle) is not running; launch the installed app first" >&2; exit 2; }
+# A Frisket that started before the installed bundle was replaced is the old build (2026-09-25: a cancelled quit kept it running).
+app_exec=$HOME/Applications/Frisket.app/Contents/MacOS/Frisket
+if [ -e "$app_exec" ]; then
+  started=$(date -j -f '%a %b %d %T %Y' "$(ps -o lstart= -p "$(pgrep -x Frisket | head -1)" | sed 's/  */ /g; s/^ //; s/ $//')" +%s 2>/dev/null || echo 0)
+  built=$(stat -f %m "$app_exec")
+  [ "$started" -ge "$built" ] || { echo "the running Frisket predates the installed build; quit and relaunch it" >&2; exit 2; }
+fi
 # Another screenshot app holding the ⌘⇧ shortcuts takes every capture key (2026-09-25: CleanShot X ran the whole matrix).
 if pgrep -f '/CleanShot X.app/Contents/MacOS/' >/dev/null; then
   echo "CleanShot X is running and takes the ⌘⇧ shortcuts; quit it, relaunch Frisket, then run again" >&2; exit 2
