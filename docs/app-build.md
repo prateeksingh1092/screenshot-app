@@ -1,26 +1,31 @@
-# Ticket 08 development app
+# Development app build
 
 `Frisket.xcodeproj` is authored directly, with one shared `Frisket` scheme,
 a native `Development` configuration (`ARCHS = $(NATIVE_ARCH_64_BIT)`, so x86_64 on this Intel Mac and arm64 on Apple silicon), and a universal
 `Release` configuration (`x86_64` + `arm64`, production bundle
-`io.github.prateeksingh1092.frisket`). No project generator or added dependency is
-needed. The app target uses a synchronized `Frisket/` folder: adding or removing
-app Swift source files needs no project-file edit. `Info.plist` and
+`io.github.prateeksingh1092.frisket`). No project generator is needed. The app
+target uses a synchronized `Frisket/` folder: adding or removing app Swift
+source files needs no project-file edit. `Info.plist` and
 `Frisket.entitlements` are excluded from target membership and remain inputs
 through their existing build-setting paths, so they are not copied as resources.
-The AppKit/SwiftUI adapters compile in the app target. Its static
-`FrisketCore` dependency compiles the **same** `Sources/FrisketCore/` directory
-as the Swift package, using an Xcode synchronized source group (future source
-files are included automatically). Lifecycle policy remains in that directory.
-The root Swift package also compiles `Frisket/Adapters/` in a test-only module,
-so Swift Testing can exercise the app adapters without an application host.
 
-Before ticket 09, an initial local-Swift-package project reference was blocked: Xcode's resolver
-attempted to write `~/Library/Caches/org.swift.swiftpm/manifests` even with an
-explicit package cache path. The native static target avoided that resolver and duplicate source copies.
-Ticket 09 adds the exact GRDB package reference to this target, so its dependency
-now requires package resolution. Reconcile build settings when
-adding future package resources, dependencies or conditional compilation.
+**One build graph (ticket 42, decision 58).** The app links the root Swift
+package's `FrisketCore` product through a local package reference, so the app
+and `swift test` compile the core from the same package. GRDB is pinned once,
+in `Package.swift`. The project's `project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
+is a symlink to the root `Package.resolved`. The package supplies the
+zlib and libcompression link flags. `SDKROOT` is `macosx`, so the build uses the
+installed Xcode's SDK. The AppKit/SwiftUI adapters still compile in the app
+target (ticket 77 moves them into a package product). The root package also
+compiles `Frisket/Adapters/` in a test-only module, so Swift Testing can
+exercise the adapters without an application host.
+
+**Signing.** The app target's base configuration is `Config/Frisket.xcconfig`.
+It signs ad hoc unless `Config/Signing.xcconfig` exists. That file is ignored by
+git, and `Config/Signing.example.xcconfig` shows its two settings (identity and
+team). An ad-hoc or unsigned build has no stable designated requirement, so
+macOS forgets the Screen Recording grant on every rebuild (decision 49). Beta
+testers should create `Signing.xcconfig` with their own Personal Team.
 
 ## Unsigned verification (approved for the implementer)
 
@@ -41,7 +46,7 @@ swift test --disable-sandbox --disable-keychain --disable-xctest \
   --config-path .build/config --security-path .build/security
 ```
 
-The app targets macOS 26.0 with the macOS 26.5 SDK and x86_64 only. The build
+The app targets macOS 26.0 with the installed Xcode's macOS SDK (26.5 today), native architecture in Development. The build
 phase `Reject Event Taps and Global Monitors` runs on **every build**, fails on
 forbidden APIs under `Frisket/` and `Sources/`, and needs no network. Fixtures
 cover direct, C, and aliased event-tap calls and global event monitors. Like
@@ -52,10 +57,11 @@ dynamically resolved APIs. Swift Testing runs all repository static checks.
 
 ## One signing and install path (coordinator only, after approval)
 
-Use the existing Apple Development identity in Personal Team `9M43Q952NK`.
-Do not create identities, enable provisioning updates, sign ad hoc, or re-sign
-with a separate packaging step. This exact command signs the app through
-Xcode; it has **not** been run by the implementer:
+Use the existing Apple Development identity in Personal Team `9M43Q952NK`, set
+in this Mac's untracked `Config/Signing.xcconfig`. Do not create identities,
+enable provisioning updates, sign ad hoc, or re-sign with a separate packaging
+step. This command signs the app through Xcode; the explicit settings match
+`Signing.xcconfig`, so it also works in a fresh checkout:
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
@@ -64,6 +70,7 @@ SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache" \
 xcodebuild -project Frisket.xcodeproj -scheme Frisket \
   -configuration Development -destination 'platform=macOS,arch=x86_64' \
   -derivedDataPath "$PWD/.build/DerivedData" \
+  -clonedSourcePackagesDirPath "$PWD/.build/SourcePackages" \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual \
   DEVELOPMENT_TEAM=9M43Q952NK CODE_SIGN_IDENTITY='Apple Development' \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO build
@@ -144,6 +151,8 @@ No runtime claim, permission persistence claim, or Apple-silicon execution
 claim is made by this ticket's automated checks.
 
 ## Ticket 09 resolver handoff
+
+Since ticket 42 the project has no remote package reference of its own: GRDB reaches Xcode through the local package, and both resolvers read the one root `Package.resolved`.
 
 The initial sandboxed resolution was blocked by Xcode's manifest-cache write
 outside the worktree. The coordinator subsequently verified resolution and the

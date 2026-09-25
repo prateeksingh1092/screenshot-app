@@ -51,6 +51,41 @@ class ReleaseProjectTests(unittest.TestCase):
         self.assertEqual(identifiers, [RELEASE_ID])
 
 
+class BuildGraphTests(unittest.TestCase):
+    """Ticket 42: the app and the package tests compile the core from one graph."""
+
+    def test_app_links_the_package_core_product_and_compiles_no_core_copy(self):
+        items = objects()
+        targets = [item for item in items.values() if item.get("isa") == "PBXNativeTarget"]
+        self.assertEqual([target["name"] for target in targets], ["Frisket"])
+        products = [items[ref]["productName"] for ref in targets[0].get("packageProductDependencies", [])]
+        self.assertEqual(products, ["FrisketCore"])
+        packages = [item for item in items.values() if "SwiftPackageReference" in item.get("isa", "")]
+        self.assertEqual([(p["isa"], p.get("relativePath")) for p in packages],
+                         [("XCLocalSwiftPackageReference", ".")])
+        folders = [item.get("path") for item in items.values()
+                   if item.get("isa") == "PBXFileSystemSynchronizedRootGroup"]
+        self.assertNotIn("Sources/FrisketCore", folders)
+
+    def test_sdk_follows_xcode_and_signing_identity_is_not_tracked(self):
+        for name, rows in configurations().items():
+            for settings in rows:
+                if "SDKROOT" in settings:
+                    self.assertEqual(settings["SDKROOT"], "macosx", name)
+                for key in ("DEVELOPMENT_TEAM", "CODE_SIGN_IDENTITY", "CODE_SIGN_STYLE", "OTHER_LDFLAGS"):
+                    self.assertNotIn(key, settings, f"{name}: {key} belongs in Config/*.xcconfig or the package")
+        base = (ROOT / "Config" / "Frisket.xcconfig").read_text()
+        self.assertIn("CODE_SIGN_IDENTITY = -", base)
+        self.assertIn('#include? "Signing.xcconfig"', base)
+        ignored = subprocess.run(["git", "-C", str(ROOT), "check-ignore", "-q", "Config/Signing.xcconfig"])
+        self.assertEqual(ignored.returncode, 0, "Config/Signing.xcconfig must stay untracked")
+
+    def test_one_package_resolved(self):
+        workspace = PROJECT.parent / "project.xcworkspace" / "xcshareddata" / "swiftpm" / "Package.resolved"
+        self.assertTrue(workspace.is_symlink())
+        self.assertEqual(workspace.resolve(), (ROOT / "Package.resolved").resolve())
+
+
 def settings_for_archs(rows):
     for settings in rows:
         if "ARCHS" in settings:
