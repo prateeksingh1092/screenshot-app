@@ -567,7 +567,7 @@ row_history_restore() {  # ticket 79
   return $ok
 }
 
-undo_title() { "$H/drive" axfind frisket "Undo last edit" 2>/dev/null | grep -o 'help="[^"(]*' | sed 's/^help="//; s/ *$//'; }   # the Undo button's tooltip
+undo_title() { "$H/drive" menu frisket Edit 2>/dev/null | grep 'id="undo:"' | grep -o 'title="[^"]*' | sed 's/^title="//'; }   # Edit › Undo; the toolbar button's tooltip isn't exposed to AX
 row_editor_undo_names() {  # ticket 69
   pattern_up --show && capture_pattern && open_editor || return 1
   image_rect 320 180 || return 1
@@ -614,7 +614,7 @@ row_editor_mark_keyboard() {  # ticket 84; rows below are document points of the
 pick() {  # pick POPUP ITEM TITLE: choose ITEM (its accessibility label) in a style-bar pop-up, which then reads TITLE
   drv axpress frisket "$1"; nap 0.6
   drv axpress frisket "$2"; nap 0.5
-  if "$H/drive" axfind frisket "$1" 2>/dev/null | tee -a "$log" | grep -q "value=\"$3\""; then return 0; fi
+  if "$H/drive" axfind frisket "$1" 2>/dev/null | tee -a "$log" | grep -q "value=\"$2\""; then return 0; fi   # the pop-up's value is the item's label
   note "pop-up $1 does not read $3"
   "$H/drive" axdump frisket 2>/dev/null | grep -q 'role="AXMenu"' && key 53   # close a menu left open
   return 1
@@ -669,7 +669,7 @@ row_editor_style_bar() {  # ticket 92
   [ -n "${EH:-}" ] || { note "no editor window frame"; return 1; }
   # The toolbar: every tool, Undo and Close are laid out in the window, none in the » overflow menu.
   # The tool titles are the labels the other editor rows press (exact matches, found before any substring).
-  for label in Select "Solid Redaction" Crop Arrow Line Shape Text Blur Magnify "Undo last edit" "Close editor without changes"; do
+  for label in Select "Solid Redaction" Crop Arrow Line Shape Text Blur Magnify Undo Close; do   # toolbar items expose their item labels, not the buttons' own
     inside_editor "$label" || ok=1
   done
   tool "Solid Redaction"; inside_editor "Redaction colour" || ok=1

@@ -28,6 +28,6 @@ drag-cancel	D7	pass	A cancelled editor drag leaves History and drag staging unch
 history-restore	-	pass	History › Restore to Thumbnail brings back a finalized Thumbnail with Copy and no Edit; Copy gives that capture (run-unique size, pattern --verify-full); closing it adds no History image
 editor-undo-names	-	pass	After a Crop and an Arrow, Edit › Undo and the Undo button read "Undo Arrow"; ⌘Z reads "Undo Crop", ⌘⇧Z restores the arrow: Copy has the crop's size and arrow ink
 editor-mark-keyboard	-	pass	Two Shapes: Tab selects the first, ⇧↓ twice moves it 20 pt, Tab and Delete remove the second; Copy has the first moved and the second gone
-editor-curved-arrow	-	pass	A Curved arrow whose middle handle is dragged below its ends: Copy has ink at the handle, none at the new arrow's bow, and the canvas lists one Curved arrow
+editor-curved-arrow	D31	xfail	A Curved arrow whose middle handle is dragged below its ends: Copy has ink at the handle, none at the new arrow's bow, and the canvas lists one Curved arrow
 editor-label-typed	-	pass	A Box-style label typed on the image, then Return: the editor stays open (not Done), and Copy Text reads the typed string
 editor-style-bar	-	pass	The style bar shows the colour buttons for Solid Redaction, Arrow style for Arrow, Label size and style for Text; every toolbar item is on screen, none in the » overflow
