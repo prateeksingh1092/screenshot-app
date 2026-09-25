@@ -100,7 +100,7 @@ private struct NoTextRecognizer: TextRecognizer {
     @Test func d8CopyTextWithNoTextLeavesTheSystemClipboardUnchanged() async throws {
         let destination = await CountingPasteboard()
         let adapter = await PasteboardAdapter(destination: destination)
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SyntheticPixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SyntheticPixels(),
             clipboard: adapter, pendingByteLimit: 1024, textRecognizer: NoTextRecognizer(), textClipboard: adapter)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)

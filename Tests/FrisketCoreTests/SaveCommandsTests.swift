@@ -23,8 +23,9 @@ private struct UnusedClipboard: ImageClipboard {
         defer { try? FileManager.default.removeItem(at: directory) }
         let root = directory.appendingPathComponent("History.noindex")
         let folder = directory.appendingPathComponent("Pictures/Frisket")
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
-            history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+            history: history, exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.capture(revision.captureID, maximumBytes: 1024)) == .pending(revision))
         #expect(!FileManager.default.fileExists(atPath: root.path))
@@ -33,7 +34,7 @@ private struct UnusedClipboard: ImageClipboard {
               case let .saved(receipt) = outcome.delivery else { Issue.record("Save should succeed"); return }
         #expect(outcome.revision == revision)
         #expect(outcome.commit == .committed)
-        let entry = try #require(try await commands.historyEntries().get().first)
+        let entry = try #require(try await history.entries().get().first)
         let exported = folder.appendingPathComponent(receipt.filename)
         #expect(try Data(contentsOf: exported) == SavePixels().bytes)
         #expect(try FileManager.default.attributesOfItem(atPath: exported.path)[.posixPermissions] as? Int == 0o644)
@@ -45,7 +46,7 @@ private struct UnusedClipboard: ImageClipboard {
         #expect(again.commit == .committed)
         #expect(secondReceipt.filename != receipt.filename)
         #expect(try Data(contentsOf: folder.appendingPathComponent(secondReceipt.filename)) == SavePixels().bytes)
-        #expect(try await commands.historyEntries().get().count == 1)
+        #expect(try await history.entries().get().count == 1)
         // Simulate removal of all History files: the external copies remain intact.
         try FileManager.default.removeItem(at: root.appendingPathComponent(entry.imageLocation))
         #expect(try Data(contentsOf: exported) == SavePixels().bytes)
@@ -62,8 +63,9 @@ extension SaveCommandsTests {
         // A regular file blocks directory creation until the user repairs the destination.
         try Data("occupied".utf8).write(to: folder)
         let diagnostics = LocalDiagnosticLog()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: SavePixels().bytes.count,
-            diagnostics: diagnostics, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: SavePixels().bytes.count,
+            diagnostics: diagnostics, history: history,
             exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: SavePixels().bytes.count))
@@ -71,7 +73,7 @@ extension SaveCommandsTests {
             Issue.record("Blocked export must fail"); return
         }
         #expect(failed.commit == .committed)
-        let before = try await commands.historyEntries().get()
+        let before = try await history.entries().get()
         #expect(before.count == 1)
         #expect(await commands.image(for: revision)?.pngData == SavePixels().bytes)
         #expect(await commands.execute(.discard(revision.captureID)) == .rejected(.alreadyFinalized))
@@ -84,7 +86,7 @@ extension SaveCommandsTests {
         }
         #expect(retried.revision == revision)
         #expect(retried.commit == .committed)
-        #expect(try await commands.historyEntries().get() == before)
+        #expect(try await history.entries().get() == before)
         #expect(try Data(contentsOf: folder.appendingPathComponent(receipt.filename)) == SavePixels().bytes)
         #expect(await commands.image(for: revision) == nil)
         #expect(await commands.execute(.retrySave(revision)) == .rejected(.retryNotAvailable))
@@ -114,13 +116,14 @@ extension SaveCommandsTests {
             folder = directory.appendingPathComponent("HISTORY.NOINDEX/exports")
         default: folder = root
         }
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
-            history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+            history: history, exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
         #expect(await commands.execute(.save(revision)) == .save(SaveOutcome(revision: revision, commit: .committed, delivery: .failed(.insideHistory))))
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("exports").path))
-        #expect(try await commands.historyEntries().get().count == 1)
+        #expect(try await history.entries().get().count == 1)
     }
 }
 
@@ -136,8 +139,9 @@ extension SaveCommandsTests {
         try Data("existing export".utf8).write(to: folder.appendingPathComponent(existing))
         // Even an existing symlink must count as a collision, without touching its target.
         try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent(second), withDestinationURL: folder.appendingPathComponent(existing))
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
-            history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+            history: history, exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(UUID(uuidString: "11111111-2222-3333-4444-555555555555")!), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
         #expect(await commands.execute(.save(revision)) == .save(SaveOutcome(revision: revision, commit: .committed,
@@ -159,8 +163,9 @@ extension SaveCommandsTests {
         try Data("blocked history".utf8).write(to: root)
         if retry { try Data("blocked export".utf8).write(to: folder) }
         let diagnostics = LocalDiagnosticLog()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
-            diagnostics: diagnostics, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+            diagnostics: diagnostics, history: history,
             exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
@@ -187,8 +192,9 @@ extension SaveCommandsTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let root = directory.appendingPathComponent("History.noindex")
         let folder = directory.appendingPathComponent("Exports")
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
-            history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+            history: history, exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.save(revision)) == .rejected(.unknownCapture))
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
@@ -210,8 +216,9 @@ extension SaveCommandsTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
         let root = directory.appendingPathComponent("History.noindex")
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
-            history: HistoryStore(root: root), exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+            history: history, exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
         #expect(await commands.execute(.save(revision)) == .save(SaveOutcome(revision: revision, commit: .committed, delivery: .failed(.unwritable))))
@@ -241,14 +248,15 @@ extension SaveCommandsTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let exporter = HeldExport()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
-            history: HistoryStore(root: root), exporter: exporter)
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+            history: history, exporter: exporter)
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
         let saving = Task { await commands.execute(.save(revision)) }
         await exporter.waitUntilEntered()
         // History is finalized before the delivery adapter is allowed to run.
-        let before = try await commands.historyEntries().get()
+        let before = try await history.entries().get()
         #expect(before.count == 1)
         for command: CaptureCommand in [.save(revision), .retrySave(revision), .copy(revision), .dismiss(revision), .discard(revision.captureID)] {
             #expect(await commands.execute(command) == .rejected(.commandInProgress))
@@ -256,7 +264,7 @@ extension SaveCommandsTests {
         await exporter.fail()
         #expect(await saving.value == .save(SaveOutcome(revision: revision, commit: .committed, delivery: .failed(.unavailable))))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
-        #expect(try await commands.historyEntries().get() == before)
+        #expect(try await history.entries().get() == before)
         #expect(await commands.image(for: revision) == nil)
     }
 }

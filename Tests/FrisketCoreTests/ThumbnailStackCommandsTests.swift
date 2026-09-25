@@ -28,12 +28,15 @@ private final class ManualClock: Sendable {
 private struct StackFixture {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
     let clock = ManualClock()
-    let commands: CaptureCommandLayer
+    let commands: CaptureLifecycleCoordinator
+    let history: HistoryStore
 
     init(clipboard: any ImageClipboard = StackClipboard(), policy: ThumbnailStackPolicy = ThumbnailStackPolicy()) {
         let clock = clock
-        commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: StackPixels(), clipboard: clipboard,
-            pendingByteLimit: 1024, history: HistoryStore(root: root), thumbnailPolicy: policy, clock: { clock.now })
+        let history = HistoryStore(root: root)
+        self.history = history
+        commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: StackPixels(), clipboard: clipboard,
+            pendingByteLimit: 1024, history: history, thumbnailPolicy: policy, clock: { clock.now })
     }
 
     func capture() async throws -> CaptureRevision {
@@ -44,7 +47,7 @@ private struct StackFixture {
     }
 
     func historyIDs() async throws -> [CaptureID] {
-        try await commands.historyEntries().get().map(\.captureID)
+        try await history.entries().get().map(\.captureID)
     }
 }
 
@@ -437,9 +440,10 @@ extension ThumbnailStackCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let oversizedPNG = try noisePNG(width: 700, height: 700)
         #expect(oversizedPNG.count > 1_000_000)
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: OversizedFirstPixels(oversized: oversizedPNG),
+        let history = HistoryStore(root: root, limits: HistoryLimits(maximumBytes: 1_000_000))
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: OversizedFirstPixels(oversized: oversizedPNG),
             clipboard: StackClipboard(), pendingByteLimit: 8_000_000,
-            history: HistoryStore(root: root, limits: HistoryLimits(maximumBytes: 1_000_000)))
+            history: history)
         let oversized = CaptureRevision(captureID: CaptureID(), number: 1)
         let small = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.capture(oversized.captureID, maximumBytes: 4_000_000)) == .pending(oversized))
@@ -448,7 +452,7 @@ extension ThumbnailStackCommandsTests {
         let outcomes = await commands.handleSystemEvent(.quit)
         #expect(outcomes == [.finalized(oversized, .notCommitted(.captureExceedsHistoryLimit)), .finalized(small, .committed)],
                 "D25: quit stopped at the first capture History refused")
-        let committed = try await commands.historyEntries().get().map(\.captureID)
+        let committed = try await history.entries().get().map(\.captureID)
         #expect(committed == [small.captureID], "D25: a capture History could accept was left unfinalized at quit")
     }
 }
@@ -466,8 +470,9 @@ extension ThumbnailStackCommandsTests {
     func thumbnailAppearsOnTheDisplayTheCaptureCameFrom(display: UInt32?) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: DisplayPixels(displayID: display),
-            clipboard: StackClipboard(), pendingByteLimit: 1024, history: HistoryStore(root: root))
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: DisplayPixels(displayID: display),
+            clipboard: StackClipboard(), pendingByteLimit: 1024, history: history)
         let id = CaptureID()
         try #require(await commands.execute(.capture(id, maximumBytes: 128)) == .pending(CaptureRevision(captureID: id, number: 1)))
         #expect(await commands.thumbnails().map(\.displayID) == [display])

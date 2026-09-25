@@ -113,7 +113,7 @@ private actor DisplayFixtureClipboard: ImageClipboard {
         let pause = CapturePause()
         platform.prefetchPause = pause
         let clipboard = DisplayFixtureClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
             clipboard: clipboard, pendingByteLimit: 400)
         let id = CaptureID()
@@ -140,7 +140,7 @@ private actor DisplayFixtureClipboard: ImageClipboard {
         let pause = CapturePause()
         platform.previewPause = pause
         let clipboard = DisplayFixtureClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
                                            clipboard: clipboard, pendingByteLimit: 400)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -161,7 +161,7 @@ private actor DisplayFixtureClipboard: ImageClipboard {
         let pause = CapturePause()
         platform.pixelPause = pause
         let clipboard = DisplayFixtureClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
                                            clipboard: clipboard, pendingByteLimit: 400)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -183,7 +183,7 @@ private actor DisplayFixtureClipboard: ImageClipboard {
     @Test func unplugCancelsWithoutPixelsOrPendingCaptureAndNextSelectionCanUseTheBudget() async {
         let platform = DisplayFixturePlatform()
         let clipboard = DisplayFixtureClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
                                            clipboard: clipboard, pendingByteLimit: 100_000)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)

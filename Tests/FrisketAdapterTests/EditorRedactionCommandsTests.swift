@@ -182,8 +182,9 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let png = try fixture.png()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: history,
             flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -192,7 +193,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         let rendered = CaptureRevision(captureID: id, number: 2)
         #expect(await commands.execute(.done(original, try fixture.edits())) == .edited(rendered, .committed))
 
-        let entry = try #require(try await commands.historyEntries().get().first)
+        let entry = try #require(try await history.entries().get().first)
         #expect(entry.revision == 2)
         expectRedacted(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))), fixture)
     }
@@ -201,8 +202,9 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
     private func thumbnailsRefreshFromTheRenderedRevisionOnly(fixture: CanaryCase) async throws {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: history,
             flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -213,7 +215,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         let rendered = try #require(await commands.image(for: CaptureRevision(captureID: id, number: 2)))
         // Fixtures are smaller than the thumbnail limit, so every output pixel is comparable.
         expectRedacted(try decodeSRGB(try #require(ThumbnailImage.make(from: rendered.pngData, maximumPixelSize: 480))), fixture)
-        let entry = try #require(try await commands.historyEntries().get().first)
+        let entry = try #require(try await history.entries().get().first)
         let cached = try Data(contentsOf: root.appendingPathComponent(try #require(entry.thumbnailLocation)))
         expectRedacted(try decodeSRGB(cached), fixture)
     }
@@ -223,8 +225,9 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = RecordingClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), flattener: CaptureRenderer())
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history, flattener: CaptureRenderer())
         let other = CaptureID()
         _ = await commands.execute(.capture(other, maximumBytes: 1_000_000))
         _ = await commands.execute(.copy(CaptureRevision(captureID: other, number: 1)))
@@ -243,7 +246,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         let delivered = try #require(await clipboard.images.last)
         #expect(await clipboard.images.count == 2)
         expectRedacted(try decodeSRGB(delivered.pngData), fixture)
-        let entries = try await commands.historyEntries().get().filter { $0.captureID == id }
+        let entries = try await history.entries().get().filter { $0.captureID == id }
         #expect(entries.map(\.revision) == [2])
     }
 
@@ -251,8 +254,9 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         let fixture = CanaryCase.all[0]
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root), flattener: CaptureRenderer())
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: history, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -264,7 +268,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         #expect(await commands.execute(.discard(id)) == .rejected(.alreadyFinalized))
         #expect(await commands.execute(.dismiss(rendered)) == .finalized(rendered, .committed))
         #expect(await commands.image(for: rendered) == nil)
-        #expect(try await commands.historyEntries().get().map(\.revision) == [2])
+        #expect(try await history.entries().get().map(\.revision) == [2])
     }
 
     @Test func doneAfterACommittedCopyIsRefusedSoHistoryNeverHoldsAnUnredactedEditedCapture() async throws {
@@ -272,8 +276,9 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = RecordingClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), flattener: CaptureRenderer())
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -303,7 +308,7 @@ extension EditorRedactionCommandsTests {
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
         let strip = try CaptureRenderer().flatten(png, edits: edits)
         #expect(strip.count < png.count)
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
             clipboard: RecordingClipboard(), pendingByteLimit: png.count, flattener: CaptureRenderer())
         let id = CaptureID(), revision = CaptureRevision(captureID: CaptureID(), number: 1)
         let original = CaptureRevision(captureID: id, number: 1)
@@ -321,8 +326,9 @@ extension EditorRedactionCommandsTests {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = RecordingClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: FlakyHistory(root: root), flattener: CaptureRenderer())
+        let history = FlakyHistory(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -331,7 +337,7 @@ extension EditorRedactionCommandsTests {
         #expect(!FileManager.default.fileExists(atPath: root.path))
         #expect(await commands.execute(.done(original, try fixture.edits())) == .edited(rendered, .committed))
         expectRedacted(try decodeSRGB(try #require(await clipboard.images.last).pngData), fixture)
-        let entry = try #require(try await commands.historyEntries().get().first)
+        let entry = try #require(try await history.entries().get().first)
         #expect(entry.revision == 2)
         expectRedacted(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))), fixture)
         let image = try #require(await commands.image(for: rendered))
@@ -344,7 +350,7 @@ extension EditorRedactionCommandsTests {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let history = FlakyHistory(root: root)
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: history, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
@@ -355,7 +361,7 @@ extension EditorRedactionCommandsTests {
         #expect(await commands.execute(.dismiss(original)) == .rejected(.staleRevision))
 
         #expect(await commands.execute(.dismiss(rendered)) == .finalized(rendered, .committed))
-        let entry = try #require(try await commands.historyEntries().get().first)
+        let entry = try #require(try await history.entries().get().first)
         #expect(entry.revision == 2)
         expectRedacted(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))), fixture)
         let requests = await history.requests
@@ -383,8 +389,9 @@ extension EditorRedactionCommandsTests {
         let clipboard = RecordingClipboard()
         let png = try fixture.png()
         let limit = png.count + 1_000
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
-            clipboard: clipboard, pendingByteLimit: limit, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
+            clipboard: clipboard, pendingByteLimit: limit, history: history,
             // Fault injection at the flatten seam; the retry uses the production renderer.
             flattener: ScriptedFlattener([oversized ? .success(Data(repeating: 0, count: limit + 1)) : .failure(.encodingFailed)]))
         let id = CaptureID()
@@ -398,11 +405,11 @@ extension EditorRedactionCommandsTests {
         #expect(await commands.execute(.dismiss(original)) == .rejected(.editingUnavailable))
         #expect(await commands.execute(.copy(original)) == .rejected(.editingUnavailable))
         #expect(await commands.execute(.retryCopy(original)) == .rejected(.editingUnavailable))
-        #expect(try await commands.historyEntries().get().isEmpty)
+        #expect(try await history.entries().get().isEmpty)
         #expect(await clipboard.images.isEmpty)
 
         #expect(await commands.execute(.done(original, edits)) == .edited(rendered, .committed))
-        let entry = try #require(try await commands.historyEntries().get().first)
+        let entry = try #require(try await history.entries().get().first)
         expectRedacted(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))), fixture)
         let image = try #require(await commands.image(for: rendered))
         expectRedacted(try decodeSRGB(try #require(ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480))), fixture)
@@ -425,7 +432,7 @@ extension EditorRedactionCommandsTests {
         let store = HistoryStore(root: root, commitPoint: { reached in
             if reached == point { throw InterruptedCommit.stopped }
         })
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: store, flattener: CaptureRenderer())
         let original = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(original.captureID, maximumBytes: 1_000_000))
@@ -454,7 +461,7 @@ extension EditorRedactionCommandsTests {
     @Test(arguments: CanaryCase.all) @MainActor
     private func repeatedDoneReplacesTheEarlierCopyWhileHistoryRemainsUnavailable(fixture: CanaryCase) async throws {
         let destination = ConditionalPasteboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 4_000_000, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -479,9 +486,10 @@ extension EditorRedactionCommandsTests {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let destination = ConditionalPasteboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+        let history = FlakyHistory(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 4_000_000,
-            history: FlakyHistory(root: root), flattener: CaptureRenderer())
+            history: history, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -502,9 +510,10 @@ extension EditorRedactionCommandsTests {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let destination = ConditionalPasteboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+        let history = FlakyHistory(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 4_000_000,
-            history: FlakyHistory(root: root), flattener: CaptureRenderer())
+            history: history, flattener: CaptureRenderer())
         let id = CaptureID(), other = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -539,8 +548,9 @@ extension EditorRedactionCommandsTests {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = FailingOnceClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: FlakyHistory(root: root), flattener: CaptureRenderer())
+        let history = FlakyHistory(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -575,8 +585,9 @@ extension EditorRedactionCommandsTests {
         let exports = directory.appendingPathComponent("Exports")
         let clipboard = RecordingClipboard()
         let drag = CropDragHandoff()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history,
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
             drag: drag,
             flattener: CaptureRenderer())
@@ -586,7 +597,7 @@ extension EditorRedactionCommandsTests {
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
         #expect(await commands.execute(.done(original, try fixture.edits())) == .edited(rendered, .committed))
 
-        let entry = try #require(try await commands.historyEntries().get().first)
+        let entry = try #require(try await history.entries().get().first)
         fixture.expectRedacted(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))))
         let pending = try #require(await commands.image(for: rendered))
         fixture.expectRedacted(try decodeSRGB(pending.pngData))
@@ -666,8 +677,9 @@ extension EditorRedactionCommandsTests {
         let exports = directory.appendingPathComponent("Exports")
         let clipboard = RecordingClipboard()
         let drag = CropDragHandoff()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history,
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
             drag: drag,
             flattener: CaptureRenderer())
@@ -677,7 +689,7 @@ extension EditorRedactionCommandsTests {
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
         #expect(await commands.execute(.done(original, try fixture.edits())) == .edited(rendered, .committed))
 
-        let entry = try #require(try await commands.historyEntries().get().first)
+        let entry = try #require(try await history.entries().get().first)
         fixture.expectAnnotated(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))))
         let pending = try #require(await commands.image(for: rendered))
         fixture.expectAnnotated(try decodeSRGB(pending.pngData))
@@ -700,28 +712,30 @@ extension EditorRedactionCommandsTests {
         let fixture = CanaryCase.all[0]
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: history,
             flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
         #expect(await commands.execute(EditorLeave.finalize(nil).command(for: original)) == .finalized(original, .committed))
-        #expect(try await commands.historyEntries().get().map(\.captureID) == [id])
+        #expect(try await history.entries().get().map(\.captureID) == [id])
     }
 
     @Test func editorDeleteDiscardsWithoutHistory() async throws {
         let fixture = CanaryCase.all[0]
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: history,
             flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
         #expect(await commands.execute(EditorLeave.delete.command(for: original)) == .discarded(id))
-        #expect(try await commands.historyEntries().get().isEmpty)
+        #expect(try await history.entries().get().isEmpty)
         #expect(await commands.image(for: original) == nil)
     }
 
@@ -729,15 +743,16 @@ extension EditorRedactionCommandsTests {
         let fixture = CanaryCase.all[0]
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: history,
             flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
         let leave = try #require(EditorLeave.forInterruptedPrompt(.logout))
         #expect(await commands.execute(leave.command(for: original)) == .discarded(id))
-        #expect(try await commands.historyEntries().get().isEmpty)
+        #expect(try await history.entries().get().isEmpty)
     }
 
     @Test(arguments: CanaryCase.all)
@@ -748,8 +763,9 @@ extension EditorRedactionCommandsTests {
         let exports = directory.appendingPathComponent("Exports")
         let clipboard = RecordingClipboard()
         let drag = CropDragHandoff()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history,
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
             drag: drag,
             flattener: CaptureRenderer())
@@ -780,8 +796,9 @@ extension EditorRedactionCommandsTests {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = FailingOnceClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), flattener: CaptureRenderer())
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)
@@ -790,7 +807,7 @@ extension EditorRedactionCommandsTests {
             .edited(rendered, .committed))
         #expect(await commands.execute(EditorDelivery.copy.command(for: rendered)) ==
             .copy(CopyOutcome(revision: rendered, commit: .committed, delivery: .failed(.unavailable))))
-        #expect(try await commands.historyEntries().get().map(\.captureID) == [id])
+        #expect(try await history.entries().get().map(\.captureID) == [id])
         #expect(await commands.execute(.retryCopy(rendered)) ==
             .copy(CopyOutcome(revision: rendered, commit: .committed,
                 delivery: .copied(ClipboardReceipt(changeCount: 7)))))
@@ -826,8 +843,9 @@ extension EditorRedactionCommandsTests {
         let exports = directory.appendingPathComponent("Exports")
         let clipboard = RecordingClipboard()
         let drag = CropDragHandoff()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.source.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history,
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
             drag: drag,
             flattener: CaptureRenderer())
@@ -837,7 +855,7 @@ extension EditorRedactionCommandsTests {
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
         #expect(await commands.execute(.done(original, try fixture.edits())) == .edited(rendered, .committed))
 
-        let entry = try #require(try await commands.historyEntries().get().first)
+        let entry = try #require(try await history.entries().get().first)
         expectRedacted(try decodeSRGB(Data(contentsOf: root.appendingPathComponent(entry.imageLocation))), fixture.source)
         let pending = try #require(await commands.image(for: rendered))
         expectRedacted(try decodeSRGB(pending.pngData), fixture.source)
@@ -877,7 +895,7 @@ extension EditorRedactionCommandsTests {
     @Test(arguments: CanaryCase.all)
     private func copyRecognizedTextStandInSeesCanaryUntilRedactionCoversIt(fixture: CanaryCase) async throws {
         let clipboard = RecordingTextClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, flattener: CaptureRenderer(),
             textRecognizer: CanaryColorRecognizer(canaries: fixture.canaries), textClipboard: clipboard)
         let id = CaptureID()
@@ -908,7 +926,7 @@ extension EditorRedactionCommandsTests {
         let png = try encodeSRGB(bytes, width: width, height: height)
         let redaction = try #require(SolidRedaction(x: 0, y: 40, width: 16, height: 16))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -962,7 +980,7 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
 /// Known defects in what Done delivers (ticket 44). Each stays red until its fix removes the wrapper.
 @Suite struct EditedOutputParityTests {
     private func done(_ png: Data, _ edits: DocumentEdits) async throws -> (width: Int, height: Int, pixels: [RGBA]) {
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
             clipboard: RecordingClipboard(), pendingByteLimit: 8_000_000, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -1172,8 +1190,9 @@ extension EditorRedactionCommandsTests {
         let dropped = drops.appendingPathComponent("Capture.png")
         let clipboard = RecordingClipboard()
         let drag = PromiseFileDragHandoff(destination: dropped)
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: history,
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root), drag: drag, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -1186,7 +1205,7 @@ extension EditorRedactionCommandsTests {
             .drag(DragOutcome(revision: rendered, commit: nil, delivery: .failed)))
         #expect(!FileManager.default.fileExists(atPath: root.path))
         #expect(!FileManager.default.fileExists(atPath: dropped.path))
-        #expect(try await commands.historyEntries().get().isEmpty)
+        #expect(try await history.entries().get().isEmpty)
         let pending = try #require(await commands.image(for: rendered))
         expectRedacted(try decodeSRGB(pending.pngData), fixture)
         #expect(await commands.thumbnails().map(\.revision) == [rendered])
@@ -1196,7 +1215,7 @@ extension EditorRedactionCommandsTests {
             .drag(DragOutcome(revision: rendered, commit: .committed, delivery: .copied)))
         let dropBytes = try Data(contentsOf: dropped)
         expectRedacted(try decodeSRGB(dropBytes), fixture)
-        let entries = try await commands.historyEntries().get()
+        let entries = try await history.entries().get()
         #expect(entries.count == 1)
         let entry = try #require(entries.first)
         #expect(entry.revision == rendered.number)
@@ -1210,6 +1229,6 @@ extension EditorRedactionCommandsTests {
             Issue.record("Save of the dropped revision should succeed"); return
         }
         #expect(try Data(contentsOf: exports.appendingPathComponent(receipt.filename)) == dropBytes)
-        #expect(try await commands.historyEntries().get().count == 1)
+        #expect(try await history.entries().get().count == 1)
     }
 }

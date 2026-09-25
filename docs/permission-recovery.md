@@ -3,7 +3,7 @@
 `CapturePermissionState` in FrisketCore has five cases: `notAsked`, `denied`,
 `granted`, `revokedWhileRunning`, `needsRelaunch`. The required
 `CapturePermissionSource.capturePermission()` interface is injected into
-`CaptureCommandLayer`. There is no permissive default. Both capture commands
+`CaptureLifecycleCoordinator`. There is no permissive default. Both capture commands
 check it before invoking either pixel source, so a missing grant cannot create
 an overlay. Missing access returns `CaptureCommandOutcome.permissionRequired`;
 permission failures from a source use the same typed outcome. Reservations are

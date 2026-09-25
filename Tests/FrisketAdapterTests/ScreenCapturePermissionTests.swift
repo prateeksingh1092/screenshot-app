@@ -32,12 +32,12 @@ private struct PermissionFixtureClipboard: ImageClipboard {
     @Test func firstRequestDenialSurvivesAdapterRecreation() async {
         let access = ScreenAccessStandIn()
         let permission = ScreenCapturePermissionAdapter(access: access)
-        let commands = CaptureCommandLayer(permission: permission, source: PermissionFixturePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: permission, source: PermissionFixturePixels(),
             clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         #expect(await commands.execute(.capture(CaptureID(), maximumBytes: 4)) == .permissionRequired(.notAsked))
         #expect(permission.requestPermission() == .denied)
         #expect(await commands.execute(.capture(CaptureID(), maximumBytes: 4)) == .permissionRequired(.denied))
-        let reopened = CaptureCommandLayer(permission: ScreenCapturePermissionAdapter(access: access),
+        let reopened = CaptureLifecycleCoordinator(permission: ScreenCapturePermissionAdapter(access: access),
             source: PermissionFixturePixels(), clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         #expect(await reopened.execute(.capture(CaptureID(), maximumBytes: 4)) == .permissionRequired(.denied))
     }
@@ -47,7 +47,7 @@ extension ScreenCapturePermissionTests {
     @Test func observesExistingGrantRevocationAndRestoredGrantOnEveryCommand() async {
         let access = ScreenAccessStandIn()
         access.allowed = true
-        let commands = CaptureCommandLayer(permission: ScreenCapturePermissionAdapter(access: access),
+        let commands = CaptureLifecycleCoordinator(permission: ScreenCapturePermissionAdapter(access: access),
             source: PermissionFixturePixels(), clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         let id = CaptureID()
         #expect(await commands.execute(.capture(id, maximumBytes: 1)) == .pending(CaptureRevision(captureID: id, number: 1)))
@@ -65,12 +65,12 @@ extension ScreenCapturePermissionTests {
         access.acceptsRequest = true
         let permission = ScreenCapturePermissionAdapter(access: access)
         #expect(permission.requestPermission() == .needsRelaunch)
-        let commands = CaptureCommandLayer(permission: permission, source: PermissionFixturePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: permission, source: PermissionFixturePixels(),
             clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         #expect(await commands.execute(.capture(CaptureID(), maximumBytes: 4)) == .permissionRequired(.needsRelaunch))
         access.allowed = true
         #expect(await commands.execute(.capture(CaptureID(), maximumBytes: 4)) == .permissionRequired(.needsRelaunch))
-        let reopened = CaptureCommandLayer(permission: ScreenCapturePermissionAdapter(access: access),
+        let reopened = CaptureLifecycleCoordinator(permission: ScreenCapturePermissionAdapter(access: access),
             source: PermissionFixturePixels(), clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         let id = CaptureID()
         #expect(await reopened.execute(.capture(id, maximumBytes: 4)) == .pending(CaptureRevision(captureID: id, number: 1)))
@@ -99,7 +99,7 @@ extension ScreenCapturePermissionTests {
         let permission = ScreenCapturePermissionAdapter(access: access)
         let pixels = AuthorizationFailurePixels(permission: permission, access: access, stillGranted: stillGranted,
             error: NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.userDeclined.rawValue))
-        let commands = CaptureCommandLayer(permission: permission, source: pixels, fullScreenSource: pixels,
+        let commands = CaptureLifecycleCoordinator(permission: permission, source: pixels, fullScreenSource: pixels,
             clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         let expected: CaptureCommandOutcome = .permissionRequired(stillGranted ? .needsRelaunch : .revokedWhileRunning)
         #expect(await commands.execute(.capture(CaptureID(), maximumBytes: 4)) == expected)
@@ -130,7 +130,7 @@ extension ScreenCapturePermissionTests {
     @Test(arguments: [false, true])
     func shareableContentRefusalNeverCreatesSelectionOrTakesPixels(_ fullScreen: Bool) async {
         let platform = RefusedCapturePreparation()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
             clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
@@ -152,11 +152,11 @@ extension ScreenCapturePermissionTests {
         let access = ScreenAccessStandIn()
         access.allowed = true
         let permission = ScreenCapturePermissionAdapter(access: access)
-        let commands = CaptureCommandLayer(permission: permission,
+        let commands = CaptureLifecycleCoordinator(permission: permission,
             source: AuthorizationFailurePixels(permission: permission, access: access, stillGranted: true, error: error),
             clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         #expect(await commands.execute(.capture(CaptureID(), maximumBytes: 4)) == .captureFailed(.unavailable))
-        let retry = CaptureCommandLayer(permission: permission, source: PermissionFixturePixels(),
+        let retry = CaptureLifecycleCoordinator(permission: permission, source: PermissionFixturePixels(),
             clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         let id = CaptureID()
         #expect(await retry.execute(.capture(id, maximumBytes: 4)) == .pending(CaptureRevision(captureID: id, number: 1)))
@@ -168,7 +168,7 @@ extension ScreenCapturePermissionTests {
         access.usableAfterRequest = true
         let permission = ScreenCapturePermissionAdapter(access: access)
         #expect(permission.requestPermission() == .granted)
-        let commands = CaptureCommandLayer(permission: permission, source: PermissionFixturePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: permission, source: PermissionFixturePixels(),
             clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         let id = CaptureID()
         #expect(await commands.execute(.capture(id, maximumBytes: 4)) == .pending(CaptureRevision(captureID: id, number: 1)))
@@ -205,7 +205,7 @@ extension ScreenCapturePermissionTests {
 extension ScreenCapturePermissionTests {
     @Test func pendingSystemAuthorizationCompletesBeforeSelectionCanAppear() async {
         let platform = PendingCapturePreparation()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
             clipboard: PermissionFixtureClipboard(), pendingByteLimit: 4)
         let id = CaptureID()

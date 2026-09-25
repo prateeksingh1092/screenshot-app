@@ -1,9 +1,9 @@
 import AppKit
 import FrisketCore
 
-/// Thumbnail cards, the editor, and capture dispatch. Policy stays in `CaptureCommandLayer`.
+/// Thumbnail cards, the editor, and capture dispatch. Policy stays in `CaptureLifecycleCoordinator`.
 @MainActor final class CaptureSurfaces {
-    private let commands: CaptureCommandLayer
+    private let commands: CaptureLifecycleCoordinator
     private let dragAdapter: FilePromiseDragAdapter
     private let latency: CaptureLatencyLog
     private let notify: (String, String) -> Void
@@ -23,7 +23,7 @@ import FrisketCore
     var hasBusyThumbnail: Bool { panels.values.contains { $0.model.busy } }
     var hasThumbnail: Bool { !panels.isEmpty }
 
-    init(commands: CaptureCommandLayer, drag: FilePromiseDragAdapter, latency: CaptureLatencyLog,
+    init(commands: CaptureLifecycleCoordinator, drag: FilePromiseDragAdapter, latency: CaptureLatencyLog,
          notify: @escaping (String, String) -> Void,
          refreshHistory: @escaping () async -> Void) {
         self.commands = commands

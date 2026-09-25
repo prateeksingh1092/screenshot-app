@@ -21,7 +21,7 @@ private actor RecordingClipboard: ImageClipboard {
 @Suite struct CaptureCommandsTests {
     @Test func captureThenCopyDeliversOnlyImageDataWithPrivacyFlagsAndReceipt() async throws {
         let clipboard = RecordingClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: FixturePixelSource(bytes: Data([0x89, 0x50, 0x4e, 0x47])),
             clipboard: clipboard, pendingByteLimit: 16
         )
@@ -47,7 +47,7 @@ private actor RecordingClipboard: ImageClipboard {
 extension CaptureCommandsTests {
     @Test func duplicateAndStaleCommandsCannotDeliverOrReplacePixels() async {
         let clipboard = RecordingClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
                                             clipboard: clipboard, pendingByteLimit: 16)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -72,7 +72,7 @@ private actor RecoveringClipboard: ImageClipboard {
 extension CaptureCommandsTests {
     @Test func failedDeliveryRetriesTheSameRevisionWithoutClaimingACommit() async {
         let clipboard = RecoveringClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([3, 4])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([3, 4])),
                                             clipboard: clipboard, pendingByteLimit: 16)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -93,7 +93,7 @@ extension CaptureCommandsTests {
 extension CaptureCommandsTests {
     @Test func discardMakesCommandsStaleAndNeverWritesClipboard() async {
         let clipboard = RecordingClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([5, 6])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([5, 6])),
                                             clipboard: clipboard, pendingByteLimit: 16)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -111,7 +111,7 @@ extension CaptureCommandsTests {
 extension CaptureCommandsTests {
     @Test func globalBudgetCountsAllPendingBytesAndReleasesOnlyAfterDiscardOrDelivery() async {
         let clipboard = RecoveringClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([7, 8])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([7, 8])),
                                             clipboard: clipboard, pendingByteLimit: 4)
         let first = CaptureID(), second = CaptureID(), third = CaptureID()
         let firstRevision = CaptureRevision(captureID: first, number: 1)
@@ -132,7 +132,7 @@ extension CaptureCommandsTests {
 extension CaptureCommandsTests {
     @Test func sourceCannotExceedItsByteAllowanceOrConsumeBudgetOnRefusal() async {
         let clipboard = RecordingClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([9, 10, 11])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([9, 10, 11])),
                                             clipboard: clipboard, pendingByteLimit: 3)
         let id = CaptureID()
         #expect(await commands.execute(.capture(id, maximumBytes: 2)) == .rejected(.pendingByteBudgetExceeded))
@@ -174,7 +174,7 @@ private struct GatedPixelSource: CapturePixelSource {
 extension CaptureCommandsTests {
     @Test func inFlightCaptureReservesGlobalBudgetAndRejectsCommandsForItsIdentifier() async {
         let gate = SuspensionGate()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: GatedPixelSource(gate: gate),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: GatedPixelSource(gate: gate),
                                             clipboard: RecordingClipboard(), pendingByteLimit: 4)
         let id = CaptureID(), other = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -205,7 +205,7 @@ extension CaptureCommandsTests {
     @Test func inFlightCopyCannotBeDuplicatedRetriedOrDiscarded() async {
         let gate = SuspensionGate()
         let clipboard = GatedClipboard(gate: gate)
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([14, 15])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([14, 15])),
                                             clipboard: clipboard, pendingByteLimit: 2)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -226,7 +226,7 @@ extension CaptureCommandsTests {
 extension CaptureCommandsTests {
     @Test(arguments: [Int.min, -1, 0])
     func nonpositiveCaptureAllowanceIsRejectedWithoutConsumingBudget(allowance: Int) async {
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([16])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([16])),
                                             clipboard: RecordingClipboard(), pendingByteLimit: 1)
         let id = CaptureID()
         #expect(await commands.execute(.capture(id, maximumBytes: allowance)) == .rejected(.invalidByteAllowance))
@@ -245,7 +245,7 @@ private actor RecoveringPixelSource: CapturePixelSource {
 
 extension CaptureCommandsTests {
     @Test func failedOrEmptyCaptureReleasesReservationAndCanBeRetried() async {
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: RecoveringPixelSource(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: RecoveringPixelSource(),
                                             clipboard: RecordingClipboard(), pendingByteLimit: 1)
         let id = CaptureID()
         #expect(await commands.execute(.capture(id, maximumBytes: 1)) == .captureFailed(.unavailable))
@@ -262,7 +262,7 @@ extension CaptureCommandsTests {
         let pixels = Data([0xde, 0xad, 0xbe, 0xef]) + Data((text + path).utf8)
         let log = LocalDiagnosticLog()
         let clipboard = RecoveringClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: pixels), clipboard: clipboard,
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: pixels), clipboard: clipboard,
                                             pendingByteLimit: 1024, diagnostics: log)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -302,7 +302,7 @@ extension CaptureCommandsTests {
     @Test func localDiagnosticsExpireAtSevenDaysOnReadAndOnWrite() async {
         let clock = TestClock(1_000_000)
         let log = LocalDiagnosticLog(clock: { clock.now() })
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([18])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([18])),
                                             clipboard: RecordingClipboard(), pendingByteLimit: 2, diagnostics: log)
         let id = CaptureID()
         _ = await commands.execute(.capture(id, maximumBytes: 1))
@@ -323,7 +323,7 @@ extension CaptureCommandsTests {
     @Test func doneWithoutAFlattenerIsRefusedAndKeepsThePendingCaptureUnchanged() async throws {
         let log = LocalDiagnosticLog()
         let clipboard = RecordingClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([23, 24])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([23, 24])),
                                             clipboard: clipboard, pendingByteLimit: 16, diagnostics: log)
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 2))
@@ -337,7 +337,7 @@ extension CaptureCommandsTests {
     }
 
     @Test func pendingImageQueryIsRevisionBoundAndReleasesAfterCopyOrDiscard() async {
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([21, 22])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([21, 22])),
                                             clipboard: RecordingClipboard(), pendingByteLimit: 16)
         let id = CaptureID(), second = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -437,7 +437,7 @@ extension CaptureCommandsTests {
     @Test func d25DeleteFromHistoryTakesTheInProgressGuard() async throws {
         let history = GatedDeleteHistory()
         let clipboard = RecordingClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
                                             clipboard: clipboard, pendingByteLimit: 16, history: history)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -458,7 +458,7 @@ extension CaptureCommandsTests {
     @Test func d25CopyTextIsRejectedWhileACopyOfTheSameCaptureIsInProgress() async throws {
         let clipboard = GatedImageClipboard()
         let text = WrittenText()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
                                             clipboard: clipboard, pendingByteLimit: 16,
                                             textRecognizer: WordsRecognizer(), textClipboard: text)
         let id = CaptureID()
@@ -480,7 +480,7 @@ extension CaptureCommandsTests {
     @Test func d25CopyIsRejectedWhileCopyTextOfTheSameCaptureIsInProgress() async throws {
         let clipboard = RecordingClipboard()
         let recognizer = GatedTextRecognizer()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
                                             clipboard: clipboard, pendingByteLimit: 16,
                                             textRecognizer: recognizer, textClipboard: WrittenText())
         let id = CaptureID()

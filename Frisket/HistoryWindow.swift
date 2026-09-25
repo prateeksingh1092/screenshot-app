@@ -3,10 +3,9 @@ import SwiftUI
 import FrisketCore
 
 @MainActor final class HistoryWindowModel: ObservableObject {
-    struct Row: Identifiable {
+    struct Row: Identifiable, Equatable {
         var id: CaptureID { item.captureID }
         let item: HistoryItem
-        let preview: NSImage?
         var revision: CaptureRevision { CaptureRevision(captureID: item.captureID, number: item.revision) }
         var label: String {
             "History capture, \(item.width) by \(item.height) pixels, \(item.finalizedAt.formatted(date: .abbreviated, time: .shortened))"
@@ -18,33 +17,29 @@ import FrisketCore
     @Published private(set) var message: String?
     @Published private(set) var disabled = false
     @Published private(set) var busy = false
-    private var commands: CaptureCommandLayer?
+    private var history: HistoryStore?
+    private var list: HistoryList<NSImage>?
+    private var commands: CaptureLifecycleCoordinator?
     var onRevealHistory: (() -> Void)?
 
-    func connect(_ commands: CaptureCommandLayer) { self.commands = commands }
+    func connect(_ history: HistoryStore, commands: CaptureLifecycleCoordinator) {
+        self.history = history
+        self.commands = commands
+        list = HistoryList(source: history) { data in
+            ThumbnailImage.make(from: data, maximumPixelSize: 160).map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
+        }
+    }
 
+    /// One query; the rows are published only when they changed, and pictures load per visible row.
     func reload(clearingMessage: Bool = true) async {
-        guard let commands else { return }
-        switch await commands.historyItems() {
-        case let .success(items):
-            var next: [Row] = []
-            rows = next
-            for item in items {
-                let preview: NSImage?
-                if let thumbnail = await commands.historyThumbnail(item.captureID) {
-                    preview = NSImage(data: thumbnail)
-                } else {
-                    preview = await commands.historyImage(item.captureID).flatMap {
-                        ThumbnailImage.make(from: $0.pngData, maximumPixelSize: 160)
-                    }.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
-                }
-                next.append(Row(item: item, preview: preview))
-                rows = next
-            }
+        guard let list else { return }
+        switch await list.reload() {
+        case let .success(changed):
+            if changed || disabled { rows = list.rows.map(Row.init(item:)) }
             if selected == nil { selected = rows.first?.id }
             else if !rows.contains(where: { $0.id == selected }) { selected = rows.first?.id }
-            if clearingMessage { message = nil }
-            disabled = false
+            if clearingMessage, message != nil { message = nil }
+            if disabled { disabled = false }
         case let .failure(failure):
             rows = []
             selected = nil
@@ -53,11 +48,16 @@ import FrisketCore
         }
     }
 
+    func cachedPreview(_ row: Row) -> NSImage? { list?.cachedPicture(row.item) }
+
+    /// The row's History thumbnail, looked up by ID when the row comes into view, then cached.
+    func preview(for row: Row) async -> NSImage? { await list?.picture(for: row.item) }
+
     func retry() {
-        guard !busy, let commands else { return }
+        guard !busy, let history else { return }
         busy = true
         Task {
-            _ = await commands.recoverHistory()
+            _ = await history.recover()
             busy = false
             await reload()
         }
@@ -150,8 +150,10 @@ private struct HistoryWindowView: View {
                 }
             }
             List(model.rows, selection: $model.selected) { row in
-                HistoryRowView(row: row, startDrag: startDrag)
+                HistoryRowView(row: row, preview: model.preview(for:), startDrag: startDrag)
                     .tag(row.id)
+                    // One element per row, so VoiceOver speaks the label once (part of D16).
+                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel(row.label)
                     .accessibilityAddTraits(model.selected == row.id ? .isSelected : [])
             }
@@ -187,11 +189,13 @@ private struct HistoryWindowView: View {
 
 private struct HistoryRowView: View {
     let row: HistoryWindowModel.Row
+    let preview: (HistoryWindowModel.Row) async -> NSImage?
     var startDrag: (HistoryWindowModel.Row, NSView, NSEvent) -> Void
+    @State private var image: NSImage?
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            HistoryDragWell(row: row, startDrag: startDrag)
+            HistoryDragWell(row: row, image: image, startDrag: startDrag)
             VStack(alignment: .leading) {
                 Text("\(row.item.width) × \(row.item.height)")
                 Text(row.item.finalizedAt, format: .dateTime.month().day().hour().minute())
@@ -200,23 +204,27 @@ private struct HistoryRowView: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        // The list is lazy: a row asks for its picture only when it comes into view.
+        .task(id: row.revision) { image = await preview(row) }
     }
 }
 
 private struct HistoryDragWell: NSViewRepresentable {
     let row: HistoryWindowModel.Row
+    let image: NSImage?
     var startDrag: (HistoryWindowModel.Row, NSView, NSEvent) -> Void
 
     func makeNSView(context: Context) -> HistoryDragView {
         let view = HistoryDragView()
-        view.image = row.preview
+        view.image = image
         view.onDrag = { view, event in startDrag(row, view, event) }
-        view.setAccessibilityLabel(row.label)
+        // The row is the accessibility element; the picture adds no second label.
+        view.setAccessibilityElement(false)
         return view
     }
 
     func updateNSView(_ view: HistoryDragView, context: Context) {
-        view.image = row.preview
+        view.image = image
         view.onDrag = { view, event in startDrag(row, view, event) }
     }
 }

@@ -190,7 +190,7 @@ def capture_memory_issues(files):
         if path.startswith("Sources/FrisketCore/StorageAdapter/"):
             if re.search(r'\b(?:CapturePixelSource|CaptureImage|original\w*|unredacted\w*)\b', code, re.I):
                 issues.append(f"{path}: storage accepts source or original pixels")
-            bodies = swift_function_bodies(code, r'\b(?:init|func\s+entries)')
+            bodies = swift_function_bodies(code, r'\b(?:init|func\s+(?:entries|rows|thumbnailPNG|finalizedImage|readExisting))')
             eager = write_routes + r'|\b(?:DatabaseQueue|writableDatabase|durableWrite|cacheThumbnail|renameExclusively)\s*\('
             if any(re.search(eager, body) for body in bodies):
                 issues.append(f"{path}: storage initialization or query may write before finalization")

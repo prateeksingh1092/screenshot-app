@@ -7,7 +7,7 @@ import FrisketCore
     @Published var seconds: Int
     @Published private(set) var applying = false
     private let defaults: UserDefaults
-    private var commands: CaptureCommandLayer?
+    private var commands: CaptureLifecycleCoordinator?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -26,7 +26,7 @@ import FrisketCore
         ThumbnailStackPolicy(autoDismiss: preference.autoDismiss)
     }
 
-    func connect(_ commands: CaptureCommandLayer) {
+    func connect(_ commands: CaptureLifecycleCoordinator) {
         self.commands = commands
         Task { await commands.setThumbnailPolicy(policy) }
     }

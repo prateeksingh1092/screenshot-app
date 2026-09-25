@@ -10,7 +10,7 @@ import FrisketCore
     @Published private(set) var failure: HistoryFailure?
     @Published private(set) var applying = false
     private let defaults: UserDefaults
-    private var commands: CaptureCommandLayer?
+    private var history: HistoryStore?
     var onQuotaEviction: (() -> Void)?
     var onRevealHistory: (() -> Void)?
 
@@ -24,16 +24,16 @@ import FrisketCore
         HistoryLimits(retentionDays: retentionDays, maximumBytes: Int64(min(1_000_000, max(1, maximumMegabytes))) * 1_000_000)
     }
 
-    func connect(_ commands: CaptureCommandLayer) {
-        self.commands = commands
+    func connect(_ history: HistoryStore) {
+        self.history = history
         Task {
-            _ = await commands.maintainHistory()
+            _ = await history.maintain(limits: nil)
             await refresh()
         }
     }
 
     func apply() {
-        guard !applying, let commands else { return }
+        guard !applying, let history else { return }
         applying = true
         let selected = limits
         retentionDays = selected.retentionDays
@@ -41,21 +41,21 @@ import FrisketCore
         defaults.set(retentionDays, forKey: "historyRetentionDays")
         defaults.set(maximumMegabytes, forKey: "historyMaximumMegabytes")
         Task {
-            _ = await commands.maintainHistory(limits: selected)
+            _ = await history.maintain(limits: selected)
             await refresh()
             applying = false
         }
     }
 
     func refresh() async {
-        guard let commands else { return }
-        failure = await commands.historyAvailability()
+        guard let history else { return }
+        failure = await history.availability()
         unavailable = failure != nil
         if unavailable {
             usage = nil
             return
         }
-        switch await commands.historyStatus(consumeNotice: true) {
+        switch await history.status(consumeNotice: true) {
         case .success(let status):
             usage = status
             if status.quotaNoticePending { onQuotaEviction?() }
@@ -67,10 +67,10 @@ import FrisketCore
     }
 
     func retry() {
-        guard !applying, let commands else { return }
+        guard !applying, let history else { return }
         applying = true
         Task {
-            _ = await commands.recoverHistory()
+            _ = await history.recover()
             await refresh()
             applying = false
         }

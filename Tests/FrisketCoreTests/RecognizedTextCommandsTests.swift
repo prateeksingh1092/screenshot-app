@@ -75,7 +75,7 @@ private actor RecordingDiagnostics: DiagnosticSink {
     @Test func copyRecognizedTextUsesTheCurrentRevisionAndReportsOnlyTheCount() async throws {
         let clipboard = RecordingTextClipboard()
         let diagnostics = RecordingDiagnostics()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
             pendingByteLimit: 1024, diagnostics: diagnostics,
             textRecognizer: FixedRecognizer(text: "secret-line"), textClipboard: clipboard)
@@ -95,7 +95,7 @@ private actor RecordingDiagnostics: DiagnosticSink {
         let recognizer = GatedRecognizer(text: "late-secret")
         let clipboard = RecordingTextClipboard()
         let flattener = ScriptedFlattener(always: Data([9, 9, 9]))
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
             pendingByteLimit: 4_000_000, flattener: flattener,
             textRecognizer: recognizer, textClipboard: clipboard)
@@ -117,7 +117,7 @@ private actor RecordingDiagnostics: DiagnosticSink {
         let clipboard = RecordingTextClipboard()
         let flattener = ScriptedFlattener(always: Data([9, 9, 9]))
         let recognizer = ByteRecognizer()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
             pendingByteLimit: 4_000_000, flattener: flattener,
             textRecognizer: recognizer, textClipboard: clipboard)
@@ -140,7 +140,7 @@ private actor RecordingDiagnostics: DiagnosticSink {
 
     @Test func missingRecognizerIsRejectedWithoutWritingText() async throws {
         let clipboard = RecordingTextClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: FixturePixels(bytes: Data([9])), clipboard: IgnoringImageClipboard(),
             pendingByteLimit: 1024, textClipboard: clipboard)
         let id = CaptureID()
@@ -156,7 +156,7 @@ extension RecognizedTextCommandsTests {
     /// was. Today it writes an empty string over whatever the user had copied.
     @Test func d8CopyTextWithNoTextLeavesTheClipboardUnwritten() async throws {
         let clipboard = RecordingTextClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
             pendingByteLimit: 1024, textRecognizer: FixedRecognizer(text: ""), textClipboard: clipboard)
         let id = CaptureID()
@@ -173,7 +173,7 @@ extension RecognizedTextCommandsTests {
     /// Whitespace and line breaks alone count as no text (D8).
     @Test func copyTextWithOnlyWhitespaceIsNoTextFound() async throws {
         let clipboard = RecordingTextClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: FixturePixels(bytes: Data([1, 2, 3])), clipboard: IgnoringImageClipboard(),
             pendingByteLimit: 1024, textRecognizer: FixedRecognizer(text: " \n\t "), textClipboard: clipboard)
         let id = CaptureID()

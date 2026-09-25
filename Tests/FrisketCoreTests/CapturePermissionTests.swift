@@ -26,7 +26,7 @@ private struct PermissionClipboard: ImageClipboard {
 @Suite struct CapturePermissionTests {
     @Test func notAskedReturnsRecoveryBeforeStartingEitherCaptureSource() async {
         let pixels = PermissionPixels()
-        let commands = CaptureCommandLayer(permission: PermissionStandIn(.notAsked), source: pixels, fullScreenSource: pixels,
+        let commands = CaptureLifecycleCoordinator(permission: PermissionStandIn(.notAsked), source: pixels, fullScreenSource: pixels,
             clipboard: PermissionClipboard(), pendingByteLimit: 32)
         #expect(await commands.execute(.capture(CaptureID(), maximumBytes: 32)) == .permissionRequired(.notAsked))
         #expect(await commands.execute(.captureFullScreen(CaptureID(), maximumBytes: 32)) == .permissionRequired(.notAsked))
@@ -38,7 +38,7 @@ extension CapturePermissionTests {
     @Test(arguments: [CapturePermissionState.denied, .revokedWhileRunning, .needsRelaunch])
     func missingAccessBlocksBothToolsAndCanRecoverWithoutLosingBudget(_ state: CapturePermissionState) async {
         let pixels = PermissionPixels(), permission = PermissionStandIn(state)
-        let commands = CaptureCommandLayer(permission: permission, source: pixels, fullScreenSource: pixels,
+        let commands = CaptureLifecycleCoordinator(permission: permission, source: pixels, fullScreenSource: pixels,
             clipboard: PermissionClipboard(), pendingByteLimit: 3)
         let id = CaptureID()
         #expect(await commands.execute(.capture(id, maximumBytes: 3)) == .permissionRequired(state))
@@ -63,7 +63,7 @@ private struct PermissionFailurePixels: CapturePixelSource {
 
 extension CapturePermissionTests {
     @Test func permissionLossDuringCaptureBecomesRecoveryAndReleasesReservation() async {
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: PermissionFailurePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: PermissionFailurePixels(),
             clipboard: PermissionClipboard(), pendingByteLimit: 3)
         let id = CaptureID()
         #expect(await commands.execute(.capture(id, maximumBytes: 3)) == .permissionRequired(.revokedWhileRunning))

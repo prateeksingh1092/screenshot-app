@@ -35,7 +35,7 @@ private actor UnusedExclusionClipboard: ImageClipboard {
     @Test func areaUsesCurrentSettingsAndAlwaysExcludesFrisket() async throws {
         let exclusions = CaptureExclusionList()
         let platform = ExclusionPlatform()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.frisket",
                                       exclusions: { exclusions.bundleIdentifiers }),
             clipboard: UnusedExclusionClipboard(), pendingByteLimit: 10_000)
@@ -52,7 +52,7 @@ private actor UnusedExclusionClipboard: ImageClipboard {
         let exclusions = CaptureExclusionList()
         let platform = ExclusionPlatform()
         let log = LocalDiagnosticLog()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.frisket"),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: "test.frisket",
                                                       exclusions: { exclusions.bundleIdentifiers }),

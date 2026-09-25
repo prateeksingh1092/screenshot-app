@@ -24,7 +24,7 @@ private struct FixtureSource: CapturePixelSource {
 @Suite @MainActor struct AreaCaptureCommandsTests {
     @Test func copyWritesPNGAndConcealedMarkerWithCurrentHostOnly() async throws {
         let destination = RecordingPasteboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixtureSource(), clipboard: PasteboardAdapter(destination: destination),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixtureSource(), clipboard: PasteboardAdapter(destination: destination),
                                             pendingByteLimit: 32)
         let id = CaptureID()
         _ = await commands.execute(.capture(id, maximumBytes: 32))
@@ -81,7 +81,7 @@ extension AreaCaptureCommandsTests {
         let platform = RecordingCapturePlatform()
         let destination = RecordingPasteboard()
         let source = AreaCaptureSource(platform: platform, bundleIdentifier: "io.github.prateeksingh1092.frisket.debug")
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: PasteboardAdapter(destination: destination),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: source, clipboard: PasteboardAdapter(destination: destination),
                                             pendingByteLimit: 1_000_000)
         let id = CaptureID()
         let revision = CaptureRevision(captureID: id, number: 1)
@@ -105,7 +105,7 @@ extension AreaCaptureCommandsTests {
         let platform = RecordingCapturePlatform()
         platform.selection = nil
         let destination = RecordingPasteboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
             clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 1_000_000)
         let id = CaptureID()
@@ -136,7 +136,7 @@ private struct SyntheticPNGSource: CapturePixelSource {
 extension AreaCaptureCommandsTests {
     @Test func thumbnailDownsamplesPendingImageWithoutChangingDeliveredPixels() async throws {
         let destination = RecordingPasteboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: SyntheticPNGSource(), clipboard: PasteboardAdapter(destination: destination),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SyntheticPNGSource(), clipboard: PasteboardAdapter(destination: destination),
                                             pendingByteLimit: 1_000_000)
         let id = CaptureID(), revision: CaptureRevision
         revision = CaptureRevision(captureID: id, number: 1)
@@ -158,7 +158,7 @@ extension AreaCaptureCommandsTests {
     @Test func pasteboardWriteFailureRetainsTheRevisionForExplicitRetry() async {
         let destination = RecordingPasteboard()
         destination.succeeds = false
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixtureSource(), clipboard: PasteboardAdapter(destination: destination),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixtureSource(), clipboard: PasteboardAdapter(destination: destination),
                                             pendingByteLimit: 32)
         let id = CaptureID(), revision: CaptureRevision
         revision = CaptureRevision(captureID: id, number: 1)
@@ -175,7 +175,7 @@ extension AreaCaptureCommandsTests {
     @Test func overBudgetSelectionNeverRequestsPixelsOrWritesClipboard() async {
         let platform = RecordingCapturePlatform()
         let destination = RecordingPasteboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.debug"),
                                             clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 32)
         #expect(await commands.execute(.capture(CaptureID(), maximumBytes: 32)) == .captureFailed(.unavailable))
         #expect(platform.events == ["prefetch", "select", "hide", "finish"])

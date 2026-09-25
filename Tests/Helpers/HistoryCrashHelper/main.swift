@@ -33,7 +33,7 @@ private struct Clipboard: ImageClipboard {
                     while true { pause() }
                 }
             })
-        let commands = CaptureCommandLayer(permission: GrantedPermission(), source: Pixels(), clipboard: Clipboard(), pendingByteLimit: 1024, history: store)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedPermission(), source: Pixels(), clipboard: Clipboard(), pendingByteLimit: 1024, history: store)
         let id = CaptureID(uuid)
         _ = await commands.execute(.capture(id, maximumBytes: 1024))
         _ = await commands.execute(.dismiss(CaptureRevision(captureID: id, number: 1)))

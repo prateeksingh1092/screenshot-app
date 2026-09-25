@@ -19,7 +19,7 @@ import FrisketCore
     private let exclusions = CaptureExclusionList(defaults: .standard)
     private lazy var platform = ScreenCapturePlatform(permission: permission, exclusions: { [exclusions] in exclusions.bundleIdentifiers })
     private var windowPlatform: WindowScreenCapturePlatform?
-    private var commands: CaptureCommandLayer?
+    private var commands: CaptureLifecycleCoordinator?
     private var dragAdapter: FilePromiseDragAdapter?
     private var statusItem: NSStatusItem?
     private var historySettings: HistorySettings?
@@ -62,28 +62,29 @@ import FrisketCore
         let dragAdapter = FilePromiseDragAdapter(writer: DragPromiseWriter())
         self.dragAdapter = dragAdapter
         let pasteboard = PasteboardAdapter(destination: GeneralPasteboardDestination())
-        commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency, decodedByteCeiling: budgets.stillDecodedBytes),
+        let historyStore = HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits)
+        commands = CaptureLifecycleCoordinator(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency, decodedByteCeiling: budgets.stillDecodedBytes),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency, decodedByteCeiling: budgets.stillDecodedBytes),
             windowSource: WindowCaptureSource(platform: windowPlatform, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                 bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }),
             clipboard: pasteboard, pendingByteLimit: budgets.pendingSessionEncodedBytes,
-            history: HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits),
+            history: historyStore,
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
             drag: dragAdapter, thumbnailPolicy: thumbnailSettings.policy,
             flattener: CaptureRenderer(),
             textRecognizer: VisionTextRecognizer(), textClipboard: pasteboard)
         if let commands {
-            historySettings.connect(commands)
+            historySettings.connect(historyStore)
             thumbnailSettings.connect(commands)
             let historyWindow = HistoryWindow()
-            historyWindow.model.connect(commands)
+            historyWindow.model.connect(historyStore, commands: commands)
             historyWindow.model.onRevealHistory = { [weak self] in self?.revealHistoryFolder() }
             historyWindow.startDrag = { [weak self] row, view, event in
                 self?.startHistoryDrag(row, from: view, event: event)
             }
             self.historyWindow = historyWindow
             Task {
-                if let failure = await commands.historyAvailability() {
+                if let failure = await historyStore.availability() {
                     self.notice("History is off", HistoryFailureNotice.text(failure))
                 }
             }
@@ -291,7 +292,7 @@ import FrisketCore
 
     private func startHistoryDrag(_ row: HistoryWindowModel.Row, from view: NSView, event: NSEvent) {
         guard !terminating, let commands, let dragAdapter else { return }
-        guard dragAdapter.beginSession(from: view, event: event, image: row.preview) else { return }
+        guard dragAdapter.beginSession(from: view, event: event, image: historyWindow?.model.cachedPreview(row)) else { return }
         Task {
             _ = await commands.execute(.drag(row.revision, .copy))
             dragAdapter.endHandoff()
