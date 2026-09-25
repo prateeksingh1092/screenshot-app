@@ -47,6 +47,14 @@ public protocol HistoryRowSource: Sendable {
         }
     }
 
+    /// The row to select after a reload (D30). Opening History selects the newest row, so Copy, Save,
+    /// Restore and Delete act on the capture just made; a reload while the window is open keeps the
+    /// user's row while it still exists.
+    public func selection(keeping current: CaptureID?, opening: Bool) -> CaptureID? {
+        guard !opening, let current, rows.contains(where: { $0.captureID == current }) else { return rows.first?.captureID }
+        return current
+    }
+
     public func cachedPicture(_ item: HistoryItem) -> Picture? {
         pictures[Self.revision(item)]
     }

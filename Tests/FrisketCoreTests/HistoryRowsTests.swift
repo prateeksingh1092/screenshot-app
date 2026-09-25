@@ -142,6 +142,31 @@ private actor CountingRows: HistoryRowSource {
         #expect(list.rows.first == added)
     }
 
+    /// D30: live, ⌘⇧1 kept an older row selected, so History Copy copied an older capture.
+    @Test func openingHistorySelectsTheNewestRow() async throws {
+        let source = CountingRows(count: 3)
+        let list = HistoryList<Data>(source: source) { $0 }
+        _ = await list.reload()
+        let older = list.rows[2].captureID
+        let added = HistoryItem(captureID: CaptureID(), revision: 1, width: 4, height: 3, finalizedAt: Date(timeIntervalSince1970: 20_000))
+        await source.add(added)
+        _ = await list.reload()
+        #expect(list.selection(keeping: older, opening: true) == added.captureID, "opening History kept an older row")
+        #expect(list.selection(keeping: nil, opening: true) == added.captureID)
+    }
+
+    @Test func aReloadWhileOpenKeepsTheUsersRow() async throws {
+        let source = CountingRows(count: 3)
+        let list = HistoryList<Data>(source: source) { $0 }
+        _ = await list.reload()
+        let chosen = list.rows[2].captureID
+        await source.add(HistoryItem(captureID: CaptureID(), revision: 1, width: 4, height: 3, finalizedAt: Date(timeIntervalSince1970: 20_000)))
+        _ = await list.reload()
+        #expect(list.selection(keeping: chosen, opening: false) == chosen, "a commit took the user's selection away")
+        #expect(list.selection(keeping: CaptureID(), opening: false) == list.rows.first?.captureID, "a vanished row should fall back to the newest")
+        #expect(list.selection(keeping: nil, opening: false) == list.rows.first?.captureID)
+    }
+
     @Test func aRowPictureIsLookedUpOnceByIDAndThenCached() async throws {
         let source = CountingRows(count: 240)
         let list = HistoryList<Data>(source: source) { $0 }
