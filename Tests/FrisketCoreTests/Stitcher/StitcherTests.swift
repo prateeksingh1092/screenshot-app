@@ -6,11 +6,11 @@ import FrisketCore
 struct StitcherTests {
   @Test func frameSequenceProducesIndependentByteExactImage() throws {
     let frames = try [0, 80, 160].map { offset in
-      ScrollingCaptureFrame(image: try #require(TestImageFactory.repeatedScrollingFrame(
+      ScrollingCaptureFrame(image: try #require(TestImageFactory.scrollingFrame(
         width: 240, height: 400, logicalYOffset: offset)), expectedVerticalStep: 80)
     }
     let result = try Stitcher.stitch(frames)
-    let reference = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 560, logicalYOffset: 0))
+    let reference = try #require(TestImageFactory.scrollingFrame(width: 240, height: 560, logicalYOffset: 0))
     #expect(result.image.width == 240)
     #expect(result.image.height == 560)
     #expect(result.image.dataProvider?.data as Data? == reference.dataProvider?.data as Data?)
@@ -20,12 +20,12 @@ struct StitcherTests {
   }
   @Test func settledFinalStepPreservesEveryRemainingRow() throws {
     let frames = try [0, 80, 160, 172].map { offset in
-      ScrollingCaptureFrame(image: try #require(TestImageFactory.repeatedScrollingFrame(
+      ScrollingCaptureFrame(image: try #require(TestImageFactory.scrollingFrame(
         width: 240, height: 360, logicalYOffset: offset)), expectedVerticalStep: 80,
         isSettled: true)
     }
     let result = try Stitcher.stitch(frames)
-    let reference = try #require(TestImageFactory.repeatedScrollingFrame(
+    let reference = try #require(TestImageFactory.scrollingFrame(
       width: 240, height: 532, logicalYOffset: 0))
     #expect(result.image.height == 532)
     #expect(result.image.dataProvider?.data as Data? == reference.dataProvider?.data as Data?)
@@ -33,14 +33,14 @@ struct StitcherTests {
   }
   @Test func rejectedIntermediateIsReportedAndDoesNotReplaceAcceptedFrame() throws {
     let frames = try [0, 12, 80, 80].map { offset in
-      ScrollingCaptureFrame(image: try #require(TestImageFactory.repeatedScrollingFrame(
+      ScrollingCaptureFrame(image: try #require(TestImageFactory.scrollingFrame(
         width: 240, height: 360, logicalYOffset: offset)), expectedVerticalStep: 80)
     }
     let result = try Stitcher.stitch(frames)
     #expect(result.alignments.map(\.disposition) == [.initialFrame, .rejectedAlignment, .appended, .noMovement])
     #expect(result.alignments[2].pixelScore != nil)
     #expect(result.alignments[2].totalScore != nil)
-    let reference = try #require(TestImageFactory.repeatedScrollingFrame(
+    let reference = try #require(TestImageFactory.scrollingFrame(
       width: 240, height: 440, logicalYOffset: 0))
     #expect(result.image.dataProvider?.data as Data? == reference.dataProvider?.data as Data?)
   }
@@ -64,7 +64,7 @@ struct StitcherTests {
     var made = 0
     let frames = stride(from: 0, through: 700, by: 140).lazy.compactMap { offset -> ScrollingCaptureFrame? in
       #expect(previous == nil)
-      guard let image = TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: offset)
+      guard let image = TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: offset)
         else { Issue.record("Synthetic frame allocation failed"); return nil }
       previous = image
       made += 1
@@ -74,7 +74,7 @@ struct StitcherTests {
     #expect(previous == nil)
     #expect(made == 6)
     #expect(result.image.height == 1100)
-    let reference = try #require(TestImageFactory.repeatedScrollingFrame(
+    let reference = try #require(TestImageFactory.scrollingFrame(
       width: 240, height: 1100, logicalYOffset: 0))
     #expect(result.image.dataProvider?.data as Data? == reference.dataProvider?.data as Data?)
     print("MANUAL_SCROLL_TEST vision_estimates=\(result.alignments.filter(\.usedVisionEstimate).count)")
