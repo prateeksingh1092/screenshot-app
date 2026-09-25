@@ -185,7 +185,7 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
 
         Tickets 84–86 follow the native renderer (66) and `NSUndoManager` (69).
       - **After v1:** ellipse, counter, highlighter and a small colour palette.
-    - **Filled rectangles:** allowed only in colours other than black, never as fully opaque black, so no mark can be mistaken for Solid redaction.
+    - **Filled rectangles:** allowed only in colours other than black, never as fully opaque black, so no mark can be mistaken for Solid redaction. *Superseded by decision 61: there are no filled shapes; shapes are outlines, and Solid redaction, in the user's chosen palette colour, is the only fill (ticket 88).*
     - **Pixelate:** not added as concealment. If it is ever added, it is a softening effect like Blur, labelled as not hiding content.
 
 60. **Scrolling capture and the Loupe removed; one-row Thumbnail; ticket 40 closed (Prateek, 2026-09-25):**
@@ -326,6 +326,12 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Keyboard and VoiceOver:** the canvas takes focus; Tab and Shift-Tab step through marks in paint order and leave the canvas after the last; the arrow keys move by 1 point (10 with Shift); Delete removes. Each mark is an accessibility child of the canvas with a label such as "Arrow from 2, 38 to 38, 38", positions relative to the crop, and a selection change is announced.
     - **Restyle:** `DocumentAnnotation` now carries its ink colour (opaque only) and line width in points (default 2, the old pen, so every existing golden is unchanged; the arrow head grows with the width). The toolbar offers widths 2, 4 and 8 pt for a selected shape or arrow. The core also recolours an annotation's ink or a Solid redaction's fill (alpha 255 only, decision 61), but no colour control is added: the palette is ticket 88 (and decision 59's after-v1 palette), which only needs a control that calls `recolourSelection`.
     - **Parity:** the preview and `flatten` both paint each mark's own ink and width, and a test renders both after every kind of mark edit and compares them byte for byte, with the moved redaction exactly black.
+
+NN. **Solid redaction palette (implementer, 2026-09-25, ticket 88; decisions 54, 57, 61 and 81):**
+    - **The palette:** `SolidRedaction.palette` in FrisketCore holds five opaque neutrals: Black (the default), Dark Grey (#404040), Grey (#808080), Light Grey (#C0C0C0) and White. Each is a `RedactionColour` with the name the editor shows and VoiceOver reads. There is no free colour picker (decision 61).
+    - **The control:** a row of five swatch buttons in the editor toolbar ("Redaction colour: Grey" and so on), enabled while the Solid Redaction tool is active or a Solid redaction is selected. A choice becomes the tool's fill for new redactions and, when a redaction is selected, recolours it through `MarkEditor.recolourSelection` as one "Restyle Solid Redaction" undo step. The choice is not remembered between editor windows; each editor opens with black. The hint and VoiceOver text name the current colour.
+    - **Proof:** the adapter canary tests at the flatten seam (`EditorRedactionCommandsTests`) run every case in Black, Grey and White at 1× and 2×: History, Thumbnail, clipboard, Save, drag, crop, Blur and Magnify on top, and the OCR input. `pattern --verify-redacted PATH 1|2 [colour]` takes the expected colour (a palette name or `RRGGBB`, black by default), and the live `editor-redaction` row picks Grey and verifies grey.
+    - **Outline shapes:** `CaptureRendererTests.aShapeIsAnOutlineOnly` checks at every line width that a shape leaves the pixels inside its outline untouched (the stroke's white legibility halo aside). The "opaque black" retired term (decision 61) is no longer pending for this ticket.
 
 ## Evaluation update: Xcode question resolved narrowly
 

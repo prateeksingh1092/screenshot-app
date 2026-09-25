@@ -35,6 +35,9 @@ verification build. Screen Recording must already be granted
    just past the red quadrant's bottom-right corner, staying clear of the
    centres of the green, blue and white quadrants and the black marker. The
    covered area must turn solid black immediately, with hard edges.
+   Then, with the redaction selected, choose **Grey** in the Redaction colour
+   palette (ticket 88, decision 61): the box turns grey. Pass the chosen colour
+   to every `--verify-redacted` run below (`grey`; black is the default).
 
 6. Keyboard and VoiceOver, controls only (canvas contents are exempt):
    - Tab and Shift-Tab reach Solid Redaction, Undo, Close Without Changes and
@@ -57,7 +60,7 @@ verification build. Screen Recording must already be granted
    and run, with `1` on a 1× display:
 
    ```sh
-   .build/FrisketTestPattern --verify-redacted "<that image path>" 2
+   .build/FrisketTestPattern --verify-redacted "<that image path>" 2 grey
    ```
 
    Expected: PASS. Its History row has revision 2 (ticket 78 removed the
@@ -68,7 +71,7 @@ verification build. Screen Recording must already be granted
    `--verify-redacted` on it. Expected: PASS.
 
 10. Look at the refreshed thumbnail before Copy in step 9: it must show the
-    black box, never red. A screenshot of the thumbnail is not required and
+    grey box, never red. A screenshot of the thumbnail is not required and
     must not be kept.
 
 11. Close-without-changes path: take a new capture, choose Edit, then close

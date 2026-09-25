@@ -26,7 +26,7 @@ Apps whose windows are always left out of captures.
 A visual addition to a capture, such as an arrow, label, or shape.
 
 **Solid redaction**:
-An opaque replacement of a selected image region to conceal its contents in the delivered image.
+An opaque replacement of a selected image region to conceal its contents in the delivered image. Its fill is one colour from a small neutral palette, black by default, always at full opacity.
 _Avoid_: Blur, pixelate, black box (none of these is guaranteed to conceal)
 
 **Blur**:

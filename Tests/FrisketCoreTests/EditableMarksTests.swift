@@ -143,6 +143,47 @@ import Testing
         #expect(editor.document.edits.redactions[0].colour == SolidRedaction.fill)
     }
 
+    /// Ticket 88 (decision 61): a small palette of neutral colours, black first as the default,
+    /// every one fully opaque. There is no free colour picker.
+    @Test func theRedactionPaletteIsSmallNeutralOpaqueAndStartsWithBlack() {
+        let palette = SolidRedaction.palette
+        #expect(palette.first?.pixel == SolidRedaction.fill, "black is the default")
+        #expect((3...6).contains(palette.count))
+        #expect(palette.allSatisfy { $0.pixel.alpha == 255 }, "every fill is opaque")
+        #expect(palette.allSatisfy { $0.pixel.red == $0.pixel.green && $0.pixel.green == $0.pixel.blue }, "neutral colours only")
+        #expect(palette.contains { $0.pixel == RGBAPixel(red: 255, green: 255, blue: 255, alpha: 255) }, "white is offered")
+        #expect(Set(palette.map(\.name)).count == palette.count && Set(palette.map(\.pixel)).count == palette.count)
+    }
+
+    /// Ticket 88: the palette recolours a selected Solid redaction; each choice is one "Restyle" step,
+    /// and every covered pixel of the flattened output is exactly that colour at alpha 255.
+    @Test func thePaletteRecoloursASelectedRedactionExactly() throws {
+        let (editor, undoManager) = Self.editor(try Self.marked())
+        #expect(editor.selectionFill == nil, "nothing selected")
+        editor.select(.annotation(0))
+        #expect(editor.selectionFill == nil, "a shape has no fill")
+        editor.select(.redaction(0))
+        #expect(editor.selectionFill == SolidRedaction.fill)
+        let width = 80, height = 64
+        let png = try CaptureRendererTests.encode(CaptureRendererTests.pattern(width: width, height: height),
+                                                  width: width, height: height)
+        for choice in SolidRedaction.palette.dropFirst() {
+            #expect(editor.recolourSelection(choice.pixel), "\(choice.name) applies")
+            Self.endEvent(undoManager)
+            #expect(undoManager.undoActionName == "Restyle Solid Redaction")
+            #expect(editor.selectionFill == choice.pixel)
+            let out = try CaptureRendererTests.decode(try CaptureRenderer().flatten(png, edits: editor.document.edits))
+            // The redaction is 4, 4, 10 × 8 points at scale 2.
+            for y in 8..<24 {
+                for x in 8..<28 {
+                    let i = (y * width + x) * 4
+                    #expect(Array(out.bytes[i..<(i + 4)]) == [choice.pixel.red, choice.pixel.green, choice.pixel.blue, 255],
+                            "\(choice.name): pixel (\(x), \(y))")
+                }
+            }
+        }
+    }
+
     @Test func keyboardTabsThroughMarksInPaintOrderThenLeaves() throws {
         let (editor, _) = Self.editor(try Self.marked())
         var visited: [MarkReference] = []

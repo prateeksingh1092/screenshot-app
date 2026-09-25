@@ -77,18 +77,24 @@ import ImageIO
             }
             return
         }
-        if args.count == 4, args[1] == "--verify-redacted", let scale = Int(args[3]), [1, 2].contains(scale) {
+        if [4, 5].contains(args.count), args[1] == "--verify-redacted", let scale = Int(args[3]), [1, 2].contains(scale) {
+            // The expected Solid redaction colour (decision 61): a palette name or RRGGBB; black by default.
+            let name = args.count == 5 ? args[4] : "black"
+            guard let fill = redactionColour(name) else {
+                fputs("FAIL: unknown redaction colour \(name); use black, dark-grey, grey, light-grey, white or RRGGBB\n", stderr)
+                exit(2)
+            }
             do {
-                try verifyRedacted(path: args[2], scale: scale)
-                print("PASS: red quadrant exactly opaque black, no red pixel anywhere, other quadrants and marker intact")
+                try verifyRedacted(path: args[2], scale: scale, fill: fill)
+                print("PASS: red quadrant exactly \(name) at alpha 255, no red pixel anywhere, other quadrants and marker intact")
             } catch {
-                fputs("FAIL: the red quadrant is not fully redacted, red remains, or other pattern pixels changed\n", stderr)
+                fputs("FAIL: the red quadrant is not exactly \(name) at alpha 255, red remains, or other pattern pixels changed\n", stderr)
                 exit(1)
             }
             return
         }
         guard args.count == 2, ["--show", "--show-all", "--show-full-screen", "--full-screen", "--show-window"].contains(args[1]) else {
-            fputs("Usage: FrisketTestPattern --show | --show-all | --show-full-screen | --full-screen | --show-window [--display ID|main|builtin|external] | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2 | --verify-redacted /path/to/image.png 1|2\n", stderr)
+            fputs("Usage: FrisketTestPattern --show | --show-all | --show-full-screen | --full-screen | --show-window [--display ID|main|builtin|external] | --verify /path/to/pasted.png 1|2 | --verify-full /path/to/pasted.png WIDTH HEIGHT 1|2 | --verify-redacted /path/to/image.png 1|2 [black|dark-grey|grey|light-grey|white|RRGGBB]\n", stderr)
             exit(2)
         }
         let app = NSApplication.shared
@@ -161,8 +167,17 @@ import ImageIO
         }
     }
 
-    /// For a 320×180-point pattern capture whose entire red quadrant was covered by Solid redaction.
-    private static func verifyRedacted(path: String, scale: Int) throws {
+    /// The editor's Solid redaction palette (`SolidRedaction.palette`), or any `RRGGBB`, as opaque sRGB bytes.
+    private static func redactionColour(_ name: String) -> [UInt8]? {
+        let named: [String: [UInt8]] = ["black": [0, 0, 0], "dark-grey": [0x40, 0x40, 0x40], "grey": [0x80, 0x80, 0x80],
+                                        "light-grey": [0xc0, 0xc0, 0xc0], "white": [0xff, 0xff, 0xff]]
+        if let rgb = named[name.lowercased()] { return rgb + [255] }
+        guard name.count == 6, let value = UInt32(name, radix: 16) else { return nil }
+        return [UInt8(value >> 16 & 0xff), UInt8(value >> 8 & 0xff), UInt8(value & 0xff), 255]
+    }
+
+    /// For a 320×180-point pattern capture whose entire red quadrant was covered by Solid redaction in `fill`.
+    private static func verifyRedacted(path: String, scale: Int, fill: [UInt8]) throws {
         guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
               image.width == 320 * scale, image.height == 180 * scale,
@@ -176,7 +191,7 @@ import ImageIO
         }
         func pixel(_ x: Int, _ y: Int) -> [UInt8] { Array(pixels[((y * image.width + x) * 4)..<((y * image.width + x) * 4 + 4)]) }
         // Every covered pixel is exactly the fill at full opacity: no tolerance.
-        for y in 0..<(90 * scale) { for x in 0..<(160 * scale) where pixel(x, y) != [0, 0, 0, 255] { throw Mismatch.image } }
+        for y in 0..<(90 * scale) { for x in 0..<(160 * scale) where pixel(x, y) != fill { throw Mismatch.image } }
         for y in 0..<image.height {
             for x in 0..<image.width {
                 let value = pixel(x, y)

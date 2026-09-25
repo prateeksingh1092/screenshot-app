@@ -123,6 +123,28 @@ import Testing
         #expect(output.bytes == expected, "every redacted pixel is the chosen colour at alpha 255; every other pixel is the source")
     }
 
+    /// Ticket 88 (decision 61): a shape is an outline at every width; only Solid redaction fills.
+    /// Pixels well inside the stroke (past its legibility halo) are the source, untouched.
+    @Test(arguments: DocumentAnnotation.lineWidths)
+    func aShapeIsAnOutlineOnly(lineWidth: Double) throws {
+        let width = 48, height = 40
+        let source = Self.pattern(width: width, height: height)
+        let shape = try #require(DocumentAnnotation(.rectangle(x: 4, y: 4, width: 40, height: 32)))
+        var edits = try #require(DocumentEdits(scale: 1, annotations: [shape]))
+        if lineWidth != DocumentAnnotation.defaultWidth {
+            edits = try #require(edits.applying(.rewidth(lineWidth), to: .annotation(0)))
+        }
+        #expect(edits.annotations[0].width == lineWidth)
+        let output = try Self.decode(try CaptureRenderer().flatten(try Self.encode(source, width: width, height: height), edits: edits))
+        let inset = 4 + Int(lineWidth.rounded(.up)) + 2
+        for y in inset..<(36 - inset) {
+            for x in inset..<(44 - inset) {
+                let i = (y * width + x) * 4
+                #expect(output.bytes[i..<(i + 4)] == source[i..<(i + 4)], "pixel (\(x), \(y)) inside the outline changed")
+            }
+        }
+    }
+
     @Test func aTranslucentRedactionColourIsRefused() {
         #expect(SolidRedaction(x: 0, y: 0, width: 4, height: 4,
                                colour: RGBAPixel(red: 0, green: 0, blue: 0, alpha: 254)) == nil)

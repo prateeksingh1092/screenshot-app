@@ -133,7 +133,7 @@ enum EditorAction {
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        setAccessibilityLabel("Capture canvas. Drag to hide pixels with a solid black redaction.")
+        setAccessibilityLabel("Capture canvas. Drag to hide pixels with a Solid redaction.")
     }
 
     required init?(coder: NSCoder) { nil }
@@ -318,6 +318,10 @@ enum EditorAction {
     private let widthPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private var edits: DocumentEdits { document.edits }
     private let textTool = TextTool()
+    private let redactionTool = SolidRedactionTool()
+    /// The Solid redaction palette (ticket 88): one swatch per colour, for the tool and a selected redaction.
+    private var swatchButtons: [NSButton] = []
+    private let swatchStack = NSStackView()
     private let hintField = NSTextField(labelWithString: "")
     private let tools: [any EditorTool]
     private let labelField = NSTextField(string: "A")
@@ -350,7 +354,7 @@ enum EditorAction {
         marks = MarkEditor(document)
         self.finish = finish
         pixelSize = CGSize(width: preview.captureWidth, height: preview.captureHeight)
-        tools = [SelectTool(), SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
+        tools = [SelectTool(), redactionTool, CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
         documentSize = CGSize(width: self.pixelSize.width / scale, height: self.pixelSize.height / scale)
         canvas = EditorCanvasView(documentSize: documentSize)
         placementScreen = screen ?? NSScreen.main
@@ -401,6 +405,22 @@ enum EditorAction {
         widthPopUp.toolTip = "Line width of the selected shape or arrow"
         widthPopUp.sizeToFit()
         textTool.text = { [weak labelField] in labelField?.stringValue ?? "" }
+        for (index, choice) in SolidRedaction.palette.enumerated() {
+            let button = NSButton(image: Self.swatch(choice.pixel), target: self, action: #selector(chooseRedactionColour(_:)))
+            button.setButtonType(.pushOnPushOff)
+            button.bezelStyle = .texturedRounded
+            button.controlSize = .small
+            button.tag = index
+            button.setAccessibilityLabel("Redaction colour: \(choice.name)")
+            button.toolTip = "Redaction colour: \(choice.name)"
+            swatchButtons.append(button)
+            swatchStack.addArrangedSubview(button)
+        }
+        swatchStack.orientation = .horizontal
+        swatchStack.spacing = 2
+        swatchStack.setAccessibilityElement(true)
+        swatchStack.setAccessibilityRole(.group)
+        swatchStack.setAccessibilityLabel("Redaction colour")
         hintField.textColor = .secondaryLabelColor
         hintField.font = .systemFont(ofSize: 12)
         hintField.lineBreakMode = .byWordWrapping
@@ -546,6 +566,12 @@ enum EditorAction {
         labelField.isEnabled = !finishing && tools[activeTool] is TextTool
         canvas.selection = marks.selectionOutline
         canvas.accessibleMarks = marks.accessibleMarks.map { ($0.label, $0.box, $0.mark == marks.selection) }
+        let fill = marks.selectionFill
+        let shownFill = fill ?? redactionTool.colour
+        for button in swatchButtons {
+            button.isEnabled = !finishing && (fill != nil || tools[activeTool] is SolidRedactionTool)
+            button.state = SolidRedaction.palette[button.tag].pixel == shownFill ? .on : .off
+        }
         let width = marks.selectionWidth
         widthPopUp.isEnabled = !finishing && width != nil
         if let width, let index = widthPopUp.itemArray.firstIndex(where: { $0.representedObject as? Double == width }) {
@@ -594,8 +620,9 @@ enum EditorAction {
             canvas.setAccessibilityLabel("Capture canvas. Click a mark to select it. Tab steps through marks.")
         case is SolidRedactionTool:
             canvas.guide = .conceal
-            hintField.stringValue = "Drag a box. It is painted solid black and stays hidden under blur."
-            canvas.setAccessibilityLabel("Capture canvas. Drag to hide pixels with a solid black redaction.")
+            let colour = redactionTool.colourName.lowercased()
+            hintField.stringValue = "Drag a box. It is painted solid \(colour) and stays hidden under blur."
+            canvas.setAccessibilityLabel("Capture canvas. Drag to hide pixels with a solid \(colour) redaction.")
         case is CropTool:
             canvas.guide = .crop
             hintField.stringValue = "Drag the area to keep. Everything outside it is removed."
@@ -675,6 +702,29 @@ enum EditorAction {
         NSAccessibility.post(element: window, notification: .announcementRequested,
                              userInfo: [.announcement: announcement,
                                         .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+    }
+
+    /// A palette colour becomes the tool's fill for new redactions and recolours a selected one.
+    @objc private func chooseRedactionColour(_ sender: NSButton) {
+        guard !finishing, SolidRedaction.palette.indices.contains(sender.tag) else { return }
+        let choice = SolidRedaction.palette[sender.tag]
+        redactionTool.colour = choice.pixel
+        if marks.selectionFill != nil { marks.recolourSelection(choice.pixel) }
+        refresh()
+    }
+
+    /// A small opaque square of `pixel`, outlined so white and black both read on any bezel.
+    private static func swatch(_ pixel: RGBAPixel) -> NSImage {
+        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            let square = NSBezierPath(rect: rect.insetBy(dx: 1.5, dy: 1.5))
+            NSColor(srgbRed: CGFloat(pixel.red) / 255, green: CGFloat(pixel.green) / 255,
+                    blue: CGFloat(pixel.blue) / 255, alpha: 1).setFill()
+            square.fill()
+            NSColor.secondaryLabelColor.setStroke()
+            square.lineWidth = 1
+            square.stroke()
+            return true
+        }
     }
 
     @objc private func changeWidth(_ sender: NSPopUpButton) {
@@ -808,7 +858,7 @@ extension EditorWindow: NSToolbarDelegate {
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolButtons.enumerated().map { NSToolbarItem.Identifier("tool-\($0.offset)") }
-            + [.init("label"), .init("width"), .flexibleSpace, .init("undo"), .init("close")]
+            + [.init("redaction-colour"), .init("label"), .init("width"), .flexibleSpace, .init("undo"), .init("close")]
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
@@ -819,6 +869,7 @@ extension EditorWindow: NSToolbarDelegate {
             item.view = labelField
             item.label = "Label"
         case "width": item.view = widthPopUp; item.label = "Line Width"
+        case "redaction-colour": item.view = swatchStack; item.label = "Redaction Colour"
         case "undo": item.view = undoButton; item.label = "Undo"
         case "close": item.view = closeButton; item.label = "Close"
         default:

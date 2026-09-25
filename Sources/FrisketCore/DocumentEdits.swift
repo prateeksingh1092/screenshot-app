@@ -35,6 +35,15 @@ struct RGBABuffer: Sendable {
 public struct SolidRedaction: Equatable, Sendable {
     /// The default fill colour.
     public static let fill = RGBAPixel(red: 0, green: 0, blue: 0, alpha: 255)
+    /// The colours the editor offers (decision 61): a small set of opaque neutrals, black first as
+    /// the default. There is no free colour picker.
+    public static let palette = [
+        RedactionColour(name: "Black", pixel: fill),
+        RedactionColour(name: "Dark Grey", pixel: RGBAPixel(red: 0x40, green: 0x40, blue: 0x40, alpha: 255)),
+        RedactionColour(name: "Grey", pixel: RGBAPixel(red: 0x80, green: 0x80, blue: 0x80, alpha: 255)),
+        RedactionColour(name: "Light Grey", pixel: RGBAPixel(red: 0xc0, green: 0xc0, blue: 0xc0, alpha: 255)),
+        RedactionColour(name: "White", pixel: RGBAPixel(red: 0xff, green: 0xff, blue: 0xff, alpha: 255))
+    ]
     public let x: Double
     public let y: Double
     public let width: Double
@@ -50,6 +59,16 @@ public struct SolidRedaction: Equatable, Sendable {
         self.width = width
         self.height = height
         self.colour = colour
+    }
+}
+
+/// One Solid redaction colour the editor offers, with the name the palette shows and VoiceOver reads.
+public struct RedactionColour: Equatable, Sendable {
+    public let name: String
+    public let pixel: RGBAPixel
+    public init(name: String, pixel: RGBAPixel) {
+        self.name = name
+        self.pixel = pixel
     }
 }
 

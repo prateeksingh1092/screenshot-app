@@ -29,7 +29,7 @@ Prateek asked for this study: "I absolutely hate how the arrow and text is such 
 | Other marks | Counter (step numbers), highlighter with text-size detection, pencil with smoothing, spotlight | none |
 | After drawing | Select, move, resize, bend, restyle | Undo only |
 | Colour | Colour picker with saved favourites | One fixed red |
-| Concealment | Pixelate ("randomization"), blur, filled rectangle in any colour. **No guaranteed-black redaction** | **Solid redaction, exact black and verified.** Blur and Magnify never conceal |
+| Concealment | Pixelate ("randomization"), blur, filled rectangle in any colour. **No verified opaque redaction** | **Solid redaction, exactly the chosen palette colour at alpha 255 (black by default) and verified** (decision 61, ticket 88). Blur and Magnify never conceal |
 | Tool accessibility | Tools are unlabelled images for VoiceOver (e.g. `annotateArrowTool`) | Every tool is labelled (a Frisket strength) |
 | Crop | Aspect ratios and snapping to edges | Free crop |
 
@@ -48,7 +48,7 @@ Build on Phase 2. The native renderer (tickets 65–67: CoreGraphics strokes and
 ## Decisions for Prateek (product-visible)
 
 1. **Scope for v1.** I recommend items 1–3 in v1, and items 4–5 after v1.
-2. **Filled rectangles.** Frisket forbids a fill today, so that a mark can never be mistaken for Solid redaction. If a filled rectangle is wanted, I recommend it only in colours other than black, with no fully opaque black.
+2. **Filled rectangles.** Frisket forbids a fill today, so that a mark can never be mistaken for Solid redaction. If a filled rectangle is wanted, I recommend it only in colours other than black, with no fully opaque black. *Resolved by decision 61: no filled shapes at all; shapes are outlines, and Solid redaction (in a small neutral palette, black by default) is the only fill.*
 3. **Pixelate.** CleanShot sells pixelate as redaction. I recommend Frisket doesn't add it, or adds it only as a softening effect like Blur, clearly labelled as not concealing.
 
 After Prateek chooses, the chosen items become spec stories and tickets that follow ticket 66 and ticket 69.

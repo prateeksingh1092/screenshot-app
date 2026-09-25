@@ -98,7 +98,7 @@ A same-harness comparison with the installed CleanShot X 5.0.1 showed that the f
 | Window capture | Targets the cursor, so unusable (D2) | Picks the real window; adds wallpaper padding and a shadow (2182×1342 for a 1920×1080 window) | Filter by window layer; optional shadow and background later |
 | Scrolling capture, same page and steps | 36 rows lost; a flick truncates | **Exact** (blocks 400 apart, 90/90/8 rows). In-place frame, live side preview, Cancel/Done at the region, a "Please slow down…" warning | Rework the matcher; add speed feedback and in-place controls |
 | Annotate, tall image | Arrow missing, label duplicated, glyphs dropped | Output identical to the preview; real font; Done and "Save as…" always visible; Copy, Share, Pin and Upload in a bottom bar; a "Drag Me" handle | Native rendering; always-visible exits |
-| Redaction | Dedicated solid redaction, guaranteed opaque black (`--verify-redacted` passes under blur and magnify) | Filled rectangle in the chosen color, plus pixelate and redact tools; no locked black | **Frisket's differentiator. Keep** |
+| Redaction | Dedicated Solid redaction, every covered pixel exactly the chosen colour at alpha 255, black by default (decision 61; `--verify-redacted` passes under blur and magnify) | Filled rectangle in the chosen color, plus pixelate and redact tools; no locked black | **Frisket's differentiator. Keep** |
 | OCR, text | Modal "Copied N characters" | Copies silently; a first-use tip explains it | Non-modal feedback |
 | OCR, no text | Wipes the clipboard | Clipboard untouched | Fix (D8) |
 | Thumbnail stack | Cards overlap | Fixed-size cards, evenly stacked; hover reveals Copy/Save, with corner Close/Pin/Annotate/Upload; tooltips show shortcuts. Corner buttons have **no accessibility labels** | Fixed-size cards; keep Frisket's better labels |
@@ -208,7 +208,7 @@ Research sources are cited in Appendix B.
 |---|---|---|
 | Area, window, full, scrolling capture | Keep | Core value. Every compared tool has all four; reviewers call scrolling capture "the obvious reason to pay" |
 | Pending thumbnail with Copy/Save/Edit/Drag | Keep; fixed-size cards, CleanShot-style hover actions | Reviewers call CleanShot's overlay "the centre of the app"; Frisket's accessibility labels are better, so keep them |
-| Solid redaction (guaranteed black) | **Keep as the differentiator** | CleanShot only offers colored fills and pixelate; Frisket passes `--verify-redacted` under blur and magnify |
+| Solid redaction (exactly the chosen colour at alpha 255, decision 61) | **Keep as the differentiator** | CleanShot only offers colored fills and pixelate; Frisket passes `--verify-redacted` under blur and magnify |
 | Editor | Keep, but native rendering and always-visible exits | Markup hand-off is private API (O18) |
 | Copy Text (OCR) | Keep Vision; make it non-modal and never clear the clipboard | Concealment requirement (O19) |
 | History (30 d / 1 GB archive with its own window and actions) | **Simplify**: keep retention, simplify storage (O5), make "Restore to card" the primary action | CleanShot's History is a restore buffer (3-day default, up to 1 month); comparable apps use plain GRDB and files |
@@ -331,7 +331,7 @@ This phase ships value before the re-architecture. The steps are independent and
 
 - **O1 renderer.** It needs DA-1 and DA-6. The interface is the design-it-twice hybrid (the four designs and the comparison are in `Plans/2026-09-24-session-handoff.md`):
   - `CaptureFlattening.flatten(_ capture: Data, edits: DocumentEdits) throws(RenderFailure) -> Data` is the only output path (Done, Copy, Save, drag, History, OCR input). The coordinator's single real seam uses `CaptureRenderer` in production and a `ScriptedFlattener` in tests, replacing `RejectOnceCodec` and `LoopCodec`; `codec:` becomes `flattener:`.
-  - `CaptureRenderer.preview(_ capture: Data, maxEdge: 2048) -> CapturePreview`, and `CapturePreview.render(edits) -> CGImage` takes the same edits as Done. Contract: at maxEdge ≥ output size, `render(edits)` equals `decode(flatten)`. When downsampled, blocks touching a redaction stay exact black (concealment wins).
+  - `CaptureRenderer.preview(_ capture: Data, maxEdge: 2048) -> CapturePreview`, and `CapturePreview.render(edits) -> CGImage` takes the same edits as Done. Contract: at maxEdge ≥ output size, `render(edits)` equals `decode(flatten)`. When downsampled, blocks touching a redaction stay exactly its colour at alpha 255 (concealment wins; decision 61).
   - `RenderFailure.outputTooTall` is thrown before any allocation. Annotations stay drawn on top of redactions, as today.
   - No internal ports: pixel backend, encoder and text shaping are rejected as single-adapter seams. Per-effect row footprints and a tile pipeline are an internal Gate B fallback only.
   - Deletes `DocumentRenderer`'s public API, `StripPNGEncoder`, `AnnotationFont`, `EditorProxy`, `PNGBitmapCodec`, and `Bitmap`/`EditorDocument`/`BitmapCodec`.
