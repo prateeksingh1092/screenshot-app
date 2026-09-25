@@ -42,11 +42,10 @@ import Testing
         #expect(unredacted.uppercased().contains("CANARY"),
                 "Vision should read CANARY on \(build)")
 
-        let codec = PNGBitmapCodec()
-        let base = try #require(codec.decode(png))
-        let redaction = try #require(SolidRedaction(x: 0, y: 0, width: Double(base.width), height: Double(base.height)))
+        let size = try CaptureRenderer().preview(png, maxEdge: .max)
+        let redaction = try #require(SolidRedaction(x: 0, y: 0, width: Double(size.captureWidth), height: Double(size.captureHeight)))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
-        let redactedPNG = try #require(codec.encode(DocumentRenderer.render(EditorDocument(base: base, edits: edits))))
+        let redactedPNG = try CaptureRenderer().flatten(png, edits: edits)
         let redacted = await recognizer.recognize(CaptureImage(pngData: redactedPNG))
         print("VISION_OCR os_build=\(build) redacted_count=\(redacted.count)")
         #expect(redacted.uppercased().contains("CANARY") == false,

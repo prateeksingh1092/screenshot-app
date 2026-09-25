@@ -15,7 +15,7 @@ import Testing
     }
 
     /// Opaque noise, so the PNG is as hard to decode and encode as busy screen content (about 2.8 MB).
-    static func base() throws -> (bitmap: Bitmap, png: Data) {
+    static func base() throws -> Data {
         var bytes = [UInt8](repeating: 255, count: 800 * 1000 * 4)
         var seed: UInt32 = 12_345
         for index in stride(from: 0, to: bytes.count, by: 4) {
@@ -24,8 +24,7 @@ import Testing
             bytes[index + 1] = UInt8(truncatingIfNeeded: seed >> 16)
             bytes[index + 2] = UInt8(truncatingIfNeeded: seed >> 8)
         }
-        return (try #require(Bitmap(width: 800, height: 1000, bytes: bytes)),
-                try CaptureRendererTests.encode(bytes, width: 800, height: 1000))
+        return try CaptureRendererTests.encode(bytes, width: 800, height: 1000)
     }
 
     /// The fastest of three runs, so a busy machine does not fail the test on one slow run.
@@ -37,13 +36,21 @@ import Testing
     }
 
     @Test func thePreviewRenderOfTheLiveReproIsInsideTheBudget() throws {
-        let document = EditorDocument(base: try Self.base().bitmap, edits: try Self.liveEdits())
-        let elapsed = Self.fastest { _ = DocumentRenderer.render(document) }
-        #expect(elapsed <= Self.budget, "DocumentRenderer.render took \(elapsed) for 800 × 1,000 px")
+        let preview = try CaptureRenderer().preview(try Self.base())
+        let edits = try Self.liveEdits()
+        let elapsed = try Self.fastest { _ = try preview.render(edits) }
+        #expect(elapsed <= Self.budget, "CapturePreview.render took \(elapsed) for 800 × 1,000 px")
+    }
+
+    /// Opening the editor decodes the capture once for the preview (ticket 68).
+    @Test func decodingTheLiveReproForThePreviewIsInsideTheBudget() throws {
+        let png = try Self.base()
+        let elapsed = try Self.fastest { _ = try CaptureRenderer().preview(png) }
+        #expect(elapsed <= Self.budget, "CaptureRenderer.preview took \(elapsed) for 800 × 1,000 px")
     }
 
     @Test func flatteningTheLiveReproIsInsideTheBudget() throws {
-        let png = try Self.base().png
+        let png = try Self.base()
         let edits = try Self.liveEdits()
         let elapsed = try Self.fastest { _ = try CaptureRenderer().flatten(png, edits: edits) }
         #expect(elapsed <= Self.budget, "CaptureRenderer.flatten took \(elapsed) for 800 × 1,000 px")

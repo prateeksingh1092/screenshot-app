@@ -164,7 +164,7 @@ import FrisketCore
     private func showThumbnail(_ revision: CaptureRevision) async {
         // The capture names its display (ticket 75); an unknown or unplugged one falls back to the main screen.
         guard let image = await commands.image(for: revision),
-              let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480),
+              let preview = await ThumbnailImage.decode(image.pngData, maximumPixelSize: 480),
               let screen = screen(for: image.displayID) ?? NSScreen.main else {
             _ = await commands.execute(.discard(revision.captureID))
             notice(.previewUnavailable)
@@ -219,13 +219,9 @@ import FrisketCore
         panel.model.busy = true
         Task {
             let screen = await thumbnailScreen(id)
-            let codec = PNGBitmapCodec()
             guard let image = await commands.image(for: panel.revision),
-                  let pixels = codec.pixelSize(image.pngData),
-                  let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: EditorProxy.maxEdge),
-                  let base = codec.bitmap(from: preview),
-                  let editor = EditorWindow(base: base,
-                                            pixelSize: CGSize(width: pixels.width, height: pixels.height),
+                  let preview = await Self.editorPreview(image.pngData),
+                  let editor = EditorWindow(preview: preview,
                                             scale: Double(screen?.backingScaleFactor ?? 1), screen: screen,
                                             finish: { [weak self] leave in await self?.finishEditing(id, leave) ?? false }) else {
                 panel.model.busy = false
@@ -236,6 +232,11 @@ import FrisketCore
             storeEditor(editor, for: id)
             editor.show()
         }
+    }
+
+    /// Decodes the capture once for the editor, off the main actor (ticket 68).
+    @concurrent private nonisolated static func editorPreview(_ png: Data) async -> CapturePreview? {
+        try? CaptureRenderer().preview(png)
     }
 
     private func finishEditing(_ id: CaptureID, _ leave: EditorLeave) async -> Bool {
@@ -274,7 +275,7 @@ import FrisketCore
             }
             storeEditor(nil, for: id)
             guard let image = await commands.image(for: revision),
-                  let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480) else {
+                  let preview = await ThumbnailImage.decode(image.pngData, maximumPixelSize: 480) else {
                 remove(id)
                 if case .finalized(_, .committed) = await commands.execute(.dismiss(revision)) { return true }
                 notice(.editedPreviewUnavailable)

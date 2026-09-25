@@ -959,22 +959,10 @@ extension EditorRedactionCommandsTests {
     }
 }
 
-/// The editor preview as the app builds it. `CaptureSurfaces.edit` decodes a proxy of at most
-/// `EditorProxy.maxEdge` px with `ThumbnailImage`; `EditorWindow.refresh()` renders
-/// `DocumentRenderer.render` over it with the edits rescaled by `EditorProxy.displayScale`.
-private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) throws -> (width: Int, height: Int, pixels: [RGBA]) {
-    let codec = PNGBitmapCodec()
-    let fullWidth = try #require(codec.pixelSize(png)).width
-    let proxy = try #require(ThumbnailImage.make(from: png, maximumPixelSize: EditorProxy.maxEdge))
-    let base = try #require(codec.bitmap(from: proxy))
-    let displayScale = EditorProxy.displayScale(fullWidth: fullWidth, proxyWidth: base.width, scale: scale)
-    let displayEdits = try #require(DocumentEdits(scale: displayScale, crop: edits.crop, redactions: edits.redactions,
-                                                  annotations: edits.annotations, effects: edits.effects))
-    let rendered = DocumentRenderer.render(EditorDocument(base: base, edits: displayEdits))
-    let pixels = stride(from: 0, to: rendered.bytes.count, by: 4).map {
-        RGBA(r: rendered.bytes[$0], g: rendered.bytes[$0 + 1], b: rendered.bytes[$0 + 2], a: rendered.bytes[$0 + 3])
-    }
-    return (rendered.width, rendered.height, pixels)
+/// The editor preview as the app builds it: `CaptureSurfaces.edit` makes a `CapturePreview` of
+/// the pending capture, and `EditorWindow` renders the current edits with it (ticket 68).
+private func editorPreview(of png: Data, edits: DocumentEdits) throws -> (width: Int, height: Int, pixels: [RGBA]) {
+    try decodeSRGB(try CaptureRenderer().preview(png).render(edits))
 }
 
 /// Known defects in what Done delivers (ticket 44). Each stays red until its fix removes the wrapper.
@@ -992,8 +980,8 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
     }
 
     /// D1, as seen live on a 400×500 capture: the arrow at row 450 was missing from the saved
-    /// image and the label repeated every 256 rows. Under `EditorProxy.maxEdge` the preview is the
-    /// whole-image render, so the delivered image must equal it pixel for pixel.
+    /// image and the label repeated every 256 rows. Under `CaptureRenderer.previewMaxEdge` the preview
+    /// is at full size, so the delivered image must equal it pixel for pixel.
     @Test func d1DoneDeliversExactlyTheEditorPreview() async throws {
         let width = 400, height = 500
         var bytes = [UInt8]()
@@ -1014,12 +1002,12 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
 
         // Control: a redaction-only edit already round-trips, so any difference below comes from D1.
         let controlSaved = try await done(png, control)
-        let controlPreview = try editorPreview(of: png, scale: 1, edits: control)
+        let controlPreview = try editorPreview(of: png, edits: control)
         #expect(controlSaved.width == controlPreview.width && controlSaved.height == controlPreview.height)
         #expect(controlSaved.pixels == controlPreview.pixels, "redaction-only Done matches the preview")
 
         let saved = try await done(png, edits)
-        let preview = try editorPreview(of: png, scale: 1, edits: edits)
+        let preview = try editorPreview(of: png, edits: edits)
         #expect(saved.width == preview.width && saved.height == preview.height)
         let ink = RGBA(r: DocumentAnnotation.stroke.red, g: DocumentAnnotation.stroke.green,
                        b: DocumentAnnotation.stroke.blue, a: DocumentAnnotation.stroke.alpha)
@@ -1062,7 +1050,7 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
 }
 
 /// Ticket 65: the save path is `CaptureRenderer.flatten` for every output up to 32,768 px tall
-/// (DA-6), and it paints the same pixels as `DocumentRenderer.render`, the editor preview's function.
+/// (DA-6), and it paints the same pixels as the editor preview at full size (`CapturePreview.render`).
 extension EditedOutputParityTests {
     private static func pattern(width: Int, height: Int) -> [UInt8] {
         var bytes = [UInt8]()
@@ -1080,7 +1068,6 @@ extension EditedOutputParityTests {
         (width: 24, height: CaptureRenderer.maximumOutputHeight, scale: 1.0, crop: false)
     ])
     func savedEditEqualsTheWholeImageRenderUpTo32768RowsTall(fixture: (width: Int, height: Int, scale: Double, crop: Bool)) throws {
-        let codec = PNGBitmapCodec()
         let png = try encodeSRGB(Self.pattern(width: fixture.width, height: fixture.height),
                                  width: fixture.width, height: fixture.height)
         let points = (width: Double(fixture.width) / fixture.scale, height: Double(fixture.height) / fixture.scale)
@@ -1092,12 +1079,12 @@ extension EditedOutputParityTests {
         let crop = fixture.crop ? DocumentCrop(x: 5.5, y: 2.25, width: points.width - 20, height: points.height - 4) : nil
         let edits = try #require(DocumentEdits(scale: fixture.scale, crop: crop, redactions: [redaction],
                                                annotations: [label, arrow], effects: [blur]))
-        let base = try #require(codec.decode(png))
-        let expected = DocumentRenderer.render(EditorDocument(base: base, edits: edits))
-        let savedPNG = try CaptureRenderer().flatten(png, edits: edits)
-        let saved = try #require(codec.decode(savedPNG))
+        let preview = try CaptureRenderer().preview(png, maxEdge: max(fixture.width, fixture.height))
+        #expect(!preview.isDownscaled)
+        let expected = try decodeSRGB(try preview.render(edits))
+        let saved = try decodeSRGB(try CaptureRenderer().flatten(png, edits: edits))
         #expect(saved.width == expected.width && saved.height == expected.height)
-        #expect(saved == expected, "the save path delivers the whole-image render at \(fixture.width)×\(fixture.height)")
+        #expect(saved.pixels == expected.pixels, "the save path delivers the preview's render at \(fixture.width)×\(fixture.height)")
     }
 }
 

@@ -12,4 +12,9 @@ enum ThumbnailImage {
             kCGImageSourceShouldCacheImmediately: true
         ] as CFDictionary)
     }
+
+    /// The same decode, run off the caller's actor, so a Thumbnail never decodes on the main thread (ticket 68).
+    @concurrent static func decode(_ pngData: Data, maximumPixelSize: Int) async -> CGImage? {
+        make(from: pngData, maximumPixelSize: maximumPixelSize)
+    }
 }

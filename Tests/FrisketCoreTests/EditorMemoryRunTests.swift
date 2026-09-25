@@ -39,6 +39,32 @@ import Testing
     }
 }
 
+extension EditorMemoryRunTests {
+    /// Ticket 68: editor responsiveness. Opening the editor decodes the capture once
+    /// (`CaptureRenderer.preview`), then each edit renders at the preview's size; both run off the
+    /// main actor in the app. Reports the times and the preview size, for the same two sizes.
+    @Test(.enabled(if: ["display", "cap"].contains(ProcessInfo.processInfo.environment["FRISKET_EDITOR_MEMORY_RUN"] ?? "")))
+    func editorPreviewOpensAndRendersEachEdit() throws {
+        let run = ProcessInfo.processInfo.environment["FRISKET_EDITOR_MEMORY_RUN"]
+        let (width, height) = run == "cap" ? (5120, CaptureRenderer.maximumOutputHeight) : (6016, 3384)
+        let png = try syntheticPNG(width: width, height: height)
+        let clock = ContinuousClock()
+        var preview: CapturePreview?
+        let opened = try clock.measure { preview = try CaptureRenderer().preview(png) }
+        let shown = try #require(preview)
+        let h = Double(height)
+        let redaction = try #require(SolidRedaction(x: 0, y: 100, width: 640, height: 480))
+        let label = try #require(DocumentAnnotation(.text(x: 40, y: 30, characters: "Gate B")))
+        let arrow = try #require(DocumentAnnotation(.arrow(x0: 40, y0: h - 40, x1: 4_000, y1: h - 40)))
+        let blur = try #require(DocumentEffect(.blur(x: 0, y: 0, width: Double(width), height: h)))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], annotations: [label, arrow], effects: [blur]))
+        var slowest = Duration.zero
+        for _ in 0..<5 { slowest = max(slowest, try clock.measure { _ = try shown.render(edits) }) }
+        print("EDITOR_PREVIEW_RUN run=\(run ?? "") dimensions=\(width)x\(height) preview=\(shown.width)x\(shown.height) open=\(opened) slowest_render=\(slowest)")
+        #expect(shown.isDownscaled)
+    }
+}
+
 /// Opaque noise in 16 × 8 px cells, encoded with ImageIO.
 private func syntheticPNG(width: Int, height: Int) throws -> Data {
     var bytes = [UInt8](repeating: 255, count: width * height * 4)
