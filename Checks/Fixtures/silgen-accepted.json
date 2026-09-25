@@ -1,0 +1,10 @@
+{
+  "check": "silgen",
+  "files": {
+    "Frisket/SystemScreenshotHotkeyStore.swift": "@_silgen_name(\"notify_post\")\nprivate func notifyPost(_ name: UnsafePointer<CChar>) -> UInt32",
+    "Sources/FrisketCore/StripPNGEncoder.swift": "@_silgen_name(\"crc32\")\nprivate func crc32(_ c: UInt, _ b: UnsafePointer<UInt8>?, _ n: UInt32) -> UInt",
+    "Frisket/Comment.swift": "// @_silgen_name(\"write\") is banned\nlet note = \"@_silgen_name\"",
+    "Tests/Probe.swift": "@_silgen_name(\"open\") func probe()"
+  },
+  "expected": []
+}

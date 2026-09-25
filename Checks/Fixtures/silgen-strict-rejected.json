@@ -1,0 +1,10 @@
+{
+  "check": "silgen",
+  "strict": true,
+  "files": {
+    "Frisket/SystemScreenshotHotkeyStore.swift": "@_silgen_name(\"notify_post\")\nprivate func notifyPost(_ name: UnsafePointer<CChar>) -> UInt32"
+  },
+  "expected": [
+    "Frisket/SystemScreenshotHotkeyStore.swift: @_silgen_name(\"notify_post\") binds a C function with the Swift calling convention"
+  ]
+}

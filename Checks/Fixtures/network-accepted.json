@@ -1,0 +1,11 @@
+{
+  "check": "network",
+  "files": {
+    "Frisket/Settings.swift": "import AppKit\n// URLSession is never used; see story 74.\nlet link = \"x-apple.systempreferences:com.apple.Keyboard-Settings.extension\"\nNSWorkspace.shared.open(URL(string: link)!)\nlet text = \"no NWConnection here\"",
+    "Frisket/Peer.swift": "let peer = session.connect(to: other)\nfunc reconnect() {}",
+    "Tools/Probe.swift": "import Network",
+    "Tests/Fixture.swift": "let s = URLSession.shared",
+    "Frisket/Commands.swift": "func connect(_ commands: CaptureCommandLayer) {}\nfunc socket(named: String) {}"
+  },
+  "expected": []
+}

@@ -20,7 +20,8 @@ private func runCheck(_ arguments: [String]) throws -> (status: Int32, output: S
     return (process.terminationStatus, String(decoding: output, as: UTF8.self))
 }
 
-@Test(arguments: ["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory", "input-monitoring", "app-sources"])
+@Test(arguments: ["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory", "input-monitoring", "app-sources",
+                  "network", "silgen"])
 func repositorySatisfiesStaticChecks(check: String) throws {
     let result = try runCheck(["--root", repository.path, "--check", check])
     #expect(result.status == 0, Comment(rawValue: result.output))
@@ -36,12 +37,22 @@ func repositorySatisfiesStaticChecks(check: String) throws {
     "diagnostics-rejected", "diagnostics-accepted", "diagnostics-collection-rejected",
     "capture-memory-rejected", "capture-memory-accepted", "capture-finalization-rejected", "capture-finalization-accepted",
     "capture-latency-stdout-accepted", "capture-latency-stdout-rejected",
-    "stitcher-provenance-inventory", "stitcher-identity-inventory", "stitcher-imports-inventory"
+    "stitcher-provenance-inventory", "stitcher-identity-inventory", "stitcher-imports-inventory",
+    "network-rejected", "network-accepted", "silgen-rejected", "silgen-accepted", "silgen-strict-rejected"
 ])
 func staticCheckFixturesHaveExpectedOutcomes(fixture: String) throws {
     let path = repository.appendingPathComponent("Checks/Fixtures/\(fixture).json")
     let result = try runCheck(["--fixture", path.path])
     #expect(result.status == 0, Comment(rawValue: result.output))
+}
+
+/// D22: `@_silgen_name` calls C functions with the Swift calling convention. Tickets 63 and 67 remove the last uses.
+@Test
+func d22ProductCodeBindsNoCFunctionThroughSilgenName() async throws {
+    try await knownDefect("D22") {
+        let result = try runCheck(["--root", repository.path, "--check", "silgen", "--strict"])
+        #expect(result.status == 0, "D22: \(result.output)")
+    }
 }
 
 @Test

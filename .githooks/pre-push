@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs local CI before every push (decision 57, DA-7). Enable once per clone:
+#   git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/ci.sh"

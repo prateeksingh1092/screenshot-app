@@ -46,14 +46,31 @@ swift test --disable-sandbox --disable-keychain --disable-xctest \
   --config-path .build/config --security-path .build/security
 ```
 
-The app targets macOS 26.0 with the installed Xcode's macOS SDK (26.5 today), native architecture in Development. The build
-phase `Reject Event Taps and Global Monitors` runs on **every build**, fails on
-forbidden APIs under `Frisket/` and `Sources/`, and needs no network. Fixtures
-cover direct, C, and aliased event-tap calls and global event monitors. Like
-the test suite, this phase also rejects multiple Carbon hot-key registration
-call sites across product files; fixtures cover duplicate and single registrations.
-Like other lexical checks, this is not a proof against deliberately obfuscated or
-dynamically resolved APIs. Swift Testing runs all repository static checks.
+The app targets macOS 26.0 with the installed Xcode's macOS SDK (26.5 today), native architecture in Development.
+
+## Local CI (ticket 43, decision 57 DA-7)
+
+`scripts/ci.sh` decides whether the tree can merge. It runs every repository
+check (`Checks/check_repository.py`), then `scripts/test-core.sh`, then the
+unsigned Development build above, and exits non-zero on the first failure. A
+tracked pre-push hook runs it; enable it once per clone with
+`git config core.hooksPath .githooks`. Hosted CI waits until the repository is
+public (decision 9).
+
+The input-monitoring check (no event taps, no global event monitors, one
+Carbon hot-key registration) used to run as a build phase on every Xcode build.
+It now runs in `ci.sh` and in the Swift suite, with its fixtures unchanged.
+Two checks are new. The first, `network`, rejects networking modules and
+APIs in product code (story 74). The second, `silgen`, rejects
+`@_silgen_name`, apart from the six D22 uses listed in the checker, which
+tickets 63 and 67 remove; `--strict` reports those too. Like the other lexical
+checks, none of these proves the absence of deliberately obfuscated or
+dynamically resolved APIs.
+
+Tests that reproduce an open defect use `knownDefect("Dn")` (decision 58): the
+suite stays green while the defect exists and turns red when it is fixed.
+`scripts/ci.sh --defects` runs those tests unwrapped and lists which defects
+are still red.
 
 ## One signing and install path (coordinator only, after approval)
 

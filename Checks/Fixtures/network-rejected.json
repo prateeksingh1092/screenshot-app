@@ -1,0 +1,17 @@
+{
+  "check": "network",
+  "files": {
+    "Frisket/Fetch.swift": "import Foundation\nlet task = URLSession.shared.dataTask(with: url)",
+    "Frisket/Path.swift": "import Network\nlet monitor = 1",
+    "Sources/FrisketCore/Socket.swift": "let fd = socket(AF_INET, SOCK_STREAM, 0)",
+    "Frisket/Web.swift": "let view = WKWebView()",
+    "Frisket/Legacy.swift": "let c = NSURLConnection(request: r, delegate: nil)"
+  },
+  "expected": [
+    "Frisket/Fetch.swift: network API is forbidden",
+    "Frisket/Legacy.swift: network API is forbidden",
+    "Frisket/Path.swift: network API is forbidden",
+    "Frisket/Web.swift: network API is forbidden",
+    "Sources/FrisketCore/Socket.swift: network API is forbidden"
+  ]
+}
