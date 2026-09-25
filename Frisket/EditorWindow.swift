@@ -4,11 +4,11 @@ import FrisketCore
 /// The editor's finish and undo actions. They reach the editor as menu or responder actions,
 /// never as button key equivalents, so they work however the window is sized (D5).
 enum EditorAction {
-    case done, copy, save, undo, closeUnchanged
+    case done, copy, save, undo, redo, closeUnchanged
 }
 
 /// Letter keys select tools and Return means Done, unless the label field is editing. ⌘C, ⌘S
-/// and ⌘Z arrive from the main menu through the responder chain; Esc arrives as cancelOperation.
+/// ⌘Z and ⌘⇧Z arrive from the main menu through the responder chain; Esc arrives as cancelOperation.
 @MainActor final class EditorKeyWindow: NSWindow {
     var toolKey: ((Character) -> Bool)?
     var perform: ((EditorAction) -> Void)?
@@ -37,17 +37,24 @@ enum EditorAction {
     @objc func copy(_ sender: Any?) { request(.copy) }
     /// File › Save (⌘S).
     @objc func saveEditedCapture(_ sender: Any?) { request(.save) }
-    /// Edit › Undo (⌘Z). NSWindow answers `undo:` itself, so the override must live here.
+    /// Edit › Undo (⌘Z) and Redo (⌘⇧Z) run the window's undo manager (ticket 69). NSWindow answers
+    /// `undo:` and `redo:` itself, so these overrides live here to hold them while the editor finishes.
     @objc func undo(_ sender: Any?) { request(.undo) }
+    @objc func redo(_ sender: Any?) { request(.redo) }
     /// Esc closes an unchanged editor; with edits it does nothing, and ⌘W asks.
     override func cancelOperation(_ sender: Any?) { request(.closeUnchanged) }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(copy(_:)): canPerform?(.copy) ?? false
-        case #selector(saveEditedCapture(_:)): canPerform?(.save) ?? false
-        case #selector(undo(_:)): canPerform?(.undo) ?? false
-        default: super.validateMenuItem(menuItem)
+        case #selector(copy(_:)): return canPerform?(.copy) ?? false
+        case #selector(saveEditedCapture(_:)): return canPerform?(.save) ?? false
+        case #selector(undo(_:)):
+            menuItem.title = undoManager?.undoMenuItemTitle ?? "Undo"
+            return canPerform?(.undo) ?? false
+        case #selector(redo(_:)):
+            menuItem.title = undoManager?.redoMenuItemTitle ?? "Redo"
+            return canPerform?(.redo) ?? false
+        default: return super.validateMenuItem(menuItem)
         }
     }
 }
@@ -226,8 +233,9 @@ enum EditorAction {
     private let preview: CapturePreview
     private let pixelSize: CGSize
     private var documentSize: CGSize
-    private var edits: DocumentEdits
-    private var undoStack: [DocumentEdits] = []
+    /// The edits and their undo manager, which the window returns for Edit › Undo and Redo.
+    private let document: UndoableEdits
+    private var edits: DocumentEdits { document.edits }
     private let textTool = TextTool()
     private let hintField = NSTextField(labelWithString: "")
     private let tools: [any EditorTool]
@@ -256,7 +264,7 @@ enum EditorAction {
           finish: @escaping (EditorLeave) async -> Bool) {
         guard let edits = DocumentEdits(scale: scale) else { return nil }
         self.preview = preview
-        self.edits = edits
+        document = UndoableEdits(edits)
         self.finish = finish
         pixelSize = CGSize(width: preview.captureWidth, height: preview.captureHeight)
         tools = [SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
@@ -272,6 +280,7 @@ enum EditorAction {
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
         window.delegate = self
+        document.onChange = { [weak self] in self?.refresh() }
 
         for (index, tool) in tools.enumerated() {
             let button = NSButton(title: "", target: self, action: #selector(selectTool(_:)))
@@ -417,9 +426,7 @@ enum EditorAction {
                                         .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
-    private var unchanged: Bool {
-        edits.redactions.isEmpty && edits.crop == nil && edits.annotations.isEmpty && edits.effects.isEmpty
-    }
+    private var unchanged: Bool { document.isUnchanged }
 
     private var currentDocumentSize: CGSize {
         if let crop = edits.crop {
@@ -438,7 +445,8 @@ enum EditorAction {
             button.isEnabled = !finishing
         }
         labelField.isEnabled = !finishing && tools[activeTool] is TextTool
-        undoButton.isEnabled = !finishing && !undoStack.isEmpty
+        undoButton.isEnabled = canPerform(.undo)
+        undoButton.toolTip = "\(document.undoManager.undoMenuItemTitle) (⌘Z)"
         describeActiveTool()
         closeButton.isEnabled = !finishing && unchanged
         copyButton.isEnabled = !finishing
@@ -516,9 +524,7 @@ enum EditorAction {
         guard !finishing else { return }
         var next = edits
         guard tools[activeTool].applyDrag(from: start, to: end, to: &next) else { return }
-        undoStack.append(edits)
-        edits = next
-        refresh()
+        document.apply(next)
     }
 
     @objc private func selectTool(_ sender: NSButton) {
@@ -528,10 +534,13 @@ enum EditorAction {
     }
 
     @objc private func undo() {
-        guard !finishing else { return }
-        guard let previous = undoStack.popLast() else { return }
-        edits = previous
-        refresh()
+        guard canPerform(.undo) else { return }
+        document.undoManager.undo()
+    }
+
+    private func redo() {
+        guard canPerform(.redo) else { return }
+        document.undoManager.redo()
     }
 
     @objc private func closeWithoutChanges() {
@@ -554,7 +563,8 @@ enum EditorAction {
         guard !finishing, finish != nil else { return false }
         switch action {
         case .done, .copy, .save: return true
-        case .undo: return !undoStack.isEmpty
+        case .undo: return document.undoManager.canUndo
+        case .redo: return document.undoManager.canRedo
         case .closeUnchanged: return unchanged
         }
     }
@@ -565,6 +575,7 @@ enum EditorAction {
         case .copy: copyRendered()
         case .save: saveRendered()
         case .undo: undo()
+        case .redo: redo()
         case .closeUnchanged: closeWithoutChanges()
         }
     }
@@ -596,6 +607,11 @@ enum EditorAction {
             window.contentView = nil
             canvas.rendered = nil
         }
+    }
+
+    /// Edit › Undo and Redo, ⌘Z and ⌘⇧Z, and label typing all use the edits' undo manager.
+    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
+        document.undoManager
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
