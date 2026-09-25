@@ -6,7 +6,7 @@
 
 **Phase:** 0 (O13 step 1)
 
-**Status:** resolved (see Comments for the `main` commit)
+**Status:** resolved (tested on `main` at `51a6277`)
 
 - [x] The Xcode project has no `FrisketCore` static-library target; the app depends on the package's `FrisketCore` product through a local package reference.
 - [x] GRDB is pinned only in the package manifest, and the project reads the root `Package.resolved` (one file, not two copies).

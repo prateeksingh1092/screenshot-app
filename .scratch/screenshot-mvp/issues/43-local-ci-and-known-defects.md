@@ -6,7 +6,7 @@
 
 **Phase:** 0
 
-**Status:** resolved (see Comments for the `main` commit)
+**Status:** resolved (tested on `main` at `1235289`)
 
 - [x] `scripts/ci.sh` runs the repository checks, `swift test` and the unsigned Xcode build, and exits non-zero on any failure.
 - [x] A tracked pre-push hook runs `ci.sh`, and the build doc says how to enable it.
