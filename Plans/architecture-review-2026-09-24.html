@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Architecture review for Frisket (screenshot-app)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+</script>
+<style>
+  .seam { border-style: dashed; }
+  .deep { background: linear-gradient(135deg, #0f172a, #1e293b); color: #e2e8f0; }
+  .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+  .mermaid { min-height: 260px; }
+</style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-6xl mx-auto px-6 py-12 space-y-12">
+
+<header class="space-y-3">
+  <h1 class="font-serif text-4xl">Frisket: deepening opportunities</h1>
+  <p class="text-sm text-slate-500">screenshot-app @ 73be4ce · 2026-09-24 · checked against <span class="font-mono">Plans/dreamy-giggling-barto.md</span></p>
+  <div class="flex flex-wrap gap-4 text-xs text-slate-600">
+    <span class="inline-flex items-center gap-2"><span class="w-5 h-4 border border-slate-500 inline-block"></span>module</span>
+    <span class="inline-flex items-center gap-2"><span class="w-5 h-0 border-t-2 border-dashed border-slate-500 inline-block"></span>seam</span>
+    <span class="inline-flex items-center gap-2"><span class="w-5 h-0 border-t-2 border-red-600 inline-block"></span>leakage</span>
+    <span class="inline-flex items-center gap-2"><span class="w-5 h-4 deep inline-block rounded-sm"></span>deep module</span>
+  </div>
+  <p class="text-xs text-slate-500">Every red loop below was run on the throwaway branch <span class="font-mono">diagnose/red-loops</span>, in the <span class="font-mono">/tmp/frisket-diagnose</span> worktree.</p>
+</header>
+
+<section id="candidates" class="space-y-10">
+
+<!-- 1 -->
+<article id="c1" class="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
+  <h2 class="font-serif text-2xl">1 · One Capture renderer for preview and Finalized capture</h2>
+  <div class="flex gap-2 text-xs"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800">confirms O1; drops the D1 interim second path</span></div>
+  <pre class="font-mono text-sm text-slate-600">Sources/FrisketCore/DocumentRenderer.swift:20-86, 272-331
+Frisket/Adapters/PNGBitmapCodec.swift:38-103
+Sources/FrisketCore/EditorDocument.swift:140-155 (BitmapCodec)
+Sources/FrisketCore/StripPNGEncoder.swift · EditorProxy.swift
+Frisket/EditorWindow.swift:185, 353-365 · Frisket/CaptureSurfaces.swift:210-232</pre>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-1">Before: three render paths</div>
+<pre class="mermaid">flowchart LR
+  EW[Editor window] --> R1[DocumentRenderer.render<br/>2048-px proxy]
+  CO[Coordinator .done] --> BC[BitmapCodec.encode]
+  BC --> PC[PNGBitmapCodec.rows<br/>crop maths again]
+  PC --> FS[forEachStrip<br/>arrow/text ignore rowShift]
+  FS --> SE[StripPNGEncoder<br/>@_silgen_name zlib]
+  T[Test codecs] --> DX[protocol default extension]
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class FS,PC,DX leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-1">After: one interface, two calls</div>
+<pre class="mermaid">flowchart LR
+  EW[Editor window] --> CR
+  CO[Coordinator .done] --> CR
+  subgraph CR[Capture renderer · deep]
+    direction TB
+    I1["image(png, edits, maxPixelEdge)"]
+    I2["png(png, edits)"]
+    D["private draw(CGContext, scale)<br/>redaction pass · CoreText · vImage blur"]
+    I1 --> D
+    I2 --> D
+  end
+  classDef deep fill:#0f172a,color:#e2e8f0,stroke:#0f172a;
+  class CR deep
+</pre></div>
+  </div>
+  <p><b>Problem:</b> the preview and the saved image take different paths. The live D1 loop is red: arrow wrong from row 388, text repeated from row 303, blur from row 253, magnify from row 256.</p>
+  <p><b>Solution:</b> one Capture renderer module with two calls that share a private draw. Strip, whole-image and proxy scale become internal decisions.</p>
+  <ul class="list-disc ml-6 text-sm"><li>Locality: D1, D6, D18, D23 live in one module</li><li>Interface is the test surface: preview == downsampled output</li><li>Delete the pass-through BitmapCodec default extension</li><li>Delete StripPNGEncoder under the DA-6 cap</li></ul>
+  <div class="rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2">Needs DA-1 (allow CoreGraphics/CoreText/ImageIO in the core). ADR 0001 is unaffected.</div>
+</article>
+
+<!-- 2 -->
+<article id="c2" class="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
+  <h2 class="font-serif text-2xl">2 · Pending capture record, exposed as card status</h2>
+  <div class="flex gap-2 text-xs"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800">reshapes the Phase 4 state enum; replaces OutcomePresenter and ThumbnailStackPresenter</span></div>
+  <pre class="font-mono text-sm text-slate-600">Sources/FrisketCore/CaptureLifecycleCoordinator.swift:21-38, 195-537
+Frisket/CaptureSurfaces.swift:23, 96-131, 234-506
+Frisket/ThumbnailPanel.swift:6-17, 55-74, 301-324
+Sources/FrisketCore/ThumbnailStack.swift:126-196</pre>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-2">Before: one capture's state in three places</div>
+      <div class="space-y-2 text-xs">
+        <div class="border border-slate-400 rounded p-2"><span class="lbl">Coordinator</span><div class="mt-1 grid grid-cols-4 gap-1">
+          <span class="border px-1">images</span><span class="border px-1">revisions</span><span class="border px-1">finalized</span><span class="border px-1">delivered</span><span class="border px-1">inProgress</span><span class="border px-1">receipts</span><span class="border px-1">unfinished&shy;Redactions</span><span class="border px-1">+5 more</span></div></div>
+        <div class="border-2 border-red-500 rounded p-2 text-red-700"><span class="lbl">CaptureSurfaces</span> · 7 hand-written outcome→flag maps · arrivalOrder · screens · timers</div>
+        <div class="border border-slate-400 rounded p-2"><span class="lbl">ThumbnailModel</span> · 9 booleans (historyCommitted, dismissFailed, editingUnavailable …)</div>
+      </div></div>
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-2">After</div>
+      <div class="deep rounded-lg p-4 text-xs space-y-2"><div class="lbl text-slate-300">Capture lifecycle · deep</div>
+        <div class="font-mono">[CaptureID: PendingCapture] + settled</div>
+        <div class="text-slate-400">image · revision · arrival · display · commit · failures · receipt · pending redaction</div>
+        <div class="border-t border-dashed border-slate-500 pt-2 font-mono">thumbnails() → [CardStatus] + nextDueAt</div></div>
+      <div class="mt-2 border border-slate-400 rounded p-2 text-xs"><span class="lbl">CaptureSurfaces</span> · apply(status) · layout(fixed-size cards) · notice(for:)</div></div>
+  </div>
+  <p><b>Problem:</b> the core, the app and the card model each keep their own copy of a capture's state. That duplication is where D9, D10, D16 and the six drifted outcome mappings come from.</p>
+  <p><b>Solution:</b> keep one per-capture record in the core and expose it as card status. The app renders status and no longer re-derives it.</p>
+  <ul class="list-disc ml-6 text-sm"><li>Locality: invariants in one record</li><li>Leverage: existing thumbnails() tests cover the UI</li><li>Pruning becomes one removal</li><li>Delete arrivalOrder and screens shadow copies</li></ul>
+</article>
+
+<!-- 3 -->
+<article id="c3" class="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
+  <h2 class="font-serif text-2xl">3 · Scrolling capture assembler, tested through ingest</h2>
+  <div class="flex gap-2 text-xs"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800">confirms Phase 3; replaces "restore old stitcher tests"</span></div>
+  <pre class="font-mono text-sm text-slate-600">Sources/FrisketCore/Stitcher/{Stitcher.swift:45-89, ScrollingCaptureSession.swift:129-243, ScrollingCaptureStitcher.swift}
+Sources/FrisketCore/CaptureLifecycleCoordinator.swift:539-619 · Tests/FrisketCoreTests/Stitcher/StitcherTests.swift</pre>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-1">Before: tests and production take different paths</div>
+<pre class="mermaid">flowchart TB
+  CO[Coordinator loop<br/>6× release] --> SE[Session.ingest]
+  SE --> AP["Stitcher.append(expected: nil)<br/>first-zero search · 1/3 band trim"]
+  T[Stitcher tests] --> ST[Stitcher.stitch] --> AP2["append(expected: 80)<br/>search skipped"]
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class AP leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-1">After</div>
+<pre class="mermaid">flowchart TB
+  CO[Coordinator] --> SA
+  T[Round-trip tests<br/>uniform bands · flicks] --> SA
+  subgraph SA[Scrolling assembler · deep]
+    direction TB
+    IN["ingest(viewport) → preview | stop"]
+    FI["finish() → CaptureImage"]
+  end
+  classDef deep fill:#0f172a,color:#e2e8f0,stroke:#0f172a;
+  class SA deep
+</pre></div>
+  </div>
+  <p><b>Problem:</b> the tests reach the matcher through <span class="font-mono">stitch(expectedVerticalStep: 80)</span>, which skips the delta search. Production passes nil. The live loop at the <span class="font-mono">ingest</span> seam is red: 1121/1130 rows steady, 1066 mid-step, 465 flick.</p>
+  <p><b>Solution:</b> merge session and matcher into one assembler whose interface is <span class="font-mono">ingest</span>/<span class="font-mono">finish</span>, and delete <span class="font-mono">Stitcher.stitch</span> and the Snapzy-era fields.</p>
+  <ul class="list-disc ml-6 text-sm"><li>Interface is the test surface</li><li>One pixel-cap check</li><li>Vision stays internal</li><li>Delete Stitcher.stitch (no production caller)</li></ul>
+</article>
+
+<!-- 4 -->
+<article id="c4" class="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
+  <h2 class="font-serif text-2xl">4 · Drag export commits when the promise is written</h2>
+  <div class="flex gap-2 text-xs"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">mock (AppKit edge)</span><span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800">confirms O6 / DA-3; new: replace the fake</span></div>
+  <pre class="font-mono text-sm text-slate-600">Sources/FrisketCore/StorageAdapter/DragStagingLifetime.swift · CaptureDelivery.swift:54-79
+Sources/FrisketCore/CaptureLifecycleCoordinator.swift:389-456, 653-658
+Frisket/Adapters/FilePromiseDragAdapter.swift:55-178 · Tests/FrisketCoreTests/DragHandoffTests.swift:30-73</pre>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-2">Before: five steps, two events</div>
+      <div class="space-y-1 text-xs">
+        <div class="h-8 border-l-4 border-slate-400 pl-2 flex items-center">finalize (commit before the drag outcome)</div>
+        <div class="h-8 border-l-4 border-red-500 pl-2 flex items-center text-red-700">stage (fsynced copy, never read)</div>
+        <div class="h-8 border-l-4 border-slate-400 pl-2 flex items-center">deliver(events)</div>
+        <div class="h-8 border-l-4 border-slate-400 pl-2 flex items-center">pump DragCopyEvents</div>
+        <div class="h-8 border-l-4 border-red-500 pl-2 flex items-center text-red-700">remove only when both events fire (a cancel never fires them)</div>
+      </div></div>
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-2">After</div>
+      <div class="deep rounded-lg p-4 text-xs space-y-1"><div class="lbl text-slate-300">Delivery · deep</div><div class="font-mono">deliver(.drag) → handoff → .copied → finalize</div><div class="text-slate-400">nothing on disk before a destination accepts</div></div></div>
+  </div>
+  <p><b>Problem:</b> the real adapter and the fake disagree on a cancelled drag. The live loop is red: the staged PNG stays after the cancel, and it also survives Delete.</p>
+  <p><b>Solution:</b> route <span class="font-mono">.drag</span> through <span class="font-mono">deliver()</span> with commit-on-success, and delete the staging, <span class="font-mono">DragCopyEvents</span> and the two drag commit points.</p>
+  <ul class="list-disc ml-6 text-sm"><li>No Pending capture bytes on disk</li><li>One delivery path</li><li>Fake replaced: tests match production</li></ul>
+</article>
+
+<!-- 5 -->
+<article id="c5" class="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
+  <h2 class="font-serif text-2xl">5 · History read model, off the lifecycle actor</h2>
+  <div class="flex gap-2 text-xs"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">local-substitutable</span><span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800">confirms the History performance fix; new: delete the Middle Man</span></div>
+  <pre class="font-mono text-sm text-slate-600">Frisket/HistoryWindow.swift:26-54 · Sources/FrisketCore/CaptureCommands.swift:97-202
+Sources/FrisketCore/CaptureLifecycleCoordinator.swift:70-116 · StorageAdapter/HistoryStore.swift:304-362</pre>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-2">Before: 3 hops × (n+1), O(n²)</div>
+      <div class="space-y-1 text-xs"><div class="h-8 border-l-4 border-slate-300 pl-2 flex items-center">History window model</div><div class="h-8 border-l-4 border-slate-300 pl-2 flex items-center">CaptureCommandLayer · 16 of 17 methods forward verbatim</div><div class="h-8 border-l-4 border-slate-300 pl-2 flex items-center">Coordinator · 8 History pass-throughs</div><div class="h-8 border-l-4 border-red-500 pl-2 flex items-center text-red-700">HistoryStore.entries(): a full read per thumbnail</div></div></div>
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-2">After</div>
+      <div class="deep rounded-lg p-4 text-xs"><div class="lbl text-slate-300">History · deep</div><div class="font-mono mt-1">rows() → [item + thumbnail] (one query)</div></div>
+      <div class="mt-2 text-xs border border-slate-400 rounded p-2">Writes stay on <span class="font-mono">CaptureLifecycle.execute</span></div></div>
+  </div>
+  <p><b>Problem:</b> the History window reload makes n+1 full reads through three actor hops, and it queues behind Done encodes and stitching. The live loop also found D19: row actions fail after "Try Again".</p>
+  <p><b>Solution:</b> one <span class="font-mono">HistoryStore.rows()</span> read call for the window; delete <span class="font-mono">CaptureCommandLayer</span> and the History pass-throughs; make <span class="font-mono">HistoryEntry</span> internal.</p>
+  <ul class="list-disc ml-6 text-sm"><li>O(n) reload</li><li>No file paths leak across the seam</li><li>Smaller lifecycle interface</li></ul>
+  <div class="rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2">The plan is right not to split HistoryStore into five modules; that would create shallow modules. Gate it on DA-4/DA-11.</div>
+</article>
+
+<!-- 6 -->
+<article id="c6" class="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
+  <h2 class="font-serif text-2xl">6 · Window candidates built from raw listings inside the policy</h2>
+  <div class="flex gap-2 text-xs"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong (small)</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process policy · mock listing</span><span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800">confirms D2; moves the fix</span></div>
+  <pre class="font-mono text-sm text-slate-600">Sources/FrisketCore/WindowSelection.swift:27-46 · Frisket/Adapters/WindowScreenCapturePlatform.swift:40-67, 86-145</pre>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-1">Before</div>
+<pre class="mermaid">flowchart LR
+  SCK[SCShareableContent] --> J["Platform.loadWindows<br/>SCK × CG join (untested)"]
+  CG[CGWindowList] --> J
+  J -- "bundle '' , layer ignored" --> WS["WindowSelection<br/>rejects nil only"]
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class J leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-1">After</div>
+<pre class="mermaid">flowchart LR
+  SCK[SCShareableContent] --> F[Platform.fetchRows]
+  CG[CGWindowList] --> F
+  F --> WS
+  subgraph WS["Window selection · deep"]
+    direction TB
+    R["init(rows:) join + filter<br/>empty bundle · level ceiling · min size · Dock"]
+  end
+  classDef deep fill:#0f172a,color:#e2e8f0,stroke:#0f172a;
+  class WS deep
+</pre></div>
+  </div>
+  <p><b>Problem:</b> the policy is tested with nil bundle IDs, which production never produces. The live loop is red: the Cursor window (id 4) is picked.</p>
+  <p><b>Solution:</b> <span class="font-mono">WindowSelection(rows:)</span> owns the join and the filter, and recorded rows become fixtures.</p>
+  <ul class="list-disc ml-6 text-sm"><li>Bug and test in one module</li><li>Real listings as fixtures</li><li>Floating-window rule kept</li></ul>
+</article>
+
+<!-- 7 -->
+<article id="c7" class="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
+  <h2 class="font-serif text-2xl">7 · One region request for area, full-screen and scrolling capture</h2>
+  <div class="flex gap-2 text-xs"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">mock behind ScreenCaptureContent + in-process maths</span><span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800">replaces the plan's "ScreenGeometry helper"</span></div>
+  <pre class="font-mono text-sm text-slate-600">Frisket/Adapters/{AreaCaptureSource.swift:24-92, ManualScrollingCapture.swift:6-100, ScreenCapturePlatform.swift:8-168, WindowScreenCapturePlatform.swift:108-143}
+Frisket/FrisketApp.swift:95-97</pre>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-2">Before: interface as wide as the implementation</div>
+      <div class="flex items-end gap-6 h-40"><div class="flex flex-col items-center gap-1"><div class="w-16 bg-slate-300" style="height:120px"></div><span class="lbl">interface<br/>7 ordered calls</span></div><div class="flex flex-col items-center gap-1"><div class="w-16 bg-slate-500" style="height:140px"></div><span class="lbl">implementation</span></div></div>
+      <p class="text-xs mt-2">prefetch → prepare → discard (empty) → select → hide → capture → finish; <span class="font-mono">captureDisplayID</span> side channels</p></div>
+    <div class="rounded-lg border border-slate-200 p-3"><div class="lbl text-slate-500 mb-2">After</div>
+      <div class="flex items-end gap-6 h-40"><div class="flex flex-col items-center gap-1"><div class="w-16 bg-slate-300" style="height:30px"></div><span class="lbl">select · capture</span></div><div class="flex flex-col items-center gap-1"><div class="w-16 deep" style="height:140px"></div><span class="lbl">region capture</span></div></div>
+      <p class="text-xs mt-2">The core computes <span class="font-mono">RegionRequest</span>; <span class="font-mono">CaptureImage</span> carries <span class="font-mono">displayID</span></p></div>
+  </div>
+  <p><b>Problem:</b> three protocols over one adapter expose a seven-step ordering. The selection→pixel maths is copied into scrolling capture, and the display ID comes back through side channels.</p>
+  <p><b>Solution:</b> one Region capture module (<span class="font-mono">select</span>/<span class="font-mono">capture</span>) that caches shareable content per environment generation.</p>
+  <ul class="list-disc ml-6 text-sm"><li>Ordering hidden behind the interface</li><li>One geometry</li><li>No side channels</li></ul>
+</article>
+
+</section>
+
+<section id="plan-deltas" class="rounded-xl border border-slate-200 bg-white p-6 space-y-2">
+  <h2 class="font-serif text-2xl">Plan items to change (deletion test applied)</h2>
+  <ul class="list-disc ml-6 text-sm space-y-1">
+    <li>Phase 1 D1 interim and Gate B fallback: do not add a second render path (#1).</li>
+    <li>Phase 4 state enum: drop <i>editing</i> and <i>delivering</i>; use the per-capture record (#2).</li>
+    <li>Reduce <span class="font-mono">OutcomePresenter</span> to <span class="font-mono">notice(for:)</span>; delete <span class="font-mono">ThumbnailStackPresenter</span> (#2).</li>
+    <li>Do not split <span class="font-mono">EditorSessions</span>/<span class="font-mono">CaptureLauncher</span> out of CaptureSurfaces before #2. They would share <span class="font-mono">panels</span> and each would be shallow.</li>
+    <li>Replace the "ScreenGeometry helper" with <span class="font-mono">RegionRequest</span> + <span class="font-mono">displayID</span> (#7).</li>
+    <li>Phase 0 D3: don't restore the old stitcher tests; test the round trip through <span class="font-mono">ingest</span> (#3).</li>
+    <li>Phase 0 D7: replace <span class="font-mono">RecordingDragHandoff</span> (#4).</li>
+    <li>Phase 4: delete <span class="font-mono">CaptureCommandLayer</span> and the History pass-throughs (#5). <span class="font-mono">EditorLeave.command(for:)</span> has no production caller.</li>
+  </ul>
+</section>
+
+<section id="top-recommendation" class="rounded-2xl deep p-8 space-y-2">
+  <div class="lbl text-slate-400">Top recommendation</div>
+  <h2 class="font-serif text-3xl"><a href="#c1" class="underline decoration-dashed">One Capture renderer for preview and Finalized capture</a></h2>
+  <p class="text-slate-300">It removes the Critical D1 class (saved ≠ seen) and puts "preview at scale s equals the downsampled output" behind a single interface. The pending capture record (#2) comes next, and makes both planned presenters unnecessary.</p>
+</section>
+
+</main>
+</body>
+</html>
