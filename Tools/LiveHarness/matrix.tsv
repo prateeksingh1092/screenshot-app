@@ -10,7 +10,7 @@ full	-	pass	Full-screen capture gives the exact display (pattern --verify-full)
 scroll-steady	D3	xfail	Four steady wheel steps stitch the scroll page exactly (meter blocks)
 scroll-flick	D3	xfail	A 40-line flick stitches exactly or shows Slow down; never a short or wrong image
 scroll-keys	D11	pass	Page Down scrolls the page while a scrolling capture runs
-editor-arrow-label	D1	xfail	400×500 capture: after an arrow at row 450 and a label at row 40, Copy has ink in both bands and nowhere between
+editor-arrow-label	D1	pass	400×500 capture: after an arrow at row 450 and a label at row 40, Copy has ink in both bands and nowhere between
 editor-label-text	D6	xfail	A label typed as v2.1 $4.99 -10% reads back exactly through Copy Text
 editor-redaction	-	pass	Solid redaction over the red quadrant, Blur and Magnify on top: pattern --verify-redacted
 editor-crop	-	pass	Crop to the middle half: the copied image has the crop's size
