@@ -18,7 +18,7 @@ editor-finish-visible	D5	xfail	At the default editor width Done, Copy and Save a
 copytext-text	-	pass	Copy Text on the pattern caption puts its text on the clipboard
 copytext-none	D8	pass	Copy Text on a capture with no text leaves the clipboard unchanged, shows no alert, and says "No text found" on the Thumbnail
 stack	D9	xfail	Two pending Thumbnails don't overlap
-focus-latest	D12	xfail	After ⌘⇧2, the Thumbnail's C key copies (keys reach the Thumbnail, not the frontmost app)
+focus-latest	D12	pass	After ⌘⇧2, the Thumbnail's C key copies (keys reach the Thumbnail, not the frontmost app)
 history-copy	-	pass	History row Copy puts the newest capture on the clipboard (pattern --verify)
 history-save	D17	xfail	History row Save writes one export whose name carries the date
 history-delete	D10	pass	History Delete with the capture's Thumbnail still open asks first, then succeeds

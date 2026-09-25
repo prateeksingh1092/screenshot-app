@@ -15,6 +15,8 @@ import FrisketCore
     @Published var historyCommitted = false
     /// The last Copy Text result, shown on the status line instead of a modal (D8, DA-5).
     @Published var textNotice = ""
+    /// The Thumbnail has keyboard focus, so it draws a visible focus ring (D12).
+    @Published var keyFocused = false
     @Published var copyFocusRequest = UUID()
 }
 
@@ -48,6 +50,13 @@ private struct ThumbnailCard: View {
         }
         .padding(12)
         .frame(width: 288)
+        .overlay {
+            if model.keyFocused {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                    .accessibilityHidden(true)
+            }
+        }
         .onChange(of: status) { _, new in
             if !new.isEmpty { announce(new) }
         }
@@ -142,6 +151,7 @@ private final class ThumbnailCardPanel: NSPanel {
     var keyCommand: ((ThumbnailKeyCommand) -> Void)?
     var onBecomeKey: (() -> Void)?
     var onResignKey: (() -> Void)?
+    var onKeyFocusChange: ((Bool) -> Void)?
     private var swipeDistance = CGSize.zero
 
     override var canBecomeKey: Bool { true }
@@ -149,11 +159,13 @@ private final class ThumbnailCardPanel: NSPanel {
 
     override func becomeKey() {
         super.becomeKey()
+        onKeyFocusChange?(true)
         onBecomeKey?()
     }
 
     override func resignKey() {
         super.resignKey()
+        onKeyFocusChange?(false)
         onResignKey?()
     }
 
@@ -228,9 +240,13 @@ private final class ThumbnailCardPanel: NSPanel {
         self.revision = revision
         self.displayID = displayID
         panel = ThumbnailCardPanel(contentRect: CGRect(x: 0, y: 0, width: 320, height: 360),
-                                   styleMask: [.borderless], backing: .buffered, defer: false)
+                                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        // D12: a non-activating panel can take keyboard focus from ⌘⇧2 while another app stays
+        // active, so C, S, E, T, Delete and Esc reach the Thumbnail, not the frontmost app.
+        panel.becomesKeyOnlyIfNeeded = false
         panel.closeAction = actions.close
         panel.swipe = actions.swipe
+        panel.onKeyFocusChange = { [weak model] focused in model?.keyFocused = focused }
         panel.keyCommand = { [weak self] command in
             self?.onBecomeKey?()
             switch command {
