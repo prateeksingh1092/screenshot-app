@@ -46,6 +46,10 @@ Extraction of text from a capture so that the text can be copied or otherwise us
 The small floating preview of one capture, shown right after capturing or editing, from which the capture is copied, saved, dragged, edited, or dismissed.
 _Avoid_: Card, Quick Access Overlay, popup
 
+**Notice**:
+Something Frisket tells the user without blocking: shown on the notice line (or, for a failure a Thumbnail can retry, on its status line) and announced to VoiceOver. Only a destructive or irreversible choice (a **Confirmation**) is modal (DA-5).
+_Avoid_: Alert, dialog, popup
+
 **Pending capture**:
 A capture that exists only in memory, shown as a thumbnail or open in the editor, and not yet finalized or deleted. Nothing about it reaches storage before an authorized finalization request.
 _Avoid_: Draft, unsaved capture

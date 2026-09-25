@@ -21,7 +21,7 @@ private func runCheck(_ arguments: [String]) throws -> (status: Int32, output: S
 }
 
 @Test(arguments: ["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory", "input-monitoring", "app-sources",
-                  "network", "silgen"])
+                  "network", "silgen", "modals"])
 func repositorySatisfiesStaticChecks(check: String) throws {
     let result = try runCheck(["--root", repository.path, "--check", check])
     #expect(result.status == 0, Comment(rawValue: result.output))
@@ -37,7 +37,7 @@ func repositorySatisfiesStaticChecks(check: String) throws {
     "diagnostics-rejected", "diagnostics-accepted", "diagnostics-collection-rejected",
     "capture-memory-rejected", "capture-memory-accepted", "capture-memory-render-accepted", "capture-memory-render-url-rejected", "capture-finalization-rejected", "capture-finalization-accepted",
     "capture-latency-stdout-accepted", "capture-latency-stdout-rejected",
-    "network-rejected", "network-accepted", "silgen-rejected", "silgen-accepted", "silgen-strict-rejected"
+    "network-rejected", "network-accepted", "modals-rejected", "modals-accepted", "silgen-rejected", "silgen-accepted", "silgen-strict-rejected"
 ])
 func staticCheckFixturesHaveExpectedOutcomes(fixture: String) throws {
     let path = repository.appendingPathComponent("Checks/Fixtures/\(fixture).json")

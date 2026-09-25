@@ -33,7 +33,7 @@ if [ "${1:-}" = "--defects" ]; then
 fi
 
 echo "== repository checks"
-for check in dependencies imports identity provenance diagnostics capture-memory input-monitoring app-sources network silgen; do
+for check in dependencies imports identity provenance diagnostics capture-memory input-monitoring app-sources network silgen modals; do
   /usr/bin/python3 -B Checks/check_repository.py --root "$root" --check "$check" || {
     echo "ci: repository check '$check' failed" >&2
     exit 1

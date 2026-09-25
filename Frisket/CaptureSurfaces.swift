@@ -6,7 +6,8 @@ import FrisketCore
     private let commands: CaptureLifecycleCoordinator
     private let dragAdapter: FilePromiseDragAdapter
     private let latency: CaptureLatencyLog
-    private let notify: (String, String) -> Void
+    /// The notice line (DA-5): never a modal. A failure the Thumbnail shows on its status line is not repeated here.
+    private let notify: (Notice) -> Void
     private let refreshHistory: () async -> Void
     /// Recovery, onboarding, and an in-flight permission prompt. Return false to skip the capture.
     var canStart: () -> Bool = { true }
@@ -24,7 +25,7 @@ import FrisketCore
     var hasThumbnail: Bool { !panels.isEmpty }
 
     init(commands: CaptureLifecycleCoordinator, drag: FilePromiseDragAdapter, latency: CaptureLatencyLog,
-         notify: @escaping (String, String) -> Void,
+         notify: @escaping (Notice) -> Void,
          refreshHistory: @escaping () async -> Void) {
         self.commands = commands
         self.dragAdapter = drag
@@ -54,15 +55,10 @@ import FrisketCore
             switch result {
             case let .pending(revision):
                 await showThumbnail(revision)
-            case .captureFailed(.cancelled): break
             case let .permissionRequired(state):
                 permissionRequired?(state)
-            case let .captureFailed(.window(failure)):
-                notice(failure.title, failure.message)
-            case .captureFailed:
-                notice("Capture unavailable", "A disconnected display or an oversized capture can prevent capture. Try again with a smaller area.")
             default:
-                notice("Capture unavailable", "Copy or delete pending captures, then try again.")
+                notice(Notice.after(command, result))
             }
         }
     }
@@ -70,22 +66,45 @@ import FrisketCore
     /// Permission recovery stays with the application delegate.
     var permissionRequired: ((CapturePermissionState) -> Void)?
 
-    /// Blocks new captures and thumbnail actions before the quit task suspends.
-    func beginQuit() {
-        isTerminating = true
-        markThumbnailsBusy()
+    /// The overlay a capture command is waiting on. Quit closes it instead of refusing (ticket 76).
+    var cancelSelection: () -> Void = {}
+
+    /// Quit, decided by `QuitPlan` (story 99). It never refuses with a notice: only an open editor
+    /// holds it, through its own prompt. Returns false when a capture could not be added to History.
+    func quit(_ steps: [QuitStep]) async -> Bool {
+        isTerminating = true   // blocks new captures and Thumbnail actions
+        for step in steps {
+            switch step {
+            case .offerEditorsToLeave:
+                isTerminating = false
+                offerEditorsToLeave()
+                return false
+            case .cancelCapture:
+                cancelSelection()
+                // A capture that already has its pixels may still arrive; a stuck one must not hold Quit.
+                await waitUntil(seconds: 2) { !self.isCapturing }
+            case .waitForThumbnailCommands:
+                await waitUntil(seconds: 10) { !self.hasBusyThumbnail }
+            case .finalizeThumbnails:
+                markThumbnailsBusy()
+                guard await applyQuit(await commands.handleSystemEvent(.quit)) else { return false }
+            case .quit:
+                return true
+            }
+        }
+        return true
     }
 
-    /// Finalizes pending thumbnails for quit. Returns false when a commit failed.
-    func finishQuit() async -> Bool {
-        await applyQuit(await commands.handleSystemEvent(.quit))
+    private func waitUntil(seconds: Double, _ done: () -> Bool) async {
+        let deadline = ContinuousClock.now + .seconds(seconds)
+        while !done(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
     }
 
     /// Quit finalization. Returns false when a commit failed and quit should cancel.
     private func applyQuit(_ results: [CaptureCommandOutcome]) async -> Bool {
         await refreshHistory()
         for result in results {
-            if case .finalized(_, let commit) = result { showOversizedNotice(commit) }
+            if case .finalized(let revision, _) = result { notice(Notice.after(.dismiss(revision), result)) }
             if case .finalized(let revision, .committed) = result {
                 remove(revision.captureID)
                 continue
@@ -95,6 +114,7 @@ import FrisketCore
             }
             for panel in panels.values { panel.model.busy = false }
             isTerminating = false
+            notice(.quitNotFinished)
             return false
         }
         return true
@@ -139,7 +159,7 @@ import FrisketCore
         Task { await rehomeThumbnails() }
     }
 
-    private func notice(_ title: String, _ message: String) { notify(title, message) }
+    private func notice(_ notice: Notice?) { if let notice { notify(notice) } }
 
     private func showThumbnail(_ revision: CaptureRevision) async {
         // The capture names its display (ticket 75); an unknown or unplugged one falls back to the main screen.
@@ -147,7 +167,7 @@ import FrisketCore
               let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480),
               let screen = screen(for: image.displayID) ?? NSScreen.main else {
             _ = await commands.execute(.discard(revision.captureID))
-            notice("Preview unavailable", "The capture could not be displayed and was deleted.")
+            notice(.previewUnavailable)
             return
         }
         let id = revision.captureID
@@ -209,7 +229,7 @@ import FrisketCore
                                             scale: Double(screen?.backingScaleFactor ?? 1), screen: screen,
                                             finish: { [weak self] leave in await self?.finishEditing(id, leave) ?? false }) else {
                 panel.model.busy = false
-                notice("Editor unavailable", "This capture can't be edited. Copy, dismiss, or delete it instead.")
+                notice(.editorUnavailable)
                 return
             }
             editor.onFileDrag = { [weak self] view, event in self?.startEditorDrag(id, from: view, event: event) }
@@ -223,16 +243,16 @@ import FrisketCore
         switch leave {
         case .finalize(nil):
             let outcome = await commands.execute(.dismiss(panel.revision))
+            notice(Notice.after(.dismiss(panel.revision), outcome))
             if case .finalized(_, let commit) = outcome {
                 storeEditor(nil, for: id)
-                showOversizedNotice(commit)
                 if commit == .committed { remove(id); return true }
                 panel.model.busy = false
                 panel.model.dismissFailed = true
                 return true
             }
             panel.model.busy = false
-            notice("Could not keep the capture", "History did not accept this capture. Copy or Save it, then try again.")
+            if case .rejected = outcome {} else { notice(.captureNotKept) }
             return false
         case .delete:
             _ = await commands.execute(.discard(id))
@@ -242,12 +262,14 @@ import FrisketCore
         case .finalize(.some), .deliver:
             let delivery: EditorDelivery? = if case let .deliver(_, kind) = leave { kind } else { nil }
             // An editor drag renders the edits but commits nothing; only an accepted drop finalizes it (DA-3).
-            let revision: CaptureRevision, commit: CommitOutcome?, clipboardFailure: ClipboardFailure?
-            switch await commands.execute(leave.command(for: panel.revision)) {
-            case let .edited(edited, committed, failure): (revision, commit, clipboardFailure) = (edited, committed, failure)
-            case let .rendered(rendered, failure): (revision, commit, clipboardFailure) = (rendered, nil, failure)
+            let revision: CaptureRevision, commit: CommitOutcome?
+            let command = leave.command(for: panel.revision)
+            let finished = await commands.execute(command)
+            switch finished {
+            case let .edited(edited, committed, _): (revision, commit) = (edited, committed)
+            case let .rendered(rendered, _): (revision, commit) = (rendered, nil)
             default:
-                notice("Could not finish editing", "Your edits are still open. Done could not prepare the redacted result. Press Done again to finish editing.")
+                notice(Notice.after(command, finished) ?? .editNotFinished)
                 return false
             }
             storeEditor(nil, for: id)
@@ -255,7 +277,7 @@ import FrisketCore
                   let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480) else {
                 remove(id)
                 if case .finalized(_, .committed) = await commands.execute(.dismiss(revision)) { return true }
-                notice("Preview unavailable", "The redacted capture couldn't be shown or kept in History.")
+                notice(.editedPreviewUnavailable)
                 return true
             }
             panel.close()
@@ -267,19 +289,13 @@ import FrisketCore
                 if case .save(let outcome) = delivered, case .failed = outcome.delivery { refreshed.model.saveFailed = true }
                 if case .rejected = delivered, delivery == .copy { refreshed.model.copyFailed = true }
                 if case .rejected = delivered, delivery == .save { refreshed.model.saveFailed = true }
-                if case .drag(let outcome) = delivered {
-                    if outcome.delivery != .copied { refreshed.model.dragFailed = true }
-                    else if case .notCommitted = outcome.commit {
-                        notice("Could not add to History", "The capture was dragged out, but could not be added to History.")
-                    }
-                }
+                if case .drag(let outcome) = delivered, outcome.delivery != .copied { refreshed.model.dragFailed = true }
+                notice(Notice.after(delivery.command(for: revision), delivered))
                 if case .rejected = delivered, delivery == .drag { refreshed.model.dragFailed = true }
             }
             panels[id] = refreshed
             await settleThumbnails()   // applies the core's status to the new card
-            if clipboardFailure != nil {
-                notice("Could not replace the earlier copy", "The clipboard may still contain the original capture. Use Copy on the redacted thumbnail to replace it.")
-            }
+            notice(Notice.after(command, finished))   // an edited capture over the History limit, or an earlier copy left in place
             return true
         }
     }
@@ -315,26 +331,25 @@ import FrisketCore
         guard !isTerminating, let panel = panels[id], !panel.model.busy else { return }
         panel.model.busy = true
         Task {
-            let result = await commands.execute(panel.model.copyFailed ? .retryCopy(panel.revision) : .copy(panel.revision))
+            let command: CaptureCommand = panel.model.copyFailed ? .retryCopy(panel.revision) : .copy(panel.revision)
+            let result = await commands.execute(command)
             defer { panel.model.busy = false }
             guard case .copy(let outcome) = result else {
                 panel.model.copyFailed = true
                 return
             }
             await refreshHistory()
-            showOversizedNotice(outcome.commit)
+            notice(Notice.after(command, result))
             await settleThumbnails()
             if case .copied = outcome.delivery {
                 if outcome.commit == .notCommitted(.recoveryRequired) {
-                    notice("History needs recovery", "The capture was copied, but History could not finish keeping it. This capture cannot be edited.")
                     remove(id)
                 } else if outcome.commit == .notCommitted(.captureExceedsHistoryLimit) {
                     remove(id)
                 } else if case .notCommitted = outcome.commit {
                     panel.model.copiedWhilePending = true
                     panel.model.copyFailed = false
-                    panel.model.dismissFailed = true
-                    notice("Could not add to History", "The capture was copied. You can still edit it, retry Close, or delete it.")
+                    panel.model.dismissFailed = true   // the status line says it (DA-5)
                 } else {
                     remove(id)
                 }
@@ -369,9 +384,7 @@ import FrisketCore
                 return
             }
             if case .copied = outcome.delivery {
-                if case .notCommitted = outcome.commit {
-                    notice("Could not add to History", "The capture was dragged out, but could not be added to History.")
-                }
+                notice(Notice.after(.drag(panel.revision, .copy), result))
                 remove(id)
             } else {
                 await settleThumbnails()
@@ -385,24 +398,19 @@ import FrisketCore
         panel.model.busy = true
         Task {
             defer { panel.model.busy = false }
-            let result = await commands.execute(panel.model.saveFailed ? .retrySave(panel.revision) : .save(panel.revision))
+            let command: CaptureCommand = panel.model.saveFailed ? .retrySave(panel.revision) : .save(panel.revision)
+            let result = await commands.execute(command)
             guard case .save(let outcome) = result else {
                 panel.model.saveFailed = true
                 return
             }
             await refreshHistory()
-            showOversizedNotice(outcome.commit)
+            notice(Notice.after(command, result))
             if case .saved = outcome.delivery {
-                if case .notCommitted(let reason) = outcome.commit, reason != .captureExceedsHistoryLimit {
-                    notice("Could not add to History", "The PNG was saved to the export folder, but could not be added to History.")
-                }
                 remove(id)
             } else {
                 await settleThumbnails()
-                panel.model.saveFailed = true
-                notice("Save failed", panel.model.historyCommitted
-                    ? "The capture is kept in History. Check the export folder in Settings, then Retry Save or Close."
-                    : "The capture could not be saved or kept in History. Check the export folder in Settings, then Retry Save or Close.")
+                panel.model.saveFailed = true   // the status line says what failed and offers Retry Save (DA-5)
             }
         }
     }
@@ -412,10 +420,12 @@ import FrisketCore
         guard !isTerminating, let panel = panels[id], !panel.model.busy else { return }
         panel.model.busy = true
         Task {
-            switch await commands.execute(.exitThumbnail(panel.revision, exit)) {
+            let command = CaptureCommand.exitThumbnail(panel.revision, exit)
+            let result = await commands.execute(command)
+            switch result {
             case .finalized(_, let commit):
                 await refreshHistory()
-                showOversizedNotice(commit)
+                notice(Notice.after(command, result))
                 if commit == .committed {
                     panel.showKeptInHistory()
                     try? await Task.sleep(for: .seconds(1.2))
@@ -525,11 +535,5 @@ import FrisketCore
     private func rehomeThumbnails() async {
         _ = await commands.handleSystemEvent(.displaysChanged(remaining: connectedDisplayIDs()))
         await settleThumbnails()
-    }
-
-    private func showOversizedNotice(_ commit: CommitOutcome) {
-        if commit == .notCommitted(.captureExceedsHistoryLimit) {
-            notice("Capture exceeds History size limit", "This capture could not be kept in History. Copy and Save remain available. Increase the size limit in Settings to keep larger captures.")
-        }
     }
 }
