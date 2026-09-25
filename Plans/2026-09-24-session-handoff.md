@@ -1,4 +1,22 @@
-> **Next session starts here:** run the to-tickets skill on `Plans/dreamy-giggling-barto.md` (phases) plus spec stories 82–101. Then do Phase 0. Make and record all technical decisions yourself (decision 57).
+> **Next session starts here:** Phase 0 is done and stopped at its gate (see "Phase 0 results" below). Wait for Prateek to approve Phase 1. Then work the Phase 1 tickets (49–64) from the frontier. Before ticket 64, and before 65–68 and 70, stop and ask Prateek to switch to xhigh effort (decision 58). The first live-matrix run (ticket 48) waits until Prateek says he is away.
+
+## Phase 0 results (2026-09-24, second session)
+
+- **Tickets:** 42–83 exist (decision 58). 42–47 are resolved. 48 is merged but waits for its first live run.
+- **`main` at `5f891e4`:** `scripts/ci.sh` is green: 320 tests in 52 suites with 101 known issues, the unsigned build succeeds, and the harness compiles.
+- **Red defect tests:** `ci.sh --defects` lists 27 known-defect tests, all red for their stated reason: D1, D2, D3, D6, D7, D8, D10, D14, D18, D19, D20, D21, D22, D23 and D25.
+- **Still without a test:**
+  - D23's redaction half does not reproduce at integer downscales.
+  - D4, D5, D9, D11, D12, D13, D15, D16, D17 and D26 are app-layer defects with no package seam. They are live-matrix rows (ticket 48) and have not run yet.
+  - The window-mode exclusion and the D2 failure message also have no seam. They are listed in ticket 45.
+- **New findings:**
+  - D19 hits after every relaunch, not only after "Try Again" (ticket 58).
+  - D27: a transient History root lock made CI fail at random. It is ridden out by a 250 ms retry until ticket 78 deletes the lock.
+- **Process:**
+  - Tickets 44–48 ran as forks in parallel, and each fork used about 350–400k tokens. From now on, use fresh agents with a brief file, at most two at a time on this Mac.
+  - Run long builds in the background, with logs.
+  - Effort is high by default (decision 58).
+- **Build:** the app links the package's `FrisketCore`. Signing is in the untracked `Config/Signing.xcconfig`, which exists on this Mac. `core.hooksPath=.githooks` is set, so a push runs `ci.sh`.
 
 # Session handoff: 2026-09-24 (Claude Code, Opus 5.5)
 
