@@ -19,3 +19,14 @@ Rows, each verified through the clipboard, pixels or AX, never by eye:
 ### 2026-09-25: coordinator, created
 
 Prateek approved automating the rest of 83's by-hand checks. Claude Opus 5.5, Claude Code, medium effort.
+
+### 2026-09-25: implementer, report
+
+Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62).
+
+- `Tools/LiveHarness/matrix.tsv`: six rows, `history-restore`, `editor-undo-names`, `editor-mark-keyboard`, `editor-curved-arrow`, `editor-label-typed` and `editor-style-bar`, each `pass` with no defect.
+- `Tools/LiveHarness/beta-matrix.sh`: their `row_<id>` functions, built on the existing helpers, plus `undo_title` (the Undo button's tooltip, which uses the same `undoMenuItemTitle` as Edit › Undo), `pick` (sets a style-bar pop-up by AX and checks its value) and `inside_editor` (a control's frame lies inside the editor window).
+- `Tools/LiveHarness/drive.swift`: `drive menu PID TITLE` lists a main-menu menu's items, opening it first so AppKit validates titles such as "Undo Arrow".
+- `Tools/LiveHarness/README.md`: a note listing the new rows.
+
+Not run live (the coordinator runs `--live`); `--dry-run`, `bash -n` and `scripts/ci.sh` only. The criteria stay unticked until the first live run passes. Assumptions for that run are in the coordinator's report: the Edit menu of an accessory app may not open or validate by AX; AX presses on pop-ups; hidden style-bar controls; thin curved-arrow ink at 1×; 1× OCR of an 18 pt Box label. Twenty-eight rows may not fit one 9-minute run per display; use `--row` for the new ones if needed.

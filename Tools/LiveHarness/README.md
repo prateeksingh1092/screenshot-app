@@ -53,6 +53,14 @@ just created. Test captures stay in Frisket's History, as they did in the beta.
 lands with the Text tool, and the confirmation-button labels. The first `--live` run records each step in the row logs. Adjust the row functions from those logs, not
 from guesses.
 
+**Ticket 94 rows** (uncalibrated until their first `--live` run): `history-restore` (79),
+`editor-undo-names` (69), `editor-mark-keyboard` (84), `editor-curved-arrow` (85),
+`editor-label-typed` (86) and `editor-style-bar` (92). They check the clipboard, pixels and AX,
+never by eye. `editor-undo-names` reads Edit › Undo with `drive menu frisket Edit`, which opens
+the main menu's Edit menu to validate its titles and lists its items; Frisket is an accessory app
+with no visible menu bar, so opening can fail, and the row also reads the Undo button's tooltip.
+Style-bar pop-ups are set with the `pick` helper: an AX press on the pop-up, then on the menu item.
+
 ## Safety rails (in `drive`, not the caller)
 
 - **Keys:** `key`, `type`, `kdown` and `kup` refuse unless Frisket or `pattern` is frontmost. Global ⌘⇧ hot keys follow the same rule.

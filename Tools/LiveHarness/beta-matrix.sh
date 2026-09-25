@@ -542,6 +542,143 @@ row_drag_cancel() {
   [ "$(history_images)" = "$images" ] && [ "$(drag_staging)" = "$staged" ]
 }
 
+# ---------------------------------------------------------------- ticket 94: Restore and the editor features of 69, 84, 85, 86, 92
+# Uncalibrated: the first --live run confirms the labels and geometry; adjust from its logs.
+row_history_restore() {  # ticket 79
+  local m w h cw ch images ok=0
+  m=$(( 2 * (1 + $(date +%s) % 40) )); w=$(( 320 + 2 * m )); h=$(( 180 + 2 * m ))   # run-unique, as history-copy
+  pattern_up --show && capture_area $(( CX - w / 2 )) $(( CY - h / 2 )) $(( CX + w / 2 )) $(( CY + h / 2 )) \
+    && keep_card && wait_for 5 no_cards && history_newest || return 1
+  images=$(history_images)
+  drv axpress frisket "Restore selected History capture to a Thumbnail"
+  wait_for 6 card_present && wait_for 4 card_ready || { note "no Thumbnail after Restore"; return 1; }
+  "$H/drive" axwin frisket | tee -a "$log" | grep -q 'Capture kept in History' || { note "the Thumbnail is not named as finalized"; ok=1; }
+  "$H/drive" axfind frisket "Edit capture" >>"$log" 2>&1 && { note "the restored Thumbnail offers Edit"; ok=1; }
+  card_copy && clip_to history-restore || return 1
+  read -r cw ch <<<"$("$H/drive" size "$ev/history-restore.png")"
+  note "captured ${w}x${h} points at scale $DS; the restored Thumbnail copied ${cw}x${ch}"
+  [ "${cw:-0}" -eq $(( w * DS )) ] && [ "${ch:-0}" -eq $(( h * DS )) ] \
+    && "$H/pattern" --verify-full "$ev/history-restore.png" $(( w * DS )) $(( h * DS )) "$DS" >>"$log" 2>&1 || ok=1
+  close_cards
+  wait_for 5 no_cards || { note "the restored Thumbnail did not close"; ok=1; }
+  nap 0.5
+  note "History images before Restore=$images after Close=$(history_images)"
+  [ "$(history_images)" = "$images" ] || ok=1
+  return $ok
+}
+
+undo_title() { "$H/drive" axfind frisket "Undo last edit" 2>/dev/null | grep -o 'help="[^"(]*' | sed 's/^help="//; s/ *$//'; }   # the Undo button's tooltip
+row_editor_undo_names() {  # ticket 69
+  pattern_up --show && capture_pattern && open_editor || return 1
+  image_rect 320 180 || return 1
+  tool "Crop" && canvas_drag 0.25 0.25 0.75 0.75
+  image_rect 160 90 || return 1   # the canvas now shows the crop
+  tool "Arrow" && canvas_drag 0.15 0.5 0.85 0.5
+  local ok=0 first menu undone redone
+  first=$(undo_title)
+  menu=$("$H/drive" menu frisket Edit 2>&1); printf '%s\n' "$menu" >>"$log"
+  printf '%s' "$menu" | grep -q 'title="Undo Arrow"' || { note "Edit menu has no \"Undo Arrow\" item"; ok=1; }
+  key 6 cmd; nap 0.6; undone=$(undo_title)          # ⌘Z
+  key 6 cmd,shift; nap 0.6; redone=$(undo_title)    # ⌘⇧Z
+  note "Undo button: after Arrow \"$first\", after ⌘Z \"$undone\", after ⌘⇧Z \"$redone\""
+  [ "$first" = "Undo Arrow" ] && [ "$undone" = "Undo Crop" ] && [ "$redone" = "Undo Arrow" ] || ok=1
+  editor_copy && clip_to editor-undo-names || return 1
+  local cw ch ink
+  read -r cw ch <<<"$("$H/drive" size "$ev/editor-undo-names.png")"
+  ink=$("$H/meter" band "$ev/editor-undo-names.png" 0 "${ch:-0}")
+  note "copy ${cw}x${ch}, arrow ink $ink"
+  [ $(( cw - 160 * DS )) -ge -2 ] && [ $(( cw - 160 * DS )) -le 2 ] && [ $(( ch - 90 * DS )) -ge -2 ] && [ $(( ch - 90 * DS )) -le 2 ] \
+    && [ "${ink:-0}" -gt 0 ] || ok=1
+  return $ok
+}
+
+row_editor_mark_keyboard() {  # ticket 84; rows below are document points of the 320×180 capture
+  pattern_up --show && capture_pattern && open_editor || return 1
+  image_rect 320 180 || return 1
+  tool "Shape" || return 1
+  canvas_drag 0.1 0.2 0.3 0.4      # first Shape: rows 36–72
+  canvas_drag 0.6 0.65 0.9 0.9     # second Shape: rows 117–162
+  drv axfocus frisket "Capture canvas"
+  key 48; nap 0.3                  # Tab: the first mark in paint order
+  key 125 shift; nap 0.3; key 125 shift; nap 0.3   # ⇧↓ twice: 20 pt down, rows 56–92
+  key 48; nap 0.3; key 51; nap 0.5 # Tab to the second, Delete
+  editor_copy && clip_to editor-mark-keyboard || return 1
+  local f="$ev/editor-mark-keyboard.png" old new second
+  old=$("$H/meter" band "$f" $(( 26 * DS )) $(( 50 * DS )))       # the first Shape's old top edge
+  new=$("$H/meter" band "$f" $(( 86 * DS )) $(( 100 * DS )))      # its moved bottom edge
+  second=$("$H/meter" band "$f" $(( 108 * DS )) $(( 180 * DS )))  # the deleted second Shape
+  note "shape ink: old top=$old moved bottom=$new second=$second"
+  [ "$old" -eq 0 ] && [ "$new" -gt 0 ] && [ "$second" -eq 0 ]
+}
+
+pick() {  # pick POPUP ITEM TITLE: choose ITEM (its accessibility label) in a style-bar pop-up, which then reads TITLE
+  drv axpress frisket "$1"; nap 0.6
+  drv axpress frisket "$2"; nap 0.5
+  if "$H/drive" axfind frisket "$1" 2>/dev/null | tee -a "$log" | grep -q "value=\"$3\""; then return 0; fi
+  note "pop-up $1 does not read $3"
+  "$H/drive" axdump frisket 2>/dev/null | grep -q 'role="AXMenu"' && key 53   # close a menu left open
+  return 1
+}
+row_editor_curved_arrow() {  # ticket 85; rows are document points of the 320×180 capture
+  pattern_up --show && capture_pattern && open_editor || return 1
+  image_rect 320 180 || return 1
+  tool "Arrow" && pick "Arrow style" "Curved arrow" Curved || return 1
+  canvas_drag 0.15 0.45 0.85 0.45   # ends on row 81; a new Curved arrow bows up to row 36 (ArrowBend.newCurve)
+  canvas_click 0.5 0.2              # select it at its middle handle
+  canvas_drag 0.5 0.2 0.5 0.9       # drag the handle to row 162, below the ends
+  local marks
+  marks=$("$H/drive" axdump frisket 12 2>/dev/null | grep -c 'desc="Curved arrow')
+  editor_copy && clip_to editor-curved-arrow || return 1
+  local f="$ev/editor-curved-arrow.png" bow handle
+  bow=$("$H/meter" band "$f" $(( 26 * DS )) $(( 46 * DS )))       # the new arrow's bow, gone once bent down
+  handle=$("$H/meter" band "$f" $(( 145 * DS )) $(( 175 * DS )))  # the curve through the dragged handle
+  note "curved arrows on the canvas=$marks; ink at the old bow=$bow, at the handle=$handle"
+  [ "$marks" -eq 1 ] && [ "$bow" -eq 0 ] && [ "$handle" -gt 0 ]
+}
+
+row_editor_label_typed() {  # ticket 86
+  pattern_up --show && capture_pattern && open_editor || return 1
+  image_rect 320 180 || return 1
+  tool "Text" && pick "Label style" "Box label" Box || return 1
+  canvas_click 0.05 0.35 && drv type 'Box label 94' && key 36 && nap 1   # Return ends the label, not the edit
+  local ok=0
+  editor_up || { note "Return finished the editor (Done)"; return 1; }
+  "$H/drive" axfind frisket "Label text" >>"$log" 2>&1 && { note "the label is still being typed after Return"; ok=1; }
+  editor_done
+  wait_for 6 card_present && wait_for 6 card_ready && drv axpress frisket "Copy recognized text" && nap 2 \
+    && drv clip-text "$ev/editor-label-typed.txt" || return 1
+  if [ "$DS" -ge 2 ]; then
+    grep -qi 'box label 94' "$ev/editor-label-typed.txt" || ok=1
+  else   # at 1× an 18 pt label is small for text recognition (see editor-label-text)
+    grep -qi 'label' "$ev/editor-label-typed.txt" && grep -q '94' "$ev/editor-label-typed.txt" || ok=1
+  fi
+  return $ok
+}
+
+inside_editor() {  # inside_editor LABEL: the control has a frame inside the editor window
+  local x y w h
+  read -r x y w h <<<"$("$H/drive" axframe frisket "$1" 2>/dev/null)"
+  [ -n "${h:-}" ] || { note "not on screen: $1"; return 1; }
+  [ "$x" -ge "$EX" ] && [ $(( x + w )) -le $(( EX + EW )) ] && [ "$y" -ge "$EY" ] && [ $(( y + h )) -le $(( EY + EH )) ] \
+    || { note "$1 at $x $y ${w}x$h lies outside the editor $EX $EY ${EW}x$EH"; return 1; }
+}
+row_editor_style_bar() {  # ticket 92
+  pattern_up --show && capture_pattern && open_editor || return 1
+  local EX EY EW EH ok=0 label
+  read -r EX EY EW EH <<<"$("$H/drive" axframe frisket "Edit Capture")"
+  [ -n "${EH:-}" ] || { note "no editor window frame"; return 1; }
+  # The toolbar: every tool, Undo and Close are laid out in the window, none in the » overflow menu.
+  # The tool titles are the labels the other editor rows press (exact matches, found before any substring).
+  for label in Select "Solid Redaction" Crop Arrow Line Shape Text Blur Magnify "Undo last edit" "Close editor without changes"; do
+    inside_editor "$label" || ok=1
+  done
+  tool "Solid Redaction"; inside_editor "Redaction colour" || ok=1
+  tool "Arrow"; inside_editor "Arrow style" || ok=1
+  tool "Text"; inside_editor "Label size" || ok=1; inside_editor "Label style" || ok=1
+  "$H/drive" axdump frisket 2>/dev/null | grep -i -E 'overflow|AXMenuButton' >>"$log" && note "possible overflow control (see above)"
+  return $ok
+}
+
 # ---------------------------------------------------------------- run
 case $display_choice in
   all) displays="builtin external" ;;

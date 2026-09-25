@@ -434,6 +434,17 @@ func displayScale(_ id: CGDirectDisplayID) -> Int {
             let pid = pidArgument(a[0])
             guard let e = find(pid, a[1], exact: true) ?? find(pid, a[1], exact: false) else { print("not found: \(a[1])"); exit(1) }
             print(describe(e))
+        case "menu":  // menu PID TITLE: the items of the main menu's TITLE menu (ticket 94: Edit › Undo's title)
+            // Opening the menu makes AppKit validate its items, which sets titles such as "Undo Arrow".
+            // Frisket is an accessory app with no visible menu bar, so opening may fail; the items are listed anyway.
+            let app = AXUIElementCreateApplication(pidArgument(a[0]))
+            guard let bar = ax(app, kAXMenuBarAttribute) else { die("no menu bar") }
+            guard let item = children(bar as! AXUIElement).first(where: { axString($0, kAXTitleAttribute) == a[1] }) else { die("no menu \(a[1])") }
+            let opened = AXUIElementPerformAction(item, kAXPressAction as CFString) == .success
+            ms(400)
+            for menu in children(item) { for entry in children(menu) { print(describe(entry)) } }
+            if opened { for menu in children(item) { AXUIElementPerformAction(menu, kAXCancelAction as CFString) } }
+            print("opened=\(opened)")
         case "axframe":  // axframe PID LABEL: x y w h in CG global points
             let pid = pidArgument(a[0])
             guard let e = find(pid, a[1], exact: true) ?? find(pid, a[1], exact: false), let f = frame(e) else { die("not found: \(a[1])") }
