@@ -65,7 +65,7 @@ extension ScrollingCaptureCommandsTests {
         }
         let stored = try #require(await commands.image(for: revision)?.pngData)
         let image = try decoded(stored)
-        let reference = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 560, logicalYOffset: 0))
+        let reference = try #require(TestImageFactory.scrollingFrame(width: 240, height: 560, logicalYOffset: 0))
         #expect(image.width == 240)
         #expect(image.height == 560)
         #expect(image.dataProvider?.data as Data? == reference.dataProvider?.data as Data?)
@@ -197,7 +197,7 @@ extension ScrollingCaptureCommandsTests {
         let session = ScrollingCaptureSession(budget: .v1)
         weak var viewportImage: CGImage?
         try autoreleasepool {
-            let image = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: 0))
+            let image = try #require(TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: 0))
             viewportImage = image
             _ = session.ingest(try #require(ScrollingViewport(cgImage: image)))
         }
@@ -214,7 +214,7 @@ extension ScrollingCaptureCommandsTests {
 
 private func manualFrames(offsets: [Int]) throws -> [ScrollingFrameEvent] {
     try offsets.map { offset in
-        let image = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: offset))
+        let image = try #require(TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: offset))
         return .viewport(try #require(ScrollingViewport(cgImage: image)))
     }
 }
@@ -305,7 +305,7 @@ extension ScrollingCaptureCommandsTests {
         let session = ScrollingCaptureSession(budget: .v1)
         let offsets = [0, 80, 80, 160]
         let images = try offsets.map {
-            try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: $0))
+            try #require(TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: $0))
         }
         let pure = try Stitcher.stitch(images.map { ScrollingCaptureFrame(image: $0) })
         #expect(pure.alignments.map(\.disposition) == [.initialFrame, .appended, .noMovement, .appended])
@@ -324,14 +324,14 @@ extension ScrollingCaptureCommandsTests {
             }
         }
         let finished = try decoded(try #require(session.finish()?.pngData))
-        let reference = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 560, logicalYOffset: 0))
+        let reference = try #require(TestImageFactory.scrollingFrame(width: 240, height: 560, logicalYOffset: 0))
         #expect(finished.dataProvider?.data as Data? == pure.image.dataProvider?.data as Data?)
         #expect(finished.dataProvider?.data as Data? == reference.dataProvider?.data as Data?)
     }
 
     @Test func liveAlignmentRejectionPreservesPureEvidenceAndPreventsFinish() throws {
         let session = ScrollingCaptureSession(budget: .v1)
-        let initial = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: 0))
+        let initial = try #require(TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: 0))
         let unrelated = try #require(TestImageFactory.solidColor(width: 240, height: 400))
         let pure = try Stitcher.stitch([initial, unrelated].map { ScrollingCaptureFrame(image: $0) })
         _ = session.ingest(try #require(ScrollingViewport(cgImage: initial)))
@@ -365,8 +365,8 @@ extension ScrollingCaptureCommandsTests {
 extension ScrollingCaptureCommandsTests {
     @Test func ambiguousWideViewportCannotFinishAsPartialCapture() throws {
         let session = ScrollingCaptureSession(budget: .v1)
-        let first = try #require(TestImageFactory.repeatedScrollingFrame(width: 1920, height: 1080, logicalYOffset: 0))
-        let second = try #require(TestImageFactory.repeatedScrollingFrame(width: 1920, height: 1080, logicalYOffset: 360))
+        let first = try #require(TestImageFactory.scrollingFrame(width: 1920, height: 1080, logicalYOffset: 0))
+        let second = try #require(TestImageFactory.scrollingFrame(width: 1920, height: 1080, logicalYOffset: 360))
         _ = session.ingest(try #require(ScrollingViewport(cgImage: first)))
         // The original memory fixture ignored this rejection. A conservative
         // matcher may reject ambiguity; a pixel matcher may accept all 360 rows

@@ -16,15 +16,22 @@ enum TestImageFactory {
         return image(width: width, height: height, pixels: pixels)
     }
 
-    static func repeatedScrollingFrame(width: Int, height: Int, logicalYOffset: Int, period: Int = 48) -> CGImage? {
-        _ = period
-        return scrollingFrame(width: width, height: height, logicalYOffset: logicalYOffset)
+    /// A page that repeats exactly every `period` rows. Two offsets that differ by a
+    /// multiple of `period` are the same pixels, so a scroll step is ambiguous.
+    static func repeatedScrollingFrame(width: Int, height: Int, logicalYOffset: Int, period: Int) -> CGImage? {
+        guard period > 0 else { return nil }
+        return scrollingFrame(width: width, height: height, logicalYOffset: logicalYOffset, period: period)
     }
 
+    /// Rows repeat only every 256 logical rows (the channels wrap), so steps below 256 are unambiguous.
     static func scrollingFrame(width: Int, height: Int, logicalYOffset: Int = 0) -> CGImage? {
+        scrollingFrame(width: width, height: height, logicalYOffset: logicalYOffset, period: nil)
+    }
+
+    private static func scrollingFrame(width: Int, height: Int, logicalYOffset: Int, period: Int?) -> CGImage? {
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
         for y in 0..<height {
-            let logicalY = logicalYOffset + y
+            let logicalY = period.map { (logicalYOffset + y) % $0 } ?? logicalYOffset + y
             for x in 0..<width {
                 let index = (y * width + x) * 4
                 pixels[index] = UInt8(truncatingIfNeeded: logicalY &* 13 &+ x)

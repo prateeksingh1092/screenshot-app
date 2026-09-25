@@ -38,7 +38,7 @@ struct StripStorageTests {
         maxOutputHeight: 2000, expectedSignedDeltaPixels: 80, renderMergedImage: false))
       #expect(update.alignmentDebug?.appendDeltaY == 80)
     }
-    let reference = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 560, logicalYOffset: 0))
+    let reference = try #require(TestImageFactory.scrollingFrame(width: 240, height: 560, logicalYOffset: 0))
     var bytes = Data()
     try stitcher.forEachStrip { bytes.append(try #require($0.dataProvider?.data as Data?)) }
     #expect(stitcher.outputHeight == 560)
@@ -48,7 +48,7 @@ struct StripStorageTests {
 
   @Test func successiveFramesStreamOnlyNewRowsBeyondInitialOverlap() throws {
     let stitcher = ScrollingCaptureStitcher()
-    let initial = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: 0))
+    let initial = try #require(TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: 0))
     _ = try #require(stitcher.start(with: initial))
     var frozenStrip: CGImage?
     try stitcher.forEachStrip { if frozenStrip == nil { frozenStrip = $0 } }
@@ -57,7 +57,7 @@ struct StripStorageTests {
     for offset in stride(from: 140, through: 700, by: 140) {
       weak var input: CGImage?
       try autoreleasepool {
-        let frame = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: offset))
+        let frame = try #require(TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: offset))
         input = frame
         let update = try #require(stitcher.append(frame, maxOutputHeight: 2000,
           expectedSignedDeltaPixels: 140, renderMergedImage: false))
@@ -71,7 +71,7 @@ struct StripStorageTests {
       heights.append($0.height)
       bytes.append(try #require($0.dataProvider?.data as Data?))
     }
-    let reference = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 1100, logicalYOffset: 0))
+    let reference = try #require(TestImageFactory.scrollingFrame(width: 240, height: 1100, logicalYOffset: 0))
     #expect(heights == [256, 256, 256, 256, 76])
     #expect(bytes == reference.dataProvider?.data as Data?)
     #expect(frozenStrip?.dataProvider?.data as Data? == frozenBytes)
@@ -80,12 +80,12 @@ struct StripStorageTests {
 
 
   @Test func outputSnapshotSurvivesAppendRestartAndStitcherRelease() throws {
-    let original = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: 0))
+    let original = try #require(TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: 0))
     let snapshot: CGImage = try autoreleasepool {
       let stitcher = ScrollingCaptureStitcher()
       _ = try #require(stitcher.start(with: original))
       let snapshot = try #require(stitcher.mergedImage())
-      let next = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: 80))
+      let next = try #require(TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: 80))
       _ = try #require(stitcher.append(next, maxOutputHeight: 2000, expectedSignedDeltaPixels: 80))
       _ = try #require(stitcher.start(with: next))
       return snapshot
@@ -96,7 +96,7 @@ struct StripStorageTests {
   }
 
   private func stickyFrame(offset: Int) throws -> CGImage {
-    let body = try #require(TestImageFactory.repeatedScrollingFrame(width: 240, height: 400, logicalYOffset: offset))
+    let body = try #require(TestImageFactory.scrollingFrame(width: 240, height: 400, logicalYOffset: offset))
     let header = try #require(TestImageFactory.solidColor(width: 240, height: 31, red: 11, green: 22, blue: 33))
     let footer = try #require(TestImageFactory.solidColor(width: 240, height: 27, red: 44, green: 55, blue: 66))
     var data = try #require(header.dataProvider?.data as Data?)
