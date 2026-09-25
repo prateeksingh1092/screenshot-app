@@ -37,6 +37,7 @@ extension Notice {
         case let .captureFailed(.window(failure)):
             return Notice(title: failure.title, message: failure.message)
         case .captureFailed:
+            if case .captureWindow = command { return .windowCaptureUnavailable }
             return .captureUnavailable
         case let .copy(copy):
             guard case .copied = copy.delivery else { return limitNotice(copy.commit) }
@@ -72,6 +73,8 @@ extension Notice {
 
     public static let captureUnavailable = Notice(title: "Capture unavailable",
         message: "A disconnected display or an oversized capture can prevent capture. Try again with a smaller area.")
+    public static let windowCaptureUnavailable = Notice(title: WindowCaptureFailure.systemRefused.title,
+        message: "Frisket could not capture the window. Try again, or capture an area instead.")
     public static let tooManyPendingCaptures = Notice(title: "Capture unavailable",
         message: "Copy or delete pending captures, then try again.")
     public static let previewUnavailable = Notice(title: "Preview unavailable",

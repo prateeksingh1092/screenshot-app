@@ -28,9 +28,11 @@ public struct OnboardingHandoff: Equatable, Sendable {
 }
 
 public enum FirstLaunch {
+    /// `requested` is the menu's reopen command (ticket 101): it shows onboarding again even once completed.
     public static func surface(onboarding: OnboardingCompletion, systemAlertPending: Bool,
-                               dismissedForLaunch: Bool = false) -> LaunchSurface {
+                               dismissedForLaunch: Bool = false, requested: Bool = false) -> LaunchSurface {
         if systemAlertPending { return .hiddenWhileSystemAlertPending }
+        if requested { return .onboarding }
         return onboarding.shouldPresent && !dismissedForLaunch ? .onboarding : .ready
     }
 

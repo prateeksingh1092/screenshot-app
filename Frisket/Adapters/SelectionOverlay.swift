@@ -155,16 +155,22 @@ extension NSScreen {
         selection.fill(using: .copy)
         drawCutMarks(selection, scale: scale)
         var measurement = "\(Int(selection.width.rounded())) × \(Int(selection.height.rounded()))"
-        if let word = quietWord { measurement += "  \(word)" }
+        if let word = modifiers.badgeWord { measurement += "  \(word)" }
         drawSizeBadge(measurement, above: selection, in: bounds)
     }
 
-    /// One quiet word while a modifier changes the gesture. At rest the badge is only the measurement.
-    private var quietWord: String? {
-        if modifiers.contains(.space) { return "move" }
-        if modifiers.contains(.option) { return "from centre" }
-        if modifiers.contains(.shift) { return "locked" }
-        return nil
+    /// The badge's quiet word, as VoiceOver last heard it.
+    private var announcedWord: String?
+
+    /// Says the badge's quiet word when it appears or changes, as the window overlay announces its selection (ticket 101).
+    private func announceBadgeWord() {
+        let word = modifiers.badgeWord
+        guard word != announcedWord else { return }
+        announcedWord = word
+        guard let word else { return }
+        NSAccessibility.post(element: self, notification: .announcementRequested,
+            userInfo: [.announcement: word.prefix(1).uppercased() + word.dropFirst(),
+                       .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
     func invalidateChangedSelection() {
@@ -186,6 +192,7 @@ extension NSScreen {
         dragging = false
         spaceHeld = false
         modifiers = []
+        announcedWord = nil
         paintedSelection = .null
         needsDisplay = true
     }
@@ -199,6 +206,7 @@ extension NSScreen {
         if event.modifierFlags.contains(.shift) { modifiers.insert(.shift) }
         if event.modifierFlags.contains(.option) { modifiers.insert(.option) }
         if spaceHeld { modifiers.insert(.space) }
+        announceBadgeWord()
     }
     private func updateGeometry() {
         if dragging { overlay.session?.update(to: pointer, modifiers: modifiers) }

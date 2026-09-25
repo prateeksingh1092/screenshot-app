@@ -14,7 +14,11 @@ import FrisketCore
     }
 
     @Published private(set) var rows: [Row] = []
-    @Published var selected: CaptureID?
+    /// A row's Copy, Save, Restore or Delete error belongs to that row: choosing another clears it (ticket 101).
+    /// History's own failure (`disabled`) stays until History recovers.
+    @Published var selected: CaptureID? {
+        didSet { if selected != oldValue, !disabled, message != nil { message = nil } }
+    }
     @Published private(set) var message: String?
     @Published private(set) var disabled = false
     @Published private(set) var busy = false

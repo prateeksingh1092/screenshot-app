@@ -399,6 +399,13 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - The × issues `ThumbnailExit.close`, the same exit as swipe and Esc. Status lines that said "Retry Close" now say "close (×)"; VoiceOver hears "(Close)".
     - **Why:** the glass rule allows glass only around controls; a spacer slot keeps the row unchanged; an AppKit tracking area sees the pointer over the image, which lies outside the SwiftUI host.
 
+NN. **Small fixes from the design audit (implementer, 2026-09-25, ticket 101):**
+    - **Window notice:** a window capture that fails with no named cause says "Window not captured. Frisket could not capture the window. Try again, or capture an area instead." (`Notice.windowCaptureUnavailable`), not the area wording about a smaller area.
+    - **Badge words:** the area overlay's quiet word (move, from centre, locked) is `SelectionGeometry.Modifiers.badgeWord` in the core. The overlay announces it to VoiceOver when it appears or changes, as the window overlay announces its selection.
+    - **History errors:** a Copy, Save, Restore or Delete error clears when the selected row changes. History's own failure message stays until History recovers.
+    - **Default:** Settings disables a row's Default while the saved shortcut is the default (`ShortcutCommands.isAtDefault`), also when macOS still owns it, since Default could not help then.
+    - **Reopen onboarding:** the status menu's "What Frisket Stores…" item (the onboarding title) reopens onboarding even after it was completed (`FirstLaunch.surface(requested:)`), or brings it forward if open. Continue hands off to permission recovery as on first launch; never over a pending system alert.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).
