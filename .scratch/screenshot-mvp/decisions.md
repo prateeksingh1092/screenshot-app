@@ -256,3 +256,11 @@ Research has not yet established buildability or capture reliability on this Mac
 ## Subsequent work
 
 Resolve behavior and acceptance criteria, confirm the shared understanding and testing boundaries, publish the specification, then create implementation tickets. Do not treat pending recommendations as requirements.
+
+67. **Native annotations (implementer, 2026-09-25, ticket 66; under decisions 54 and 57):**
+    - **Where:** `AnnotationPainter` (in `CaptureRenderer.swift`) draws rectangles, arrows and labels with CoreGraphics and CoreText. The editor preview (`DocumentRenderer.render`) and `CaptureRenderer.flatten` both call it on the whole image, so the delivered image stays byte-equal to the preview.
+    - **Order:** a white plate (the stroke widened by 1 px each side) for every annotation, then the Solid redactions again, then the ink. No plate pixel lands on a redacted pixel, and ink still draws above redactions.
+    - **Labels:** pinned font `HelveticaNeue-Bold` (shipped with every macOS), 18 pt per document point, antialiased, font smoothing off. Any non-blank text is accepted; the 5×7 bitmap font (`AnnotationFont`) and the unused label seam `DocumentRenderer.outputCount` are deleted.
+    - **Strokes:** 2 px (2 × scale) with square caps and mitred joins. A rectangle's stroke lies inside its snapped box, so it covers whole pixels and its golden is exact. Arrows keep the open two-wing head.
+    - **Tolerance:** CoreGraphics antialiasing is not bit-identical between a short strip context and the whole image (a long near-vertical stroke moved up to 23 per channel on edge pixels). The strip walk (`forEachStrip`, no longer a production path since decision 64) is therefore compared to the whole render within 32 per channel for annotations; the delivered-vs-preview test and every Solid redaction golden stay exact. Drawing happens on row-reversed memory, so device y equals the output row and the first strip matches exactly.
+    - **Open for ticket 67:** Blur and Magnify still differ in strips, so the effects half of the D1 test keeps `knownDefect("D1")`.

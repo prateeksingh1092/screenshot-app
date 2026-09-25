@@ -98,7 +98,7 @@ public struct DocumentAnnotation: Equatable, Sendable {
         case let .arrow(x0, y0, x1, y1):
             guard [x0, y0, x1, y1].allSatisfy(\.isFinite), !(x0 == x1 && y0 == y1) else { return nil }
         case let .text(x, y, characters):
-            guard x.isFinite, y.isFinite, !AnnotationFont.glyphs(in: characters).isEmpty else { return nil }
+            guard x.isFinite, y.isFinite, !characters.allSatisfy(\.isWhitespace) else { return nil }
         }
         self.kind = kind
     }

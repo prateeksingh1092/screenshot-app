@@ -627,16 +627,12 @@ private struct AnnotationCanary: Sendable, CustomTestStringConvertible {
                                           annotations: [annotation]))
     }
 
-    /// Matches the renderer's square pen: `max(2, round(2 * scale))`, centred on each edge pixel.
+    /// Matches the native renderer (ticket 66): a `max(2, round(2 * scale))` px stroke lying just
+    /// inside the snapped box, with square corners.
     func isOutline(x: Int, y: Int) -> Bool {
         let pen = max(2, Int((2 * source.scale).rounded()))
-        let half = pen / 2
-        func paints(_ edgeX: Int, _ edgeY: Int) -> Bool {
-            (edgeX - half..<(edgeX - half + pen)).contains(x) && (edgeY - half..<(edgeY - half + pen)).contains(y)
-        }
-        if (minX..<maxX).contains(x), paints(x, minY) || paints(x, maxY - 1) { return true }
-        if (minY..<maxY).contains(y), paints(minX, y) || paints(maxX - 1, y) { return true }
-        return paints(minX, minY) || paints(maxX - 1, minY) || paints(minX, maxY - 1) || paints(maxX - 1, maxY - 1)
+        guard (minX..<maxX).contains(x), (minY..<maxY).contains(y) else { return false }
+        return x < minX + pen || x >= maxX - pen || y < minY + pen || y >= maxY - pen
     }
 
     func expectAnnotated(_ output: (width: Int, height: Int, pixels: [RGBA]),

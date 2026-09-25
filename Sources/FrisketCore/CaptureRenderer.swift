@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import CoreText
 import ImageIO
 
 /// Why an edited capture could not be flattened. Nothing is delivered in any of these cases.
@@ -23,9 +24,9 @@ public protocol CaptureFlattening: Sendable {
 /// in each redaction's colour, and the result is encoded as PNG in memory with no metadata.
 /// Nothing touches the disk.
 ///
-/// Effects and annotations are still painted by `DocumentRenderer`'s pixel code over the whole
-/// output (tickets 66 and 67 replace them), with the same snapping the editor preview uses,
-/// so the delivered image equals the preview's render at full size.
+/// Effects are still painted by `DocumentRenderer`'s pixel code (ticket 67 replaces them);
+/// annotations are drawn by `AnnotationPainter` with CoreGraphics and CoreText. Both use the same
+/// snapping as the editor preview, so the delivered image equals the preview's render at full size.
 public struct CaptureRenderer: CaptureFlattening {
     /// DA-6: edited output is capped at this many pixels tall.
     public static let maximumOutputHeight = 32_768
@@ -112,5 +113,119 @@ public struct CaptureRenderer: CaptureFlattening {
             if type == "IEND" { return output }
         }
         return nil
+    }
+}
+
+/// Annotations drawn natively (ticket 66): CoreGraphics strokes and CoreText labels, antialiased,
+/// with font smoothing off. The editor preview (`DocumentRenderer.render`) and `flatten` both
+/// call this, so what the user sees is what is delivered.
+enum AnnotationPainter {
+    /// Labels use this pinned font, 18 pt per document point (decision 67).
+    static let labelFontName = "HelveticaNeue-Bold"
+    static let labelPointSize = 18.0
+
+    enum Layer { case plate, ink }
+
+    /// Draws one layer of every annotation over `output`, whose first row is row `rowShift` of the
+    /// full output. `origin` is the crop's snapped top-left in output pixels of the uncropped image.
+    static func draw(_ annotations: [DocumentAnnotation], layer: Layer, on output: inout Bitmap, scale: Double,
+                     origin: (x: Int, y: Int), rowShift: Int, fullWidth: Int, fullHeight: Int) {
+        guard !annotations.isEmpty, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return }
+        let width = output.width, height = output.height
+        output.bytes.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            // CoreGraphics' device space is bottom-up, and its antialiasing is not exactly invariant
+            // under a large translation. So the rows are reversed while drawing: device y is then the
+            // output row, and user space is the full output, top-down, shifted by the strip's first row.
+            reverseRows(raw, width: width, height: height)
+            defer { reverseRows(raw, width: width, height: height) }
+            context.translateBy(x: 0, y: CGFloat(-rowShift))
+            context.setShouldAntialias(true)
+            context.setAllowsFontSmoothing(false)
+            context.setShouldSmoothFonts(false)
+            // Straight caps and joins only: CoreGraphics flattens curves relative to the device, so a
+            // round cap would rasterize differently in a strip than in the whole image.
+            context.setLineCap(.square)
+            context.setLineJoin(.miter)
+            let pen = CGFloat(max(2, (2 * scale).rounded()))
+            let colour = layer == .ink ? inkColour : plateColour
+            context.setStrokeColor(colour)
+            context.setFillColor(colour)
+            context.setLineWidth(layer == .ink ? pen : pen + 2)
+            for annotation in annotations {
+                draw(annotation, layer: layer, in: context, scale: scale, origin: origin, pen: pen,
+                     fullWidth: fullWidth, fullHeight: fullHeight)
+            }
+            context.flush()
+        }
+    }
+
+    private static func reverseRows(_ raw: UnsafeMutableRawBufferPointer, width: Int, height: Int) {
+        guard let base = raw.baseAddress, height > 1 else { return }
+        let rowBytes = width * 4
+        let spare = UnsafeMutableRawPointer.allocate(byteCount: rowBytes, alignment: 4)
+        defer { spare.deallocate() }
+        for top in 0..<(height / 2) {
+            let a = base + top * rowBytes, b = base + (height - 1 - top) * rowBytes
+            spare.copyMemory(from: a, byteCount: rowBytes)
+            a.copyMemory(from: b, byteCount: rowBytes)
+            b.copyMemory(from: spare, byteCount: rowBytes)
+        }
+    }
+
+    private static let inkColour = CGColor(srgbRed: CGFloat(DocumentAnnotation.stroke.red) / 255,
+                                           green: CGFloat(DocumentAnnotation.stroke.green) / 255,
+                                           blue: CGFloat(DocumentAnnotation.stroke.blue) / 255, alpha: 1)
+    private static let plateColour = CGColor(srgbRed: CGFloat(DocumentRenderer.plate.red) / 255,
+                                             green: CGFloat(DocumentRenderer.plate.green) / 255,
+                                             blue: CGFloat(DocumentRenderer.plate.blue) / 255, alpha: 1)
+
+    private static func draw(_ annotation: DocumentAnnotation, layer: Layer, in context: CGContext, scale: Double,
+                             origin: (x: Int, y: Int), pen: CGFloat, fullWidth: Int, fullHeight: Int) {
+        func point(_ x: Double, _ y: Double) -> CGPoint {
+            CGPoint(x: x * scale - Double(origin.x), y: y * scale - Double(origin.y))
+        }
+        switch annotation.kind {
+        case let .rectangle(x, y, width, height):
+            // Snapped outward like a redaction; the stroke lies inside the snapped box.
+            func column(_ value: Double) -> Double { min(max(value, 0), Double(fullWidth)) }
+            func row(_ value: Double) -> Double { min(max(value, 0), Double(fullHeight)) }
+            let minX = column((x * scale).rounded(.down) - Double(origin.x))
+            let minY = row((y * scale).rounded(.down) - Double(origin.y))
+            let maxX = column(((x + width) * scale).rounded(.up) - Double(origin.x))
+            let maxY = row(((y + height) * scale).rounded(.up) - Double(origin.y))
+            guard minX < maxX, minY < maxY else { return }
+            let box = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            context.stroke(box.insetBy(dx: min(pen / 2, box.width / 2), dy: min(pen / 2, box.height / 2)))
+        case let .arrow(x0, y0, x1, y1):
+            let tail = point(x0, y0), tip = point(x1, y1)
+            let vx = tip.x - tail.x, vy = tip.y - tail.y
+            let length = (vx * vx + vy * vy).squareRoot()
+            guard length > 0 else { return }
+            let size = CGFloat(max(8, 10 * scale))
+            let ux = vx / length, uy = vy / length
+            let back = CGPoint(x: tip.x - ux * size, y: tip.y - uy * size)
+            context.move(to: tail)
+            context.addLine(to: tip)
+            context.move(to: CGPoint(x: back.x - uy * size, y: back.y + ux * size))
+            context.addLine(to: tip)
+            context.addLine(to: CGPoint(x: back.x + uy * size, y: back.y - ux * size))
+            context.strokePath()
+        case let .text(x, y, characters):
+            let font = CTFontCreateWithName(labelFontName as CFString, CGFloat(labelPointSize * scale), nil)
+            let attributes: [CFString: Any] = [kCTFontAttributeName: font, kCTForegroundColorFromContextAttributeName: true]
+            guard let string = CFAttributedStringCreate(nil, characters as CFString, attributes as CFDictionary) else { return }
+            let line = CTLineCreateWithAttributedString(string)
+            let top = point(x, y)
+            context.saveGState()
+            context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+            context.textPosition = CGPoint(x: top.x, y: top.y + CTFontGetAscent(font))
+            context.setTextDrawingMode(layer == .ink ? .fill : .stroke)
+            context.setLineWidth(2)
+            CTLineDraw(line, context)
+            context.restoreGState()
+        }
     }
 }
