@@ -73,7 +73,12 @@ func onScreenWindows() -> [WindowRow] {
 }
 /// The front-most visible window under a point, skipping the cursor and other Window Server surfaces.
 func windowAt(_ p: CGPoint) -> WindowRow? {
-    onScreenWindows().first { $0.bounds.contains(p) && $0.alpha > 0 && $0.owner != "Window Server" }
+    onScreenWindows().first { $0.bounds.contains(p) && $0.alpha > 0 && $0.owner != "Window Server" && !isDockBackdrop($0, p) }
+}
+/// On the main display the Dock owns a full-display window at layer 20 that passes clicks through
+/// everywhere except the Dock itself. Skip it above the bottom 100 pt, where the Dock sits.
+func isDockBackdrop(_ w: WindowRow, _ p: CGPoint) -> Bool {
+    w.owner == "Dock" && w.name == "Dock" && w.bounds.width > 800 && p.y < w.bounds.maxY - 100
 }
 /// A press may only land on Frisket or the pattern tool, so a misread coordinate can't click another app.
 func requireOwnTarget(_ p: CGPoint) {
@@ -417,6 +422,13 @@ func displayScale(_ id: CGDirectDisplayID) -> Int {
             if let app = frisketApp(), let fw = ax(AXUIElementCreateApplication(app.processIdentifier), kAXFocusedWindowAttribute) {
                 print("Frisket focused window: " + describe(fw as! AXUIElement))
             }
+        case "activate":  // activate frisket|pattern: bring that app forward (only these two)
+            let pid = pidArgument(a[0])
+            guard let app = NSRunningApplication(processIdentifier: pid),
+                  app.bundleIdentifier == frisketApp()?.bundleIdentifier || app.localizedName == patternName
+            else { die("REFUSED: activate only Frisket or the pattern") }
+            print("activate \(app.localizedName ?? "?") ->", app.activate())
+            usleep(400_000)
         case "frontmost":  // prints the frontmost app's name only
             print(frontInfo().name)
         case "axdump":

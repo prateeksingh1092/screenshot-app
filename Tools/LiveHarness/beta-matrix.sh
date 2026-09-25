@@ -121,6 +121,7 @@ pattern_up() {  # pattern_up MODE: the synthetic pattern on the current display
 overlay_up() { "$H/drive" cgwin | awk -F'\t' '$1 != "pattern" { split($3, l, "="); if (l[2] + 0 >= 1000) found = 1 } END { exit !found }'; }
 card_present() { "$H/drive" axfind frisket "Copy capture" >/dev/null 2>&1; }
 editor_up() { "$H/drive" axfind frisket "Capture canvas" >/dev/null 2>&1; }
+editor_gone() { ! editor_up; }
 no_cards() { ! card_present; }
 count_files() { local n; n=$(ls -1 "$1" 2>/dev/null | grep -c "${2:-.}"); echo "${n:-0}"; }   # names only; never opens a file
 history_images() { count_files "$history_root/images" '\.png$'; }
@@ -134,12 +135,12 @@ shot_pattern() {  # evidence cropped to the front pattern window (or its central
   drv seq "shot $x $y $w $h $ev/$1.png"
 }
 
-# Drag a new Selection. A decoy selection in the display's bottom-left corner first moves any
-# preselected hole away, so the real drag starts on the veil, never inside a hole (D4).
+# Drag a new Selection with one drag. Callers start it outside the previous Selection, because a
+# press inside a hole goes through to the app underneath (D4).
 select_rect() {
   local x0=$1 y0=$2 x1=$3 y1=$4
-  drv seq "down $(( DX + 30 )) $(( DY + DH - 90 ))" "drag $(( DX + 50 )) $(( DY + DH - 70 ))" "up $(( DX + 70 )) $(( DY + DH - 50 ))"
-  nap 0.3
+  # One drag only. A second drag in the same activation doesn't replace the first Selection
+  # (candidate D28, seen 2026-09-24), so the old decoy drag captured the decoy.
   drv seq "down $x0 $y0" "drag $(( (x0 + x1) / 2 )) $(( (y0 + y1) / 2 ))" "drag $x1 $y1" "wait 120" "up $x1 $y1"
   nap 0.3
 }
@@ -155,7 +156,12 @@ card_copy() { drv axpress frisket "Copy capture" && nap 1; }
 clip_to() { drv clip-png "$ev/$1.png"; }
 
 open_editor() {  # a real click on the Thumbnail's Edit (an AX press doesn't activate Frisket)
-  drv axclick frisket "Edit capture" && wait_for 6 editor_up && nap 0.5
+  if ! drv axclick frisket "Edit capture"; then
+    # If the click guard refuses the point, fall back to an AX press and activate Frisket.
+    drv axpress frisket "Edit capture" || return 1
+    wait_for 6 editor_up && drv activate frisket
+  fi
+  wait_for 6 editor_up && drv axfocus frisket "Capture canvas" && nap 0.5
 }
 # The image's on-screen rectangle inside the canvas, for an image of aspect W:H: IX IY IW IH.
 image_rect() {
@@ -169,24 +175,36 @@ image_rect() {
   fi
 }
 at() { calc "$1 + $2 * $3"; }   # at ORIGIN FRACTION SIZE
-tool() { drv axpress frisket "$1" && nap 0.3; }
+tool() {  # select an editor tool; pressing the selected tool again deselects it
+  "$H/drive" axfind frisket "$1" 2>/dev/null | grep -q 'value="1"' && return 0
+  drv axpress frisket "$1" && nap 0.3
+}
 canvas_drag() {  # canvas_drag FX0 FY0 FX1 FY1 as fractions of the image rectangle
   drv drag "$(at $IX "$1" $IW)" "$(at $IY "$2" $IH)" "$(at $IX "$3" $IW)" "$(at $IY "$4" $IH)" 20
   nap 0.4
 }
-editor_copy() {
-  drv axpress frisket "Copy the edited capture" || drv key 8 cmd   # D5: overflowed items lose ⌘C too
-  nap 1.2
-}
+# Finish an edit through the close sheet: ⌘W, then Return (Finalize, the sheet's default). This path
+# works while the toolbar overflows (D5), when Done, Copy, Save and their key equivalents don't.
 editor_done() {
-  drv axpress frisket "Done" || drv axpress frisket "Keep the redacted capture in History" \
-    || drv axpress frisket "Keep this capture in History" || key 36
-  nap 1.2
+  drv key 13 cmd; nap 0.8
+  editor_up && key 36
+  wait_for 6 editor_gone; nap 0.8
 }
-close_editor() {
-  editor_up || return 0
-  drv axpress frisket "Close editor without changes" || key 53; nap 0.8
-  drv axpress frisket "Delete capture"; nap 0.5
+# The edited result, copied from its Thumbnail after Finalize (the editor's own ⌘C dies under D5).
+editor_copy() { editor_done && wait_for 6 card_present && card_copy; }
+close_editor() {  # every open editor; edits are finalized (test captures stay in History)
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    editor_up || return 0
+    drv axfocus frisket "Capture canvas"; editor_done
+  done
+}
+close_cards() {  # every Thumbnail, through its "Close thumbnail and keep capture in History" action
+  local y
+  for y in $("$H/drive" cgwin | awk -F'\t' '$1 == "Frisket" && $3 == "layer=3" { split($4, b, " "); print b[2] }'); do
+    drv cardact "$y" "Close thumbnail"
+  done
+  nap 0.5
 }
 dismiss_alert() { drv axpress frisket "OK"; }
 
@@ -198,7 +216,8 @@ reset_state() {  # best effort between rows: no overlay, no editor, no alert, no
   dismiss_alert
   close_editor
   drv axpress frisket "Cancel scrolling capture"
-  wait_for 15 no_cards || note "Thumbnails still open after 15 s"
+  close_cards
+  wait_for 5 no_cards || note "Thumbnails still open after closing them"
   pkill -x pattern 2>/dev/null
   nap 0.5
 }
@@ -255,8 +274,11 @@ scroll_start() {
   read -r SX SY SW SH <<<"$(pattern_bounds)"
   drv move $(( SX + 400 )) $(( SY + 300 )); hotkey 6; nap 1
   select_rect $(( SX + 20 )) $(( SY + 40 )) $(( SX + 720 )) $(( SY + 570 ))
-  key 36; nap 1.5
+  # The scrolling session starts when the mouse button comes up. Return would mean Done at once.
+  wait_for 4 scroll_panel_up || { note "no scrolling panel"; return 1; }
+  nap 1
 }
+scroll_panel_up() { "$H/drive" axfind frisket "Done with scrolling capture" >/dev/null 2>&1; }
 scroll_finish() {
   drv axpress frisket "Done with scrolling capture" || return 1
   wait_for 8 card_present && card_copy && clip_to "$1"
@@ -264,7 +286,7 @@ scroll_finish() {
 row_scroll_steady() {
   scroll_start || return 1
   local step
-  for step in 1 2 3 4; do drv wheel $(( SX + 400 )) $(( SY + 300 )) -8; nap 1.2; done
+  for step in 1 2 3 4; do drv wheel $(( SX + 400 )) $(( SY + 300 )) -4; nap 1.2; done   # a step well under the 530-row viewport
   scroll_finish scroll-steady && "$H/meter" blocks "$ev/scroll-steady.png" "$DS" $(( 530 * DS )) >>"$log" 2>&1
 }
 row_scroll_flick() {
@@ -289,8 +311,8 @@ row_scroll_keys() {
 row_editor_arrow_label() {
   pattern_up --show && capture_area $(( CX - 200 )) $(( CY - 250 )) $(( CX + 200 )) $(( CY + 250 )) && open_editor || return 1
   image_rect 400 500 || return 1
-  tool "Arrow tool. Drawing does not hide pixels." && canvas_drag 0.3 0.9 0.7 0.9                       # arrow at row 450 of 500
-  tool "Text label tool. Drawing does not hide pixels." && drv axfocus frisket "Annotation label text" && drv type "Label" \
+  tool "Arrow" && canvas_drag 0.3 0.9 0.7 0.9                       # arrow at row 450 of 500
+  tool "Text" && drv axfocus frisket "Annotation label text" && drv type "Label" \
     && canvas_drag 0.2 0.08 0.5 0.1                                          # label at row 40
   editor_copy && clip_to editor-arrow-label || return 1
   local band=$(( 100 * DS )) top arrow between
@@ -304,7 +326,7 @@ row_editor_arrow_label() {
 row_editor_label_text() {
   pattern_up --show && capture_pattern && open_editor || return 1
   image_rect 320 180 || return 1
-  tool "Text label tool. Drawing does not hide pixels." && drv axfocus frisket "Annotation label text" && drv type 'v2.1 $4.99 -10%' \
+  tool "Text" && drv axfocus frisket "Annotation label text" && drv type 'v2.1 $4.99 -10%' \
     && canvas_drag 0.05 0.35 0.9 0.55
   editor_done
   wait_for 6 card_present && drv axpress frisket "Copy recognized text" && nap 2 && drv clip-text "$ev/editor-label-text.txt" || return 1
@@ -314,9 +336,9 @@ row_editor_label_text() {
 row_editor_redaction() {
   pattern_up --show && capture_pattern && open_editor || return 1
   image_rect 320 180 || return 1
-  tool "Solid redaction. Hides pixels with opaque black." && canvas_drag -0.02 -0.02 0.505 0.51   # the red quadrant, overshooting its outer edges
-  tool "Blur. Softens pixels and does not hide them. Use Solid Redaction to conceal." && canvas_drag 0.4 0.1 0.7 0.4
-  tool "Magnify. Doubles pixels and does not hide them. Use Solid Redaction to conceal." && canvas_drag 0.1 0.1 0.3 0.35
+  tool "Solid Redaction" && canvas_drag 0 0 0.505 0.51   # the red quadrant from the image corner (a drag that starts outside the image is ignored)
+  tool "Blur" && canvas_drag 0.4 0.1 0.7 0.4
+  tool "Magnify" && canvas_drag 0.1 0.1 0.3 0.35
   editor_done
   wait_for 6 card_present && card_copy && clip_to editor-redaction \
     && "$H/pattern" --verify-redacted "$ev/editor-redaction.png" "$DS" >>"$log" 2>&1
@@ -325,7 +347,7 @@ row_editor_redaction() {
 row_editor_crop() {
   pattern_up --show && capture_pattern && open_editor || return 1
   image_rect 320 180 || return 1
-  tool "Crop tool" && canvas_drag 0.25 0.25 0.75 0.75
+  tool "Crop" && canvas_drag 0.25 0.25 0.75 0.75
   editor_copy && clip_to editor-crop || return 1
   local w h
   read -r w h <<<"$("$H/drive" size "$ev/editor-crop.png")"
@@ -421,7 +443,7 @@ row_history_delete() {
 row_drag_cancel() {
   pattern_up --show && capture_pattern && open_editor || return 1
   image_rect 320 180 || return 1
-  tool "Rectangle shape tool. Drawing does not hide pixels." && canvas_drag 0.6 0.6 0.9 0.9
+  tool "Shape" && canvas_drag 0.6 0.6 0.9 0.9
   local images staged wx wy ww wh target=""
   images=$(history_images); staged=$(drag_staging)
   read -r wx wy ww wh <<<"$("$H/drive" axframe frisket "Drag the edited capture")"
@@ -450,7 +472,7 @@ for display in $displays; do
   while IFS=$'\t' read -r id defects expect check; do
     [ -z "$only_row" ] || [ "$id" = "$only_row" ] || continue
     ev="$run/$display"; mkdir -p "$ev"; log="$ev/$id.log"
-    echo "# $id on $display ($DW×$DH pt, scale $DS): $check" >"$log"
+    echo "# $id on $display (${DW}×${DH} pt, scale ${DS}): $check" >"$log"
     fn="row_$(echo "$id" | tr - _)"
     if ! "$H/drive" frisket >/dev/null 2>&1; then
       result=error

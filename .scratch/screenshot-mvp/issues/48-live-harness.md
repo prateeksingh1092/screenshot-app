@@ -58,3 +58,35 @@ Claude Opus 5.5, Claude Code, medium effort. Branch `ticket/48-live-harness`. No
 ### 2026-09-24: coordinator, merged
 
 Merged into `main`; at `ce152d4`, `ci.sh` compiles the harness. Still open: the first unattended run and calibrating the rows from its logs.
+
+### 2026-09-24: coordinator, first live runs (Prateek away)
+
+The installed Frisket (build 8, `73be4ce`) ran on both displays. Only synthetic patterns were used, and the clipboard was saved and restored on every run.
+
+**Calibration fixes:**
+- `select_rect` drags once. The old decoy drag was captured instead of the real Selection (see candidate D28).
+- Tool names are the real accessibility names: `Solid Redaction`, `Crop`, `Arrow`, `Shape`, `Text`, `Blur`, `Magnify`.
+- `tool()` presses only a tool that isn't selected, because pressing the selected tool deselects it.
+- An edit finishes with ⌘W, then Return (Finalize), and the result is copied from its Thumbnail. This works under D5.
+- Scrolling starts when the mouse button comes up. Return in the panel means Done, so the row no longer presses it.
+- Cleanup closes every editor and every Thumbnail between rows.
+- Steady-scroll steps are 4 wheel lines.
+- The redaction drag starts on the image corner, because a drag that starts outside the image is ignored.
+- `drive activate` is new, and so is a fallback for opening the editor.
+- The click guard skips the Dock's full-display backdrop window, except over the bottom 100 pt.
+- `$DW×$DH` is fixed; `set -u` failed on the multibyte character.
+
+**Result, per display (external 1× and built-in 2×):**
+- **PASS (6):** area, full, editor-redaction (exact black under Blur and Magnify), editor-crop, copytext-text, history-copy.
+- **XFAIL for the right reason (12):** window (D2), scroll-steady and scroll-flick (D3), scroll-keys (D11: Page Down didn't move the page), editor-arrow-label (D1: no arrow ink, label repeated), editor-label-text (D6), editor-finish-visible (D5), copytext-none (D8: "Copied 0 characters" alert), stack (D9), focus-latest (D12: keys went to the pattern), history-save (D17: UUID name, no date), drag-cancel (D7).
+- **XFAIL, reason still unclear (3):**
+  - area-click-inside: the pattern window opened with odd bounds (87×33 on the built-in display).
+  - top-row: the log has no evidence of why it failed.
+  - history-delete: the log has no evidence of why it failed.
+
+**Candidate findings, not yet in §1.2:**
+- **D28:** a second drag in one area-capture activation doesn't replace the first Selection. Checked by hand: a 100×100 first drag was captured, not the 320×180 second drag.
+- **Minor:** pressing the selected editor tool leaves no tool selected.
+- **Minor:** a redaction drag that starts just outside the image is ignored. CleanShot accepts such drags.
+
+**Still open:** calibrate the three unclear rows, and rerun the whole matrix after each Phase 1 batch.

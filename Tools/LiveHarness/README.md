@@ -81,7 +81,7 @@ fire only for events posted at the HID tap, which is what `drive` does.
 - **Stopping the pattern.** Use `pkill -x pattern`. `pkill -f …/pattern` misses relative launches.
 - **Scrolling.** Pixel-unit wheel events don't move an `NSScrollView`. Use `drive wheel`: line units, nil source. Positive lines scroll toward the top.
 - **Scroll page.** `--show-scroll` opens at its top, with block 1 first (fixed in ticket 48; the old page opened at its bottom). Blocks are 400 rows apart: 90 red, 90 blue, then an 8-row marker 164 rows below the block top.
-- **Preselection.** Frisket preselects the last Selection, and a press inside it goes through to the app underneath (D4). `select_rect` in the matrix first drags a small decoy Selection in a corner, so the real drag always starts on the veil.
+- **Preselection.** Frisket preselects the last Selection, and a press inside it goes through to the app underneath (D4). Start each drag outside the previous Selection. Don't drag twice in one activation: a second drag doesn't replace the first Selection (candidate D28), so `select_rect` drags once.
 - **AX press vs real click.** An AX press on a Thumbnail's Edit doesn't activate Frisket, and the editor can open behind other windows. Use `drive axclick frisket "Edit capture"`, which sends a real click at the element's centre.
 - **Privacy.** Crop evidence to the test windows (`seq "shot X Y W H FILE"`), because the desktop shows personal file names. Save the clipboard before a run and restore it after (`drive clip-save` / `clip-restore`); the matrix does both.
 - **Swipe to dismiss** needs precise, phased trackpad deltas, which synthetic events don't produce. The matrix doesn't test it.
