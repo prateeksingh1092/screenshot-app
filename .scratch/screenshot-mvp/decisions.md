@@ -228,6 +228,12 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
 
 66. **Live-check cap (Prateek, 2026-09-25):** a harness run lasts 9 minutes at most per display, down from 15. That is how long the full built-in run took. `beta-matrix.sh` enforces it. A user test still lasts 15 minutes at most. Prateek also restated decision 54: every technical choice is the agent's, and nothing waits for him unless it is product-visible.
 
+67. **One Pending capture record and one Thumbnail status (implementer, 2026-09-25, ticket 73; decisions 54 and 57):**
+    - **Record:** the coordinator keeps one `PendingCapture` record per capture whose pixels are in memory, plus a settled map of how each released capture ended (finalized, delivered, discarded, recovery required) and its last revision. Two transient locks remain: a command in progress and a running Copy Text. There is no editing or delivering state.
+    - **Status:** `thumbnails()` returns `Thumbnails`: each card's `status` (`pending` or `finalized`), whether it is `editable`, and `nextDueAt`, the earliest timeout still to come (nil while the stack is focused, the screen is locked, or a card awaits a retry). `CaptureSurfaces` applies the status and wakes once at `nextDueAt`; it no longer keeps arrival order, screens, per-card timers or its own commit flags.
+    - **Accessibility (part of D16):** a finalized Thumbnail is named "Capture kept in History", and its custom actions drop Edit and Delete.
+    - **Drag:** `.drag` runs through the shared `deliver()`. Copy and Save commit before the adapter write; a drag commits only after the destination accepts the drop (DA-3). A drag has no retry gate: dragging again is the retry.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

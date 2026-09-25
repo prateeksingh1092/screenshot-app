@@ -129,7 +129,7 @@ extension ThumbnailStackCommandsTests {
         let first = try await fixture.capture()
         fixture.clock.advance(by: .seconds(1))
         let second = try await fixture.capture()
-        #expect(await fixture.commands.thumbnails() == [
+        #expect(await fixture.commands.thumbnails().cards == [
             ThumbnailCard(revision: second, expiresAt: start + .seconds(1) + delay, dueExit: nil),
             ThumbnailCard(revision: first, expiresAt: start + delay, dueExit: nil)
         ])
@@ -472,5 +472,64 @@ extension ThumbnailStackCommandsTests {
         try #require(await commands.execute(.capture(id, maximumBytes: 128)) == .pending(CaptureRevision(captureID: id, number: 1)))
         #expect(await commands.thumbnails().map(\.displayID) == [display])
         #expect(await commands.image(for: CaptureRevision(captureID: id, number: 1))?.displayID == display)
+    }
+}
+
+/// Ticket 73: the core reports each Thumbnail's status, so the UI never guesses it from an outcome.
+extension ThumbnailStackCommandsTests {
+    @Test func thumbnailStatusIsPendingUntilHistoryCommitsThenFinalizedWithNoEditOrDelete() async throws {
+        let fixture = StackFixture(clipboard: FailingOnceClipboard())
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        let pending = try #require(await fixture.commands.thumbnails().first)
+        #expect(pending.status == .pending)
+        #expect(pending.editable)
+
+        // History commits before the clipboard write fails, so the Thumbnail stays open, finalized.
+        guard case .copy(let outcome) = await fixture.commands.execute(.copy(revision)) else {
+            Issue.record("Copy did not report a copy outcome")
+            return
+        }
+        #expect(outcome.commit == .committed)
+        let finalized = try #require(await fixture.commands.thumbnails().first)
+        #expect(finalized.revision == revision)
+        #expect(finalized.status == .finalized)
+        #expect(!finalized.editable)
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .delete)) == .rejected(.alreadyFinalized))
+
+        // Close works on a finalized Thumbnail: it releases the card and the pixels.
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, .close)) == .finalized(revision, .committed))
+        #expect(await fixture.commands.thumbnails().isEmpty)
+        #expect(await fixture.commands.image(for: revision) == nil)
+        #expect(try await fixture.historyIDs() == [revision.captureID])
+    }
+
+    @Test func thumbnailsReportTheNextDueTimeUnlessTimeoutIsPausedOrNever() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let delay = ThumbnailStackPolicy().autoDismissDelay
+        let start = fixture.clock.now
+        _ = try await fixture.capture()
+        fixture.clock.advance(by: .seconds(1))
+        _ = try await fixture.capture()
+        #expect(await fixture.commands.thumbnails().nextDueAt == start + delay)
+
+        await fixture.commands.setThumbnailStackFocus(true)
+        #expect(await fixture.commands.thumbnails().nextDueAt == nil)
+        await fixture.commands.setThumbnailStackFocus(false)
+        #expect(await fixture.commands.thumbnails().nextDueAt == start + delay)
+
+        await fixture.commands.setThumbnailPolicy(ThumbnailStackPolicy(autoDismiss: .never))
+        #expect(await fixture.commands.thumbnails().nextDueAt == nil)
+    }
+
+    @Test func aThumbnailWaitingForARetryHasNoDueTime() async throws {
+        let fixture = StackFixture(clipboard: FailingOnceClipboard())
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        _ = await fixture.commands.execute(.copy(revision))
+        let thumbnails = await fixture.commands.thumbnails()
+        #expect(thumbnails.first?.automaticExitSuppressed == true)
+        #expect(thumbnails.nextDueAt == nil)
     }
 }

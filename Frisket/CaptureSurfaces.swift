@@ -15,10 +15,9 @@ import FrisketCore
     private(set) var isCapturing = false
     var isTerminating = false
     private var panels: [CaptureID: ThumbnailPanel] = [:]
-    private var screens: [CaptureID: NSScreen] = [:]
     private var editors: [CaptureID: EditorWindow] = [:]
-    private var arrivalOrder: [CaptureID] = []
-    private var timeouts: [CaptureID: Task<Void, Never>] = [:]
+    /// Wakes the stack at the core's next due time; the core owns order, displays and status (ticket 73).
+    private var nextDue: Task<Void, Never>?
 
     var hasEditor: Bool { !editors.isEmpty }
     var hasBusyThumbnail: Bool { panels.values.contains { $0.model.busy } }
@@ -111,13 +110,15 @@ import FrisketCore
     }
 
     func copyLatest() {
-        guard let id = arrivalOrder.last else { return }
-        copy(id)
+        Task { if let id = await latestThumbnail() { copy(id) } }
     }
 
     func deleteLatest() {
-        guard let id = arrivalOrder.last else { return }
-        discard(id)
+        Task { if let id = await latestThumbnail() { discard(id) } }
+    }
+
+    private func latestThumbnail() async -> CaptureID? {
+        await commands.thumbnails().first { panels[$0.revision.captureID] != nil }?.revision.captureID
     }
 
     func screenLocked() {
@@ -150,19 +151,16 @@ import FrisketCore
             return
         }
         let id = revision.captureID
-        screens[id] = screen
-        let assignedDisplay = displayID(of: screen)
-        panels[id] = makePanel(id, revision: revision, preview: preview, displayID: assignedDisplay)
-        arrivalOrder.append(id)
-        if let assignedDisplay { await commands.assignThumbnailDisplay(id, displayID: assignedDisplay) }
+        panels[id] = makePanel(id, revision: revision, preview: preview)
+        if let assignedDisplay = displayID(of: screen) { await commands.assignThumbnailDisplay(id, displayID: assignedDisplay) }
         await settleThumbnails()
         // Downsampling and orderFrontRegardless have completed. This is
         // presentation submission, not a physical-display timestamp.
         latency.thumbnailSubmitted()
     }
 
-    private func makePanel(_ id: CaptureID, revision: CaptureRevision, preview: CGImage, displayID: UInt32?) -> ThumbnailPanel {
-        let panel = ThumbnailPanel(revision: revision, preview: preview, displayID: displayID,
+    private func makePanel(_ id: CaptureID, revision: CaptureRevision, preview: CGImage) -> ThumbnailPanel {
+        let panel = ThumbnailPanel(revision: revision, preview: preview,
             actions: ThumbnailCardActions(copy: { [weak self] in self?.copy(id) },
                                           save: { [weak self] in self?.save(id) },
                                           delete: { [weak self] in self?.discard(id) },
@@ -193,13 +191,14 @@ import FrisketCore
         try? await Task.sleep(for: .milliseconds(50))
         if panels.values.contains(where: \.isKey) { return }
         await commands.setThumbnailStackFocus(false)
+        await settleThumbnails()   // a paused timeout may be due now
     }
 
     private func edit(_ id: CaptureID) {
-        guard !isTerminating, editors[id] == nil, let panel = panels[id], !panel.model.busy else { return }
+        guard !isTerminating, editors[id] == nil, let panel = panels[id], !panel.model.busy, panel.model.editable else { return }
         panel.model.busy = true
         Task {
-            let screen = screens[id]
+            let screen = await thumbnailScreen(id)
             let codec = PNGBitmapCodec()
             guard let image = await commands.image(for: panel.revision),
                   let pixels = codec.pixelSize(image.pngData),
@@ -252,18 +251,15 @@ import FrisketCore
                 return false
             }
             storeEditor(nil, for: id)
-            let screen = screens[id] ?? NSScreen.main
             guard let image = await commands.image(for: revision),
-                  let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480), let screen else {
+                  let preview = ThumbnailImage.make(from: image.pngData, maximumPixelSize: 480) else {
                 remove(id)
                 if case .finalized(_, .committed) = await commands.execute(.dismiss(revision)) { return true }
                 notice("Preview unavailable", "The redacted capture couldn't be shown or kept in History.")
                 return true
             }
             panel.close()
-            let refreshed = makePanel(id, revision: revision, preview: preview, displayID: displayID(of: screen))
-            refreshed.model.historyCommitted = commit == .committed
-            refreshed.model.editingUnavailable = commit == .notCommitted(.recoveryRequired)
+            let refreshed = makePanel(id, revision: revision, preview: preview)
             refreshed.model.dismissFailed = commit.map { $0 != .committed } ?? false
             if let delivery {
                 let delivered = await commands.execute(delivery.command(for: revision))
@@ -280,7 +276,7 @@ import FrisketCore
                 if case .rejected = delivered, delivery == .drag { refreshed.model.dragFailed = true }
             }
             panels[id] = refreshed
-            await settleThumbnails()
+            await settleThumbnails()   // applies the core's status to the new card
             if clipboardFailure != nil {
                 notice("Could not replace the earlier copy", "The clipboard may still contain the original capture. Use Copy on the redacted thumbnail to replace it.")
             }
@@ -327,8 +323,7 @@ import FrisketCore
             }
             await refreshHistory()
             showOversizedNotice(outcome.commit)
-            panel.model.historyCommitted = outcome.commit == .committed
-            panel.model.editingUnavailable = outcome.commit == .notCommitted(.recoveryRequired)
+            await settleThumbnails()
             if case .copied = outcome.delivery {
                 if outcome.commit == .notCommitted(.recoveryRequired) {
                     notice("History needs recovery", "The capture was copied, but History could not finish keeping it. This capture cannot be edited.")
@@ -340,14 +335,12 @@ import FrisketCore
                     panel.model.copyFailed = false
                     panel.model.dismissFailed = true
                     notice("Could not add to History", "The capture was copied. You can still edit it, retry Close, or delete it.")
-                    settleSoon()
                 } else {
                     remove(id)
                 }
             } else {
                 panel.model.copyFailed = true
                 panel.model.dismissFailed = !panel.model.historyCommitted
-                settleSoon()
             }
         }
     }
@@ -375,15 +368,14 @@ import FrisketCore
                 panel.model.dragFailed = true
                 return
             }
-            panel.model.historyCommitted = outcome.commit == .committed
             if case .copied = outcome.delivery {
                 if case .notCommitted = outcome.commit {
                     notice("Could not add to History", "The capture was dragged out, but could not be added to History.")
                 }
                 remove(id)
             } else {
+                await settleThumbnails()
                 panel.model.dragFailed = true
-                settleSoon()
             }
         }
     }
@@ -400,15 +392,14 @@ import FrisketCore
             }
             await refreshHistory()
             showOversizedNotice(outcome.commit)
-            panel.model.historyCommitted = outcome.commit == .committed
             if case .saved = outcome.delivery {
                 if case .notCommitted(let reason) = outcome.commit, reason != .captureExceedsHistoryLimit {
                     notice("Could not add to History", "The PNG was saved to the export folder, but could not be added to History.")
                 }
                 remove(id)
             } else {
+                await settleThumbnails()
                 panel.model.saveFailed = true
-                settleSoon()
                 notice("Save failed", panel.model.historyCommitted
                     ? "The capture is kept in History. Check the export folder in Settings, then Retry Save or Close."
                     : "The capture could not be saved or kept in History. Check the export folder in Settings, then Retry Save or Close.")
@@ -426,15 +417,11 @@ import FrisketCore
                 await refreshHistory()
                 showOversizedNotice(commit)
                 if commit == .committed {
-                    timeouts.removeValue(forKey: id)?.cancel()
                     panel.showKeptInHistory()
                     try? await Task.sleep(for: .seconds(1.2))
                     remove(id)
-                } else if commit == .notCommitted(.recoveryRequired) {
-                    panel.model.editingUnavailable = true
-                    panel.model.dismissFailed = true
-                    panel.model.busy = false
                 } else {
+                    await settleThumbnails()
                     panel.model.dismissFailed = true
                     panel.model.busy = false
                 }
@@ -464,56 +451,53 @@ import FrisketCore
 
     private func remove(_ id: CaptureID) {
         panels.removeValue(forKey: id)?.close()
-        screens.removeValue(forKey: id)
         storeEditor(nil, for: id)
-        arrivalOrder.removeAll { $0 == id }
-        timeouts.removeValue(forKey: id)?.cancel()
         if panels.isEmpty { Task { await commands.setThumbnailStackFocus(false) } }
         settleSoon()
     }
 
     private func settleSoon() { Task { await settleThumbnails() } }
 
-    /// Lays cards out in the core's order and performs the exits it reports as due.
+    /// Applies the core's Thumbnail status, lays cards out in its order on its displays,
+    /// performs the exits it reports as due, and wakes at its next due time.
     private func settleThumbnails() async {
         guard !isTerminating else { return }
-        let cards = await commands.thumbnails()
+        let thumbnails = await commands.thumbnails()
         guard !isTerminating else { return }
-        layoutThumbnails(cards.map(\.revision.captureID))
-        for card in cards {
-            let id = card.revision.captureID
-            guard panels[id] != nil else { continue }
-            if card.automaticExitSuppressed {
-                timeouts.removeValue(forKey: id)?.cancel()
-                continue
-            }
-            if let exit = card.dueExit {
-                leave(id, by: exit)
-            } else if let expiresAt = card.expiresAt, expiresAt > .now, timeouts[id] == nil {
-                timeouts[id] = Task { [weak self] in
-                    try? await Task.sleep(until: expiresAt, clock: .continuous)
-                    guard !Task.isCancelled else { return }
-                    self?.timeouts[id] = nil
-                    await self?.settleThumbnails()
-                }
-            } else {
-                timeouts.removeValue(forKey: id)?.cancel()
+        layoutThumbnails(thumbnails.cards)
+        for card in thumbnails {
+            guard let panel = panels[card.revision.captureID] else { continue }
+            if panel.model.status != card.status { panel.model.status = card.status }
+            if panel.model.editable != card.editable { panel.model.editable = card.editable }
+            if let exit = card.dueExit { leave(card.revision.captureID, by: exit) }
+        }
+        nextDue?.cancel()
+        nextDue = thumbnails.nextDueAt.map { due in
+            Task { [weak self] in
+                try? await Task.sleep(until: due, clock: .continuous)
+                guard !Task.isCancelled else { return }
+                await self?.settleThumbnails()
             }
         }
     }
 
     /// Newest card nearest the corner of its capture display; older cards stack upward.
-    private func layoutThumbnails(_ newestFirst: [CaptureID]) {
+    private func layoutThumbnails(_ newestFirst: [ThumbnailCard]) {
         var stacks: [UInt32?: [ThumbnailPanel]] = [:]
-        for id in newestFirst {
-            if let panel = panels[id] { stacks[panel.displayID, default: []].append(panel) }
+        for card in newestFirst {
+            if let panel = panels[card.revision.captureID] { stacks[card.displayID, default: []].append(panel) }
         }
         for (displayID, stack) in stacks {
-            guard let screen = screen(for: displayID) else { continue }
+            guard let screen = screen(for: displayID) ?? NSScreen.main else { continue }
             // Fixed-size Thumbnails (D9): the core computes non-overlapping slots.
             let origins = ThumbnailStackLayout.origins(count: stack.count, in: screen.visibleFrame)
             for (panel, origin) in zip(stack, origins) { panel.place(at: origin) }
         }
+    }
+
+    /// The display the core assigned to this capture's Thumbnail.
+    private func thumbnailScreen(_ id: CaptureID) async -> NSScreen? {
+        screen(for: await commands.thumbnails().first { $0.revision.captureID == id }?.displayID)
     }
 
     private func displayID(of screen: NSScreen) -> UInt32? { screen.selectionDisplay?.id }
@@ -540,12 +524,6 @@ import FrisketCore
 
     private func rehomeThumbnails() async {
         _ = await commands.handleSystemEvent(.displaysChanged(remaining: connectedDisplayIDs()))
-        for card in await commands.thumbnails() {
-            let id = card.revision.captureID
-            guard let panel = panels[id], let display = card.displayID else { continue }
-            panel.displayID = display
-            screens[id] = screen(for: display)
-        }
         await settleThumbnails()
     }
 

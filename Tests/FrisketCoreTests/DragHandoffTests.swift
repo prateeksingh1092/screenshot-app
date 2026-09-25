@@ -268,3 +268,26 @@ extension DragHandoffTests {
         #expect(await commands.thumbnails().map(\.revision) == [revision], "D7: its Thumbnail is still open")
     }
 }
+
+/// Ticket 73: a drag goes through the same delivery path as Copy and Save, and its Thumbnail
+/// reports the status the core holds.
+extension DragHandoffTests {
+    @Test func aRefusedDragLeavesAPendingThumbnailAndDraggingAgainIsTheRetry() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let handoff = RecordingDragHandoff(writeFails: true)
+        let commands = makeDragCommands(root: root, handoff: handoff)
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+        #expect(await commands.execute(.capture(revision.captureID, maximumBytes: DragPixels().bytes.count)) == .pending(revision))
+        #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: nil, delivery: .failed)))
+        let card = try #require(await commands.thumbnails().first)
+        #expect(card.status == .pending)
+        #expect(card.automaticExitSuppressed)
+        #expect(!FileManager.default.fileExists(atPath: root.path))
+
+        await handoff.setWriteFails(false)
+        #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: .committed, delivery: .copied)))
+        #expect(await commands.thumbnails().isEmpty)
+        #expect(try await commands.historyEntries().get().map(\.captureID) == [revision.captureID])
+    }
+}
