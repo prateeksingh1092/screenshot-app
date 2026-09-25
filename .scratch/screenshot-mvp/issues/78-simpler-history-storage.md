@@ -20,3 +20,7 @@
 ### 2026-09-24: coordinator, created
 
 Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82–101 (decision 58). Claude Opus 5.5, Claude Code, medium effort.
+
+### 2026-09-24: coordinator, note
+
+A second test that fails at random under load: `RetentionCommandsTests.processKillAtEveryEvictionPoint…` returned `.recoveryRequired` once, at a load average of about 11 (ticket 49's run). It passed 8 of 8 runs alone. It is probably the same lock and child-process family as D27. The rewrite in this ticket should remove both.

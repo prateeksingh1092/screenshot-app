@@ -6,7 +6,7 @@
 
 **Phase:** 1
 
-**Status:** ready-for-agent
+**Status:** resolved (tested on `main` at `22213c5`; live rows wait for an approved install)
 
 - [x] The D2 tests pass without the known-defect mark.
 - [x] Rejected windows: an empty owning-app bundle ID, a level at or above the Dock, pop-up menu and cursor levels, a side shorter than 32 pt, the Dock, and Frisket itself.
@@ -47,3 +47,7 @@ Claude Opus 5.5 (1M context), Claude Code, high effort. Branch `ticket/49-window
 
 **Evidence (x86_64 only):** `scripts/ci.sh` prints `ci: green` on the second run, including the unsigned app build. `scripts/ci.sh --defects` no longer lists either D2 test as red.
 
+
+### 2026-09-24: coordinator, integrated
+
+Merged with tickets 60 and 63 (batch 1). `ci.sh` on `main` `22213c5` is green: 326 tests, 67 known issues. The live-matrix rows wait until Prateek approves installing a new build (docs/app-build.md).

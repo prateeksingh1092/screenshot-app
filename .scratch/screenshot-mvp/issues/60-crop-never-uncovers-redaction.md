@@ -6,7 +6,7 @@
 
 **Phase:** 1
 
-**Status:** ready-for-agent
+**Status:** resolved (tested on `main` at `22213c5`; live rows wait for an approved install)
 
 - [x] The D18 test passes without the known-defect mark.
 - [x] Canary tests at 1× and 2× with a fractional crop and scale pass for the clipboard, the saved file, History, the dragged file and the Thumbnail.
@@ -35,3 +35,7 @@ Claude Opus 5.5 (1M context), Claude Code, high effort. Branch `ticket/60-crop-n
 
 **Left open (live):** a fractional crop made in the real editor (crop at a non-integer proxy position, then redact at the crop edge) should deliver no original pixel under the redaction on copy, save, drag, History and the Thumbnail. The package tests reach the render and delivery seams, not the editor's crop gesture.
 
+
+### 2026-09-24: coordinator, integrated
+
+Merged with tickets 60 and 63 (batch 1). `ci.sh` on `main` `22213c5` is green: 326 tests, 67 known issues. The live-matrix rows wait until Prateek approves installing a new build (docs/app-build.md).
