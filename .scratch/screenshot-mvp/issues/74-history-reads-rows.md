@@ -20,7 +20,7 @@ Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82â
 
 ### 2026-09-25: implementer, report
 
-Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62). Decision 70 records the choices.
+Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62). Decision 71 records the choices.
 
 - **Command layer deleted.** `CaptureLifecycleCoordinator` is the public actor; `execute` records diagnostics. The eight History pass-throughs are gone; the History window, Settings and launch call `HistoryStore` directly. Tests construct the coordinator and read History from the store they inject.
 - **Read model.** `HistoryStore.rows()` is one query, newest first, no paths. `thumbnailPNG`, `finalizedImage` and `delete` look one row up by ID. The core `HistoryList` does a reload as that one query, reports whether rows changed (so an unchanged History does not redraw) and loads pictures per visible row, cached by revision (300). The window used to look up every row's thumbnail one at a time, each a full read, and republish the list after every row; the coordinator measured Done at 48 s with ~240 items and History open.

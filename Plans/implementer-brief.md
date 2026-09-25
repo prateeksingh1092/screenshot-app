@@ -32,6 +32,10 @@ Work only inside that worktree: absolute paths, and `cd` into it for commands. N
 - Touch `main`.
 - Use network APIs; the repository check forbids them.
 
+## Decisions
+
+Record a technical choice in `decisions.md` as `NN. **Title (implementer, <date>, ticket <n>):**`, with the literal `NN` and no number. Put it just before `## Evaluation update`. Refer to it elsewhere as "this ticket's decision". The coordinator numbers it at merge, because parallel agents otherwise pick the same number.
+
 ## Finish
 
 1. Tick the criteria you met in the ticket file, and leave live-matrix criteria unticked.
