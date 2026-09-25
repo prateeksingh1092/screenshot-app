@@ -70,7 +70,6 @@ extension CaptureHistory {
 public enum HistoryCommitPoint: String, CaseIterable, Codable, Sendable {
     case pngStaged, pngSynced, recordStaged, recordSynced
     case imageRenamed, recordRenamed, directorySynced, rowCommitted, thumbnailCached
-    case dragStaged, dragPromiseWritten
 }
 
 public struct HistoryRecoveryReport: Equatable, Sendable {

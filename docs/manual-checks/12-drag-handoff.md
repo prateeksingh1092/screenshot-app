@@ -33,11 +33,12 @@ and **arm64 not executed**.
    and is a different file from the Finder copy. Dragging must not move or
    delete that file.
 
-4. Capture the pattern again. Drag the thumbnail onto the Trash. The Trash must
-   not remove the History image. A refused drop or a separate copy in the Trash
-   are both acceptable. Quit Frisket and confirm the `images/` file for that
-   capture is still there. `staging/drag/` may be empty; a leftover there is
-   removed on the next launch sweep (ticket 10) and is not a History item.
+4. Capture the pattern again. Drag the thumbnail onto the Trash. A refused drop
+   leaves the capture pending: its Thumbnail stays open and History gains no row.
+   A separate copy in the Trash is also acceptable; it finalizes the capture once
+   and never removes its History image. Drags stage nothing: `staging/drag/` must
+   not exist (ticket 54, DA-3); the launch sweep removes one an earlier build left.
 
-5. A failed drag that still shows “Kept in History” must hide Delete Capture.
-   Do not empty the Trash into History, and do not capture real content to retry.
+5. Press Esc during a drag, or drop it on a window that accepts no files. The
+   Thumbnail stays open and pending, History is unchanged, and nothing is written
+   under `History.noindex`. Do not capture real content to retry.

@@ -357,7 +357,7 @@ and `com.apple.screenIsLocked` / `com.apple.screenIsUnlocked`.
 
 `historyItems()` is newest first and carries no paths. `historyImage` reads the
 finalized PNG. `execute(.copy/.save/.drag)` on a History revision reuses the
-delivery adapters, stages a copy for drag, and leaves the owned file. Repeat
+delivery adapters and leaves the owned file. Repeat
 Copy is allowed. `deleteHistory` uses the same `deleting` → unlink → row-removed
 path as quota eviction; an interrupted delete finishes at the next launch.
 Done is `alreadyFinalized`. The History window is a Frisket surface, so capture
@@ -367,18 +367,19 @@ already excludes it with the rest of the app.
 
 `execute(.drag(revision, operation))` is another exit through the same finalization
 policy as Copy and Dismiss. Only `.copy` is accepted; `.move` and `.delete` are
-rejected and do not touch History. A copy drag finalizes once, stages the rendered
-PNG under `staging/drag/`, and reports commit and delivery separately. The staging
-file is deleted only after the promise write completion has returned and the drag
-session has ended. `dragStaged` and `dragPromiseWritten` extend `HistoryCommitPoint`.
+rejected and do not touch History. Since ticket 54 (DA-3) a copy drag hands off
+first and finalizes only when the destination accepted the drop: nothing is
+staged on disk, and `DragPromiseWriter` writes the promised file from memory.
 The app adapter is an `NSFilePromiseProvider` whose dragging mask is `.copy`.
 Delivery reports `.copied` only after the destination write, completion callback,
-and session lifetime finish. A successful drag removes the thumbnail; a failed
-one retains it and suppresses timeout/overflow until an explicit action. Copy,
-Save and Drag share the cached History commit, including a failed commit.
-The recovery suite covers both drag interruption points in its throw and SIGKILL
-tiers, checks that staging survives interruption, then verifies two launch sweeps
-preserve History and remove the staging leftovers.
+and session lifetime finish. A successful drag commits once and removes the
+Thumbnail. A cancelled or failed drag commits nothing (`DragOutcome.commit` is
+`nil` unless an earlier delivery already committed), keeps the capture pending,
+and suppresses timeout/overflow until an explicit action. Copy, Save and Drag
+share the cached History commit, including a failed commit. An editor drag uses
+`.render` rather than `.done`: the edit becomes the next pending revision, and
+the drag finalizes it only on an accepted drop. The launch sweep removes any
+`staging/drag/` an earlier build left.
 
 ## Ticket 26 editor document, renderer and Done
 

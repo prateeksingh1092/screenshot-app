@@ -22,4 +22,4 @@ focus-latest	D12	pass	After ⌘⇧2, the Thumbnail's C key copies (keys reach th
 history-copy	-	pass	History row Copy puts the newest capture on the clipboard (pattern --verify)
 history-save	D17	xfail	History row Save writes one export whose name carries the date
 history-delete	D10	pass	History Delete with the capture's Thumbnail still open asks first, then succeeds
-drag-cancel	D7	xfail	A cancelled editor drag leaves History and drag staging unchanged
+drag-cancel	D7	pass	A cancelled editor drag leaves History and drag staging unchanged

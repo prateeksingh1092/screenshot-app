@@ -305,9 +305,6 @@ extension HistoryCommandsTests {
             expected = ["images/\(id).png", "images/\(id).finalization.json"]
         case .thumbnailCached:
             expected = ["images/\(id).png", "images/\(id).finalization.json", "thumbnails/\(id).png"]
-        case .dragStaged, .dragPromiseWritten:
-            // Dismiss never reaches a drag point. DragHandoffTests injects those faults.
-            expected = []
         }
         var files = Set<String>()
         for subdirectory in ["staging", "images", "thumbnails"] {
@@ -428,7 +425,7 @@ extension HistoryCommandsTests {
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: clipboard,
             pendingByteLimit: source.bytes.count, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { folder }, historyRoot: root),
-            drag: handoff, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")))
+            drag: handoff)
         let revision = try await finalize(commands, source: source)
         let owned = root.appendingPathComponent("images/\(revision.captureID.rawValue.uuidString).png")
         #expect(await commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,

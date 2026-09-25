@@ -60,8 +60,7 @@ import FrisketCore
             exclusions: { [exclusions] in exclusions.bundleIdentifiers })
         windowPlatform.decodedByteCeiling = budgets.stillDecodedBytes
         self.windowPlatform = windowPlatform
-        let dragStaging = DragStagingLifetime(directory: identity.historyRoot.appendingPathComponent("staging/drag"))
-        let dragAdapter = FilePromiseDragAdapter(staging: dragStaging)
+        let dragAdapter = FilePromiseDragAdapter(writer: DragPromiseWriter())
         self.dragAdapter = dragAdapter
         let scrolling = ManualScrollingCapture(platform: platform, bundleIdentifier: identity.bundleIdentifier)
         self.scrolling = scrolling
@@ -73,7 +72,7 @@ import FrisketCore
             clipboard: pasteboard, pendingByteLimit: budgets.pendingSessionEncodedBytes,
             history: HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits),
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
-            drag: dragAdapter, dragStaging: dragStaging, thumbnailPolicy: thumbnailSettings.policy,
+            drag: dragAdapter, thumbnailPolicy: thumbnailSettings.policy,
             codec: PNGBitmapCodec(),
             scrollingFrames: scrolling, scrollingPreview: scrolling,
             textRecognizer: VisionTextRecognizer(), textClipboard: pasteboard)

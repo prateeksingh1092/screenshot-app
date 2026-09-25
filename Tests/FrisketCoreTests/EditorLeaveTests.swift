@@ -28,7 +28,8 @@ import Testing
         #expect(id == revision.captureID)
     }
 
-    @Test func editorCopySaveAndDragFinalizeThroughDoneThenDeliver() throws {
+    /// DA-3: an editor drag renders without finalizing; only an accepted drop finalizes it.
+    @Test func editorCopyAndSaveFinalizeThroughDoneButDragOnlyRendersBeforeDelivering() throws {
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         let rendered = CaptureRevision(captureID: revision.captureID, number: 2)
         let edits = try #require(DocumentEdits(scale: 1))
@@ -36,6 +37,14 @@ import Testing
             Issue.record("Editor copy must Done first"); return
         }
         #expect(submitted == edits)
+        guard case .done = EditorLeave.deliver(edits, .save).command(for: revision) else {
+            Issue.record("Editor save must Done first"); return
+        }
+        guard case .render(let left, let rendering) = EditorLeave.deliver(edits, .drag).command(for: revision) else {
+            Issue.record("Editor drag must render without finalizing"); return
+        }
+        #expect(left == revision)
+        #expect(rendering == edits)
         guard case .copy(let copied) = EditorDelivery.copy.command(for: rendered) else {
             Issue.record("Editor copy delivers the rendered revision"); return
         }

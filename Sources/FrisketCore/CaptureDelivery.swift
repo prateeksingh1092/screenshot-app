@@ -84,7 +84,8 @@ public enum DragDelivery: Equatable, Sendable {
     case copied, failed
 }
 
-/// The drag session reports these in either order. The staging file stays until both have run.
+/// The drag session reports these in either order. Nothing is staged on disk: the promised
+/// file is written from memory, and a drag finalizes only once the destination accepted it (DA-3).
 public protocol DragCopyEvents: Sendable {
     func promiseWriteReturned() async throws
     func dragSessionEnded() async
@@ -93,16 +94,4 @@ public protocol DragCopyEvents: Sendable {
 /// Recording stand-ins and the file-promise adapter sit here. Only `.copy` is a handoff.
 public protocol DragHandoff: Sendable {
     func deliver(_ operation: DragFileOperation, image: DragImage, events: any DragCopyEvents) async throws -> DragDelivery
-}
-
-public struct DragStagingID: Hashable, Sendable {
-    let rawValue: UUID
-    init(rawValue: UUID) { self.rawValue = rawValue }
-}
-
-/// Disk lifetime of one drag copy. Callers learn only when to stage and when each event happened.
-public protocol DragCopyStaging: Sendable {
-    func stage(_ request: AuthorizedFinalization) async throws -> DragStagingID
-    func promiseWriteReturned(_ id: DragStagingID) async throws
-    func dragSessionEnded(_ id: DragStagingID) async
 }

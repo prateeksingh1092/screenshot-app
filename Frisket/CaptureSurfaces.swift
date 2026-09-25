@@ -254,9 +254,14 @@ import FrisketCore
             storeEditor(nil, for: id)
             remove(id)
             return true
-        case let .finalize(edits?), let .deliver(edits, _):
+        case .finalize(.some), .deliver:
             let delivery: EditorDelivery? = if case let .deliver(_, kind) = leave { kind } else { nil }
-            guard case let .edited(revision, commit, clipboardFailure) = await commands.execute(.done(panel.revision, edits)) else {
+            // An editor drag renders the edits but commits nothing; only an accepted drop finalizes it (DA-3).
+            let revision: CaptureRevision, commit: CommitOutcome?, clipboardFailure: ClipboardFailure?
+            switch await commands.execute(leave.command(for: panel.revision)) {
+            case let .edited(edited, committed, failure): (revision, commit, clipboardFailure) = (edited, committed, failure)
+            case let .rendered(rendered, failure): (revision, commit, clipboardFailure) = (rendered, nil, failure)
+            default:
                 notice("Could not finish editing", "Your edits are still open. Keep in History could not prepare the redacted result. Retry Keep in History to finish editing.")
                 return false
             }
@@ -273,14 +278,19 @@ import FrisketCore
             let refreshed = makePanel(id, revision: revision, preview: preview, displayID: displayID(of: screen))
             refreshed.model.historyCommitted = commit == .committed
             refreshed.model.editingUnavailable = commit == .notCommitted(.recoveryRequired)
-            refreshed.model.dismissFailed = commit != .committed
+            refreshed.model.dismissFailed = commit.map { $0 != .committed } ?? false
             if let delivery {
                 let delivered = await commands.execute(delivery.command(for: revision))
                 if case .copy(let outcome) = delivered, case .failed = outcome.delivery { refreshed.model.copyFailed = true }
                 if case .save(let outcome) = delivered, case .failed = outcome.delivery { refreshed.model.saveFailed = true }
                 if case .rejected = delivered, delivery == .copy { refreshed.model.copyFailed = true }
                 if case .rejected = delivered, delivery == .save { refreshed.model.saveFailed = true }
-                if case .drag(let outcome) = delivered, outcome.delivery != .copied { refreshed.model.dragFailed = true }
+                if case .drag(let outcome) = delivered {
+                    if outcome.delivery != .copied { refreshed.model.dragFailed = true }
+                    else if case .notCommitted = outcome.commit {
+                        notice("Could not keep in History", "The capture was dragged out, but could not be kept in History.")
+                    }
+                }
                 if case .rejected = delivered, delivery == .drag { refreshed.model.dragFailed = true }
             }
             panels[id] = refreshed

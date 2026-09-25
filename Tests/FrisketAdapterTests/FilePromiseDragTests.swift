@@ -54,7 +54,7 @@ import Testing
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let adapter = FilePromiseDragAdapter(staging: DragStagingLifetime(directory: root))
+        let adapter = FilePromiseDragAdapter(writer: DragPromiseWriter())
         let bytes = Data("synthetic promised bytes".utf8)
         let events = PromiseEvents()
         let delivery = await startDelivery(adapter, bytes: bytes, events: events)
@@ -107,7 +107,7 @@ import Testing
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let adapter = FilePromiseDragAdapter(staging: DragStagingLifetime(directory: root))
+        let adapter = FilePromiseDragAdapter(writer: DragPromiseWriter())
         let events = PromiseEvents()
         let bytes = Data("synthetic promised bytes".utf8)
         let delivery = await startDelivery(adapter, bytes: bytes, events: events) { _ in

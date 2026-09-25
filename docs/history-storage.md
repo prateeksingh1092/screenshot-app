@@ -37,8 +37,8 @@ that marker. A real Time Machine check remains manual.
 
 The root contains `history.sqlite` (and SQLite sidecars), `staging/`, `images/`,
 and the disposable `thumbnails/` cache. File names use the capture UUID only.
-Drag copies live under `staging/drag/` and are not History images. The launch
-sweep empties `staging/` recursively, including that directory.
+Drags stage nothing on disk (ticket 54, DA-3). The launch sweep empties
+`staging/` recursively, which removes any `staging/drag/` an earlier build left.
 The baseline `history-v1` migration creates the integer primary key, unique
 capture identifier, revision, relative image/record/thumbnail locations,
 dimensions, logical byte sizes, date, and the two allowed states `finalized` and
@@ -82,8 +82,6 @@ over later cache errors.
 7. `directorySynced`: `fsync` succeeded for images, staging, and the root.
 8. `rowCommitted`: one History row inserted in one SQLite transaction.
 9. `thumbnailCached`: post-commit thumbnail written and its location/size updated.
-10. `dragStaged`: a copy of the rendered PNG is written and synced under `staging/drag/`. Fired by `DragStagingLifetime`, after finalization, not by `HistoryStore`.
-11. `dragPromiseWritten`: the file-promise write completion has returned. The staging file is deleted only after this and the drag-session end, in either order. A fault leaves the file for the sweep. History's image is not moved or deleted.
 
 Root setup also syncs the root and its parent. The sidecar
 `images/<UUID>.finalization.json` contains marker `frisket.finalized.v1`,

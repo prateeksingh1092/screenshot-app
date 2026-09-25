@@ -71,30 +71,26 @@ actor RecordingDragHandoff: DragHandoff {
     }
 }
 
-private func makeDragCommands(root: URL, handoff: RecordingDragHandoff,
-                              commitPoint: @escaping @Sendable (HistoryCommitPoint) throws -> Void = { _ in }) -> CaptureCommandLayer {
+private func makeDragCommands(root: URL, handoff: RecordingDragHandoff) -> CaptureCommandLayer {
     let source = DragPixels()
     return CaptureCommandLayer(permission: GrantedTestPermission(), source: source, fullScreenSource: source,
-        clipboard: DragClipboard(), pendingByteLimit: source.bytes.count, history: HistoryStore(root: root, commitPoint: commitPoint),
-        drag: handoff, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag"), commitPoint: commitPoint))
+        clipboard: DragClipboard(), pendingByteLimit: source.bytes.count, history: HistoryStore(root: root), drag: handoff)
 }
 
-private func stagedDragFiles(root: URL) throws -> [URL] {
-    let directory = root.appendingPathComponent("staging/drag")
-    guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
-    return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+/// Drags stage nothing: no `staging/drag` directory is ever created (DA-3).
+private func dragStagingExists(root: URL) -> Bool {
+    FileManager.default.fileExists(atPath: root.appendingPathComponent("staging/drag").path)
 }
 
 private final class FirstEventFiles: @unchecked Sendable {
-    var count = -1
-    var bytes = Data()
+    var files: [String]?
 }
 
 @Suite struct DragHandoffTests {
     @Test func commitPointListIsClosed() {
         #expect(Set(HistoryCommitPoint.allCases.map(\.rawValue)) == [
             "pngStaged", "pngSynced", "recordStaged", "recordSynced", "imageRenamed", "recordRenamed",
-            "directorySynced", "rowCommitted", "thumbnailCached", "dragStaged", "dragPromiseWritten"
+            "directorySynced", "rowCommitted", "thumbnailCached"
         ])
     }
 
@@ -115,13 +111,14 @@ private final class FirstEventFiles: @unchecked Sendable {
         #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == source.bytes)
         #expect(await handoff.operations() == [.copy])
         #expect(await handoff.bytes() == [source.bytes])
-        #expect(try stagedDragFiles(root: root).isEmpty)
+        #expect(!dragStagingExists(root: root))
         #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: .committed, delivery: .copied)))
         #expect(await handoff.operations() == [.copy, .copy])
         #expect(await handoff.bytes() == [source.bytes, source.bytes])
         #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == source.bytes)
         #expect(await commands.execute(.dismiss(revision)) == .rejected(.alreadyFinalized))
         #expect(try await commands.historyEntries().get().count == 1)
+        #expect(!dragStagingExists(root: root))
         let next = CaptureID()
         #expect(await commands.execute(kind.command(next, maximumBytes: source.bytes.count)) == .pending(CaptureRevision(captureID: next, number: 1)))
     }
@@ -143,31 +140,32 @@ private final class FirstEventFiles: @unchecked Sendable {
         #expect(await handoff.operations().isEmpty)
     }
 
+    /// DA-3: while the drag session runs, in either event order, nothing about the capture is on disk.
+    /// It is committed only after the handoff reports the accepted drop.
     @Test(arguments: [RecordingDragHandoff.Order.writeThenSession, .sessionThenWrite], DragCaptureKind.allCases)
-    private func stagingFileIsRemovedOnlyAfterBothDragEvents(order: RecordingDragHandoff.Order, kind: DragCaptureKind) async throws {
+    private func nothingReachesDiskUntilTheDropIsAccepted(order: RecordingDragHandoff.Order, kind: DragCaptureKind) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let handoff = RecordingDragHandoff(order: order)
         let seen = FirstEventFiles()
-        await handoff.setAfterFirstEvent {
-            let files = (try? stagedDragFiles(root: root)) ?? []
-            seen.count = files.count
-            if let first = files.first, let data = try? Data(contentsOf: first) { seen.bytes = data }
-        }
+        await handoff.setAfterFirstEvent { seen.files = filesUnder(root) }
         let commands = makeDragCommands(root: root, handoff: handoff)
         let source = DragPixels()
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(kind.command(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
         #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: .committed, delivery: .copied)))
-        #expect(seen.count == 1)
-        #expect(seen.bytes == source.bytes)
-        #expect(try stagedDragFiles(root: root).isEmpty)
-        let entry = try #require(try await commands.historyEntries().get().first)
+        #expect(seen.files == [])
+        #expect(!dragStagingExists(root: root))
+        let entries = try await commands.historyEntries().get()
+        #expect(entries.count == 1)
+        let entry = try #require(entries.first)
         #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == source.bytes)
+        #expect(await commands.image(for: revision) == nil)
+        #expect(await commands.thumbnails().isEmpty)
     }
 
     @Test(arguments: DragCaptureKind.allCases)
-    private func failedPromiseWriteKeepsTheHistoryCommit(kind: DragCaptureKind) async throws {
+    private func failedPromiseWriteCommitsNothingAndARetriedDropCommitsOnce(kind: DragCaptureKind) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let handoff = RecordingDragHandoff(writeFails: true)
@@ -175,50 +173,47 @@ private final class FirstEventFiles: @unchecked Sendable {
         let source = DragPixels()
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(kind.command(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
-        #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: .committed, delivery: .failed)))
-        let before = try await commands.historyEntries().get()
-        let entry = try #require(before.first)
-        #expect(before.count == 1)
-        #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == source.bytes)
+        #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: nil, delivery: .failed)))
+        #expect(filesUnder(root).isEmpty)
         #expect(await commands.image(for: revision)?.pngData == source.bytes)
-        #expect(try stagedDragFiles(root: root).isEmpty)
+        let cards = await commands.thumbnails()
+        #expect(cards.map(\.revision) == [revision])
+        #expect(cards.first?.automaticExitSuppressed == true)
         #expect(await handoff.bytes() == [source.bytes])
         await handoff.setWriteFails(false)
         #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: .committed, delivery: .copied)))
-        #expect(try await commands.historyEntries().get() == before)
-        #expect(try stagedDragFiles(root: root).isEmpty)
+        let entries = try await commands.historyEntries().get()
+        #expect(entries.map(\.captureID) == [revision.captureID])
+        #expect(try Data(contentsOf: root.appendingPathComponent(try #require(entries.first).imageLocation)) == source.bytes)
+        #expect(!dragStagingExists(root: root))
     }
 }
 
 private enum DragStop: Error { case stop }
 
+/// A handoff whose session faults (for example, AppKit reports an error) before any drop.
+private struct ThrowingDragHandoff: DragHandoff {
+    func deliver(_ operation: DragFileOperation, image: DragImage, events: any DragCopyEvents) async throws -> DragDelivery {
+        await events.dragSessionEnded()
+        throw DragStop.stop
+    }
+}
+
 extension DragHandoffTests {
-    @Test(arguments: [HistoryCommitPoint.dragStaged, .dragPromiseWritten], DragCaptureKind.allCases)
-    private func dragFaultLeavesHistoryCommittedAndTheStagingFile(point: HistoryCommitPoint, kind: DragCaptureKind) async throws {
+    @Test(arguments: DragCaptureKind.allCases)
+    private func aFaultedDragCommitsNothingAndKeepsTheCapturePending(kind: DragCaptureKind) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
-        let handoff = RecordingDragHandoff()
-        let commands = makeDragCommands(root: root, handoff: handoff, commitPoint: { reached in
-            if reached == point { throw DragStop.stop }
-        })
         let source = DragPixels()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, fullScreenSource: source,
+            clipboard: DragClipboard(), pendingByteLimit: source.bytes.count, history: HistoryStore(root: root),
+            drag: ThrowingDragHandoff())
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(kind.command(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
-        #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: .committed, delivery: .failed)))
-        let entries = try await commands.historyEntries().get()
-        let entry = try #require(entries.first)
-        #expect(entries.count == 1)
-        #expect(try Data(contentsOf: root.appendingPathComponent(entry.imageLocation)) == source.bytes)
-        let staged = try stagedDragFiles(root: root)
-        #expect(staged.count == 1)
-        let stagedFile = try #require(staged.first)
-        #expect(try Data(contentsOf: stagedFile) == source.bytes)
+        #expect(await commands.execute(.drag(revision, .copy)) == .drag(DragOutcome(revision: revision, commit: nil, delivery: .failed)))
+        #expect(filesUnder(root).isEmpty)
         #expect(await commands.image(for: revision)?.pngData == source.bytes)
-        if point == .dragStaged {
-            #expect(await handoff.operations().isEmpty)
-        } else {
-            #expect(await handoff.operations() == [.copy])
-        }
+        #expect(await commands.thumbnails().map(\.revision) == [revision])
     }
 }
 
@@ -250,28 +245,26 @@ extension DragHandoffTests {
     /// leaves the capture pending, with nothing in History and nothing on disk.
     @Test(arguments: DragCaptureKind.allCases)
     private func d7CancelledDragLeavesTheCapturePendingWithNothingOnDisk(kind: DragCaptureKind) async throws {
-        try await knownDefect("D7") {
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
-            defer { try? FileManager.default.removeItem(at: root) }
-            let handoff = CancellingDragHandoff()
-            let source = DragPixels()
-            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, fullScreenSource: source,
-                clipboard: DragClipboard(), pendingByteLimit: source.bytes.count, history: HistoryStore(root: root),
-                drag: handoff, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")))
-            let revision = CaptureRevision(captureID: CaptureID(), number: 1)
-            #expect(await commands.execute(kind.command(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let handoff = CancellingDragHandoff()
+        let source = DragPixels()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, fullScreenSource: source,
+            clipboard: DragClipboard(), pendingByteLimit: source.bytes.count, history: HistoryStore(root: root),
+            drag: handoff)
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+        #expect(await commands.execute(kind.command(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
 
-            guard case let .drag(outcome) = await commands.execute(.drag(revision, .copy)) else {
-                Issue.record("a drag command returns a drag outcome")
-                return
-            }
-            #expect(await handoff.sessions == 1)
-            #expect(outcome.delivery == .failed)
-            let entries = try await commands.historyEntries().get()
-            #expect(entries.isEmpty, "D7: a cancelled drag committed the capture to History")
-            #expect(filesUnder(root).isEmpty, "D7: a cancelled drag left files on disk: \(filesUnder(root))")
-            #expect(await commands.image(for: revision)?.pngData == source.bytes, "D7: the capture is still pending")
-            #expect(await commands.thumbnails().map(\.revision) == [revision], "D7: its Thumbnail is still open")
+        guard case let .drag(outcome) = await commands.execute(.drag(revision, .copy)) else {
+            Issue.record("a drag command returns a drag outcome")
+            return
         }
+        #expect(await handoff.sessions == 1)
+        #expect(outcome.delivery == .failed)
+        let entries = try await commands.historyEntries().get()
+        #expect(entries.isEmpty, "D7: a cancelled drag committed the capture to History")
+        #expect(filesUnder(root).isEmpty, "D7: a cancelled drag left files on disk: \(filesUnder(root))")
+        #expect(await commands.image(for: revision)?.pngData == source.bytes, "D7: the capture is still pending")
+        #expect(await commands.thumbnails().map(\.revision) == [revision], "D7: its Thumbnail is still open")
     }
 }
