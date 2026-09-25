@@ -19,7 +19,7 @@
 
 ### 2026-09-25: implementer, report
 
-Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62). Recorded as decision 68.
+Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62). Recorded as decision 69.
 
 **What changed:** `Sources/FrisketCore/WindowSelection.swift` drops the empty-bundle-ID rejection. The cursor stays excluded by its level (2147483630, above the Dock-level ceiling of 20) and its size (under 32 pt). The Capture exclusion list is unchanged; it matches bundle IDs, so an unbundled window cannot be excluded by it.
 
