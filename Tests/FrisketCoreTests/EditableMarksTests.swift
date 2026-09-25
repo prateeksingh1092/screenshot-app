@@ -230,8 +230,10 @@ import Testing
                 return Array(out.bytes[i..<i + 4]) == [ink.red, ink.green, ink.blue, 255]
             }.count
         }
-        let thin = try inkRows(try #require(DocumentAnnotation(.arrow(x0: 2, y0: 20, x1: 70, y1: 20))), DocumentAnnotation.stroke)
-        let thick = try inkRows(try #require(DocumentAnnotation(.arrow(x0: 2, y0: 20, x1: 70, y1: 20), colour: green, width: 8)), green)
+        // A Line keeps an even width; a Standard arrow tapers (ticket 85, `ArrowStylesTests`).
+        let thin = try inkRows(try #require(DocumentAnnotation(.arrow(x0: 2, y0: 20, x1: 70, y1: 20), style: .line)), DocumentAnnotation.stroke)
+        let thick = try inkRows(try #require(DocumentAnnotation(.arrow(x0: 2, y0: 20, x1: 70, y1: 20), colour: green, width: 8,
+                                                                style: .line)), green)
         #expect(thin == 2)
         #expect(thick == 8)
     }

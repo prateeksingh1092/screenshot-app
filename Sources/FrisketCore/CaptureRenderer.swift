@@ -353,20 +353,22 @@ enum AnnotationPainter {
             let box = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
             context.stroke(box.insetBy(dx: min(pen / 2, box.width / 2), dy: min(pen / 2, box.height / 2)))
         case let .arrow(x0, y0, x1, y1):
-            let tail = point(x0, y0), tip = point(x1, y1)
-            let vx = tip.x - tail.x, vy = tip.y - tail.y
-            let length = (vx * vx + vy * vy).squareRoot()
-            guard length > 0 else { return }
-            // The head grows with the line: 10 pt at the default 2 pt width.
-            let size = CGFloat(max(8, (8 + annotation.width) * scale))
-            let ux = vx / length, uy = vy / length
-            let back = CGPoint(x: tip.x - ux * size, y: tip.y - uy * size)
-            context.move(to: tail)
-            context.addLine(to: tip)
-            context.move(to: CGPoint(x: back.x - uy * size, y: back.y + ux * size))
-            context.addLine(to: tip)
-            context.addLine(to: CGPoint(x: back.x + uy * size, y: back.y - ux * size))
-            context.strokePath()
+            // Filled polygons from the core's geometry (ticket 85): the plate fills each one and
+            // outlines it 2 px wide (1 px outside), then the ink fills it.
+            let head = max(8, ArrowGeometry.headLength(width: annotation.width) * scale)
+            let polygons = ArrowGeometry.polygons(style: annotation.style, tail: point(x0, y0), tip: point(x1, y1),
+                                                  bend: annotation.bend, width: Double(pen), head: head)
+            for polygon in polygons {
+                context.beginPath()
+                context.addLines(between: polygon)
+                context.closePath()
+                if layer == .plate {
+                    context.setLineWidth(2)
+                    context.drawPath(using: .fillStroke)
+                } else {
+                    context.fillPath()
+                }
+            }
         case let .text(x, y, characters):
             let font = CTFontCreateWithName(labelFontName as CFString, CGFloat(labelPointSize * scale), nil)
             let attributes: [CFString: Any] = [kCTFontAttributeName: font, kCTForegroundColorFromContextAttributeName: true]

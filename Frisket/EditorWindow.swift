@@ -316,6 +316,7 @@ enum EditorAction {
     private let marks: MarkEditor
     private var grab: MarkEditor.Grab?
     private let widthPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let stylePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private var edits: DocumentEdits { document.edits }
     private let textTool = TextTool()
     private let hintField = NSTextField(labelWithString: "")
@@ -350,7 +351,8 @@ enum EditorAction {
         marks = MarkEditor(document)
         self.finish = finish
         pixelSize = CGSize(width: preview.captureWidth, height: preview.captureHeight)
-        tools = [SelectTool(), SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
+        tools = [SelectTool(), SolidRedactionTool(), CropTool(), ArrowTool(), LineTool(), RectangleTool(), textTool, BlurTool(),
+                 MagnifyTool()]
         documentSize = CGSize(width: self.pixelSize.width / scale, height: self.pixelSize.height / scale)
         canvas = EditorCanvasView(documentSize: documentSize)
         placementScreen = screen ?? NSScreen.main
@@ -389,7 +391,8 @@ enum EditorAction {
         labelField.controlSize = .small
         labelField.frame.size = NSSize(width: 140, height: 22)
         labelField.delegate = self
-        // Restyle: the selected shape's or arrow's line width. Colour arrives with the palette (ticket 88).
+        // The drawing tool's contextual controls (ticket 85): line width and arrow style for new marks,
+        // and for the selected mark when there is one. Colour arrives with the palette (ticket 88).
         for width in DocumentAnnotation.lineWidths {
             widthPopUp.addItem(withTitle: "\(Int(width)) pt")
             widthPopUp.lastItem?.representedObject = width
@@ -397,9 +400,20 @@ enum EditorAction {
         widthPopUp.controlSize = .small
         widthPopUp.target = self
         widthPopUp.action = #selector(changeWidth(_:))
-        widthPopUp.setAccessibilityLabel("Line width of the selected mark")
-        widthPopUp.toolTip = "Line width of the selected shape or arrow"
+        widthPopUp.setAccessibilityLabel("Line width")
+        widthPopUp.toolTip = "Line width of new arrows, lines and shapes, and of the selected one"
         widthPopUp.sizeToFit()
+        for style in ArrowStyle.arrowStyles {
+            stylePopUp.addItem(withTitle: style.title)
+            stylePopUp.lastItem?.representedObject = style.rawValue
+            stylePopUp.lastItem?.setAccessibilityLabel("\(style.title) arrow")
+        }
+        stylePopUp.controlSize = .small
+        stylePopUp.target = self
+        stylePopUp.action = #selector(changeStyle(_:))
+        stylePopUp.setAccessibilityLabel("Arrow style")
+        stylePopUp.toolTip = "Arrow style: Standard, Curved (drag the middle handle to bend it) or Double"
+        stylePopUp.sizeToFit()
         textTool.text = { [weak labelField] in labelField?.stringValue ?? "" }
         hintField.textColor = .secondaryLabelColor
         hintField.font = .systemFont(ofSize: 12)
@@ -546,10 +560,23 @@ enum EditorAction {
         labelField.isEnabled = !finishing && tools[activeTool] is TextTool
         canvas.selection = marks.selectionOutline
         canvas.accessibleMarks = marks.accessibleMarks.map { ($0.label, $0.box, $0.mark == marks.selection) }
-        let width = marks.selectionWidth
+        // The selected mark's width and style, or else the active tool's.
+        let widthTool = tools[activeTool] as? LineWidthTool
+        let width = marks.selectionWidth ?? widthTool?.width
         widthPopUp.isEnabled = !finishing && width != nil
         if let width, let index = widthPopUp.itemArray.firstIndex(where: { $0.representedObject as? Double == width }) {
             widthPopUp.selectItem(at: index)
+        }
+        let arrowTool = tools[activeTool] as? ArrowTool
+        let style: ArrowStyle?
+        if let selected = marks.selectionStyle {
+            style = selected == .line ? nil : selected
+        } else {
+            style = arrowTool is LineTool ? nil : arrowTool?.style
+        }
+        stylePopUp.isEnabled = !finishing && style != nil
+        if let style, let index = stylePopUp.itemArray.firstIndex(where: { $0.representedObject as? String == style.rawValue }) {
+            stylePopUp.selectItem(at: index)
         }
         undoButton.isEnabled = canPerform(.undo)
         undoButton.toolTip = "\(document.undoManager.undoMenuItemTitle) (⌘Z)"
@@ -600,9 +627,15 @@ enum EditorAction {
             canvas.guide = .crop
             hintField.stringValue = "Drag the area to keep. Everything outside it is removed."
             canvas.setAccessibilityLabel("Capture canvas. Drag the area to keep.")
-        case is ArrowTool:
+        case is LineTool:
             canvas.guide = .line
-            hintField.stringValue = "Drag from the tail to the point. Drawing does not hide pixels."
+            hintField.stringValue = "Drag from one end to the other. Drawing does not hide pixels."
+            canvas.setAccessibilityLabel("Capture canvas. Drag to draw a line. Drawing does not hide pixels.")
+        case let arrow as ArrowTool:
+            canvas.guide = .line
+            hintField.stringValue = arrow.style == .curved
+                ? "Drag from the tail to the point, then drag the middle handle to bend it. Drawing does not hide pixels."
+                : "Drag from the tail to the point. Drawing does not hide pixels."
             canvas.setAccessibilityLabel("Capture canvas. Drag to draw. Drawing does not hide pixels.")
         case is RectangleTool:
             canvas.guide = .box
@@ -679,7 +712,15 @@ enum EditorAction {
 
     @objc private func changeWidth(_ sender: NSPopUpButton) {
         guard !finishing, let width = sender.selectedItem?.representedObject as? Double else { return }
-        marks.rewidthSelection(width)
+        (tools[activeTool] as? LineWidthTool)?.width = width
+        if !marks.rewidthSelection(width) { refresh() }
+    }
+
+    @objc private func changeStyle(_ sender: NSPopUpButton) {
+        guard !finishing, let raw = sender.selectedItem?.representedObject as? String,
+              let style = ArrowStyle(rawValue: raw) else { return }
+        if let arrow = tools[activeTool] as? ArrowTool, !(arrow is LineTool) { arrow.style = style }
+        if !marks.restyleSelection(style) { refresh() }
     }
 
     @objc private func selectTool(_ sender: NSButton) {
@@ -808,7 +849,7 @@ extension EditorWindow: NSToolbarDelegate {
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolButtons.enumerated().map { NSToolbarItem.Identifier("tool-\($0.offset)") }
-            + [.init("label"), .init("width"), .flexibleSpace, .init("undo"), .init("close")]
+            + [.init("label"), .init("style"), .init("width"), .flexibleSpace, .init("undo"), .init("close")]
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
@@ -819,6 +860,7 @@ extension EditorWindow: NSToolbarDelegate {
             item.view = labelField
             item.label = "Label"
         case "width": item.view = widthPopUp; item.label = "Line Width"
+        case "style": item.view = stylePopUp; item.label = "Arrow Style"
         case "undo": item.view = undoButton; item.label = "Undo"
         case "close": item.view = closeButton; item.label = "Close"
         default:

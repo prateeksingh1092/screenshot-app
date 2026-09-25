@@ -91,9 +91,15 @@ public struct DocumentAnnotation: Equatable, Sendable {
     public let colour: RGBAPixel
     /// The line width in document points. A label's glyphs ignore it.
     public let width: Double
+    /// How an arrow-kind mark is drawn (ticket 85); always `.standard` for other kinds.
+    public let style: ArrowStyle
+    /// Where a Curved arrow's middle handle sits; always `.straight` for other kinds and styles.
+    public let bend: ArrowBend
 
     /// Refuses an empty mark, a colour that is not fully opaque, or a width outside (0, 64] points.
-    public init?(_ kind: Kind, colour: RGBAPixel = DocumentAnnotation.stroke, width: Double = DocumentAnnotation.defaultWidth) {
+    /// A new Curved arrow given no bend bows by `ArrowBend.newCurve`.
+    public init?(_ kind: Kind, colour: RGBAPixel = DocumentAnnotation.stroke, width: Double = DocumentAnnotation.defaultWidth,
+                 style: ArrowStyle = .standard, bend: ArrowBend? = nil) {
         switch kind {
         case let .rectangle(x, y, width, height):
             guard [x, y, width, height].allSatisfy(\.isFinite), width > 0, height > 0 else { return nil }
@@ -106,6 +112,13 @@ public struct DocumentAnnotation: Equatable, Sendable {
         self.kind = kind
         self.colour = colour
         self.width = width
+        if case .arrow = kind {
+            self.style = style
+            self.bend = style == .curved ? bend ?? .newCurve : .straight
+        } else {
+            self.style = .standard
+            self.bend = .straight
+        }
     }
 }
 
