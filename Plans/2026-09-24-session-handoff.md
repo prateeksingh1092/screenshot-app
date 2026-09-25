@@ -1,3 +1,8 @@
+> **Live, 2026-09-25 12:47:** signed build `986159b` is installed; the previous bundles are in `.build/Frisket-previous-*`. The full matrix passes 23/23 on both displays (runs `20260925-123930` and `-124317`).
+> - **Fixed from the first run:** D29 (ticket 92, decision 86: the editor's style bar) and D30 (ticket 93, decision 87: History opens on the newest capture).
+> - **Harness faults fixed:** the harness now refuses to start while CleanShot X runs. The first run went to CleanShot, which held the ⌘⇧ keys. Also fixed: History button labels, the Save notice read from its AX value, and the window row's capture scale.
+> - **Still open before 83:** there is no live row for ticket 79's Restore to Thumbnail. The by-hand checks each implementer listed (69, 84, 85, 86, 81 About) also remain. Both fold into Prateek's acceptance test (83).
+>
 > **Session of 2026-09-25 (day), Claude Code, Opus 5.5, medium effort:** every agent-ready ticket is merged. `main` is at `fe7fa6e`, with `ci.sh` green (415 tests, 7 known issues).
 > - **Merged, in order:** 91 (decision 76), 69 (77), 79 (78), 81 (79), 77 (80), 84 (81), 88 (82), 85 (83), 86 (84), 80 (85) and 82 (docs).
 > - **Merge fix:** a ticket-85 test comment used "exactly black", which 88 retired; it was reworded in `3adee66`.
