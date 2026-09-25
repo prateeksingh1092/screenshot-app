@@ -951,3 +951,108 @@ extension EditorRedactionCommandsTests {
         #expect(decoded.pixels[3] == RGBA(r: 0xc1, g: 0x7a, b: 0x3e, a: 0xff))
     }
 }
+
+/// The editor preview as the app builds it. `CaptureSurfaces.edit` decodes a proxy of at most
+/// `EditorProxy.maxEdge` px with `ThumbnailImage`; `EditorWindow.refresh()` renders
+/// `DocumentRenderer.render` over it with the edits rescaled by `EditorProxy.displayScale`.
+private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) throws -> (width: Int, height: Int, pixels: [RGBA]) {
+    let codec = PNGBitmapCodec()
+    let fullWidth = try #require(codec.pixelSize(png)).width
+    let proxy = try #require(ThumbnailImage.make(from: png, maximumPixelSize: EditorProxy.maxEdge))
+    let base = try #require(codec.bitmap(from: proxy))
+    let displayScale = EditorProxy.displayScale(fullWidth: fullWidth, proxyWidth: base.width, scale: scale)
+    let displayEdits = try #require(DocumentEdits(scale: displayScale, crop: edits.crop, redactions: edits.redactions,
+                                                  annotations: edits.annotations, effects: edits.effects))
+    let rendered = DocumentRenderer.render(EditorDocument(base: base, edits: displayEdits))
+    let pixels = stride(from: 0, to: rendered.bytes.count, by: 4).map {
+        RGBA(r: rendered.bytes[$0], g: rendered.bytes[$0 + 1], b: rendered.bytes[$0 + 2], a: rendered.bytes[$0 + 3])
+    }
+    return (rendered.width, rendered.height, pixels)
+}
+
+/// Known defects in what Done delivers (ticket 44). Each stays red until its fix removes the wrapper.
+@Suite struct EditedOutputParityTests {
+    private func done(_ png: Data, _ edits: DocumentEdits) async throws -> (width: Int, height: Int, pixels: [RGBA]) {
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
+            clipboard: RecordingClipboard(), pendingByteLimit: 8_000_000, codec: PNGBitmapCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        let rendered = CaptureRevision(captureID: id, number: 2)
+        #expect(await commands.execute(.capture(id, maximumBytes: 8_000_000)) == .pending(original))
+        #expect(await commands.execute(.done(original, edits)) == .edited(rendered, .notCommitted(.historyUnavailable)))
+        let image = try #require(await commands.image(for: rendered))
+        return try decodeSRGB(image.pngData)
+    }
+
+    /// D1, as seen live on a 400×500 capture: the arrow at row 450 was missing from the saved
+    /// image and the label repeated every 256 rows. Under `EditorProxy.maxEdge` the preview is the
+    /// whole-image render, so the delivered image must equal it pixel for pixel.
+    @Test func d1DoneDeliversExactlyTheEditorPreview() async throws {
+        let width = 400, height = 500
+        var bytes = [UInt8]()
+        for y in 0..<height {
+            for x in 0..<width {
+                bytes += [UInt8((x * 3 + y) % 200), UInt8((y * 5) % 200), UInt8((x + y * 7) % 200), 0xff]
+            }
+        }
+        let png = try encodeSRGB(bytes, width: width, height: height)
+        let redaction = try #require(SolidRedaction(x: 20, y: 300, width: 60, height: 40))
+        let control = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
+        let arrow = try #require(DocumentAnnotation(.arrow(x0: 40, y0: 450, x1: 360, y1: 450)))
+        let label = try #require(DocumentAnnotation(.text(x: 20, y: 30, characters: "HI")))
+        let blur = try #require(DocumentEffect(.blur(x: 200, y: 230, width: 80, height: 60)))
+        let magnify = try #require(DocumentEffect(.magnify(x: 300, y: 240, width: 60, height: 40)))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], annotations: [arrow, label],
+                                               effects: [blur, magnify]))
+
+        // Control: a redaction-only edit already round-trips, so any difference below comes from D1.
+        let controlSaved = try await done(png, control)
+        let controlPreview = try editorPreview(of: png, scale: 1, edits: control)
+        #expect(controlSaved.width == controlPreview.width && controlSaved.height == controlPreview.height)
+        #expect(controlSaved.pixels == controlPreview.pixels, "redaction-only Done matches the preview")
+
+        let saved = try await done(png, edits)
+        let preview = try editorPreview(of: png, scale: 1, edits: edits)
+        #expect(saved.width == preview.width && saved.height == preview.height)
+        let ink = RGBA(r: DocumentAnnotation.stroke.red, g: DocumentAnnotation.stroke.green,
+                       b: DocumentAnnotation.stroke.blue, a: DocumentAnnotation.stroke.alpha)
+        func inkRows(_ image: (width: Int, height: Int, pixels: [RGBA]), _ rows: Range<Int>) -> Int {
+            rows.reduce(0) { total, y in total + (0..<image.width).filter { image.pixels[y * image.width + $0] == ink }.count }
+        }
+        let firstDifference = (0..<height).first { y in
+            saved.pixels[(y * width)..<((y + 1) * width)] != preview.pixels[(y * width)..<((y + 1) * width)]
+        }
+        try await knownDefect("D1") {
+            #expect(firstDifference == nil, "D1: the delivered image differs from the editor preview from row \(firstDifference ?? -1)")
+            #expect(inkRows(saved, 440..<461) == inkRows(preview, 440..<461),
+                    "D1: the arrow at row 450 has \(inkRows(saved, 440..<461)) ink pixels delivered, \(inkRows(preview, 440..<461)) in the preview")
+            #expect(inkRows(saved, 256..<300) == inkRows(preview, 256..<300),
+                    "D1: the label drawn at row 30 repeats in rows 256–300 of the delivered image (\(inkRows(saved, 256..<300)) ink pixels)")
+        }
+    }
+
+    /// D21: the strip encoder writes premultiplied bytes into a straight-alpha PNG, so every
+    /// partly transparent pixel (an edited window's rounded corner) comes back darker.
+    @Test func d21PartlyTransparentPixelsSurviveDoneWithoutDarkening() async throws {
+        let width = 8, height = 8
+        let corner = RGBA(r: 0x40, g: 0x10, b: 0x08, a: 0x80) // premultiplied, half transparent
+        var bytes = [UInt8]()
+        for y in 0..<height {
+            for x in 0..<width {
+                let colour = (x, y) == (1, 1) ? corner : background
+                bytes += [colour.r, colour.g, colour.b, colour.a]
+            }
+        }
+        let png = try encodeSRGB(bytes, width: width, height: height)
+        let before = try decodeSRGB(png).pixels[1 * width + 1]
+        #expect(before.a == 0x80 && abs(Int(before.r) - 0x40) <= 1, "the fixture carries a half-transparent pixel")
+        let redaction = try #require(SolidRedaction(x: 6, y: 6, width: 1, height: 1))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
+        let after = try await done(png, edits).pixels[1 * width + 1]
+        try await knownDefect("D21") {
+            let drift = [Int(after.r) - Int(before.r), Int(after.g) - Int(before.g),
+                         Int(after.b) - Int(before.b), Int(after.a) - Int(before.a)].map(abs).max() ?? 0
+            #expect(drift <= 1, "D21: a half-transparent pixel \(before) is delivered as \(after) after Done")
+        }
+    }
+}

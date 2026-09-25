@@ -107,36 +107,53 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         ]))
     }
 
-    @Test func fractionalCropAndRedactionSnapOutwardAfterCropAndScale() throws {
+    /// D18: this test used to lock the sliver. The crop keeps base columns 1..<5 and rows 0..<3
+    /// (its edges snap outward to whole pixels). Redaction 2.1,0.6 1×1 covers base columns 2..<4 and
+    /// rows 0..<2, the canary `a` pixels, so in the cropped output it must cover columns 1..<3.
+    /// The renderer shifts it by the crop's fractional 0.25 instead, covering columns 0..<2 and
+    /// leaving base column 3 visible beside it.
+    @Test func d18FractionalCropKeepsTheRedactionOnTheContentItCovers() async throws {
         let base = try picture([
-            "......",
-            "......",
+            "..aa..",
+            "..aa..",
             "......",
             "......"
         ])
-        // Crop 1.25,0.25 3×2.25 → output 1..<5 × 0..<3. Redaction 2.1,0.6 1×1 is
-        // 0.85,0.35 in cropped points → columns 0..<2, rows 0..<2 of the crop.
-        #expect(try render(base, crop: (1.25, 0.25, 3, 2.25), [(2.1, 0.6, 1, 1)]) == picture([
-            "##..",
-            "##..",
+        let rendered = try render(base, crop: (1.25, 0.25, 3, 2.25), [(2.1, 0.6, 1, 1)])
+        let expected = try picture([
+            ".##.",
+            ".##.",
             "...."
-        ]))
+        ])
+        try await knownDefect("D18") {
+            #expect(!rendered.contains(palette["a"]!),
+                    "D18: an original pixel under the Solid redaction shows at the crop edge")
+            #expect(rendered == expected, "D18: the redaction moved off the content it covers after a fractional crop")
+        }
     }
 
-    @Test func twoTimesCropSnapsOutwardThenRedactsInTheCroppedOutput() throws {
+    /// D18 at 2×: this test used to lock a redaction shifted by the crop's fractional edge.
+    /// Crop 0.75,0.25 2×1 at 2× keeps base pixels 1..<6 × 0..<3. Redaction 1.25,0.5 0.75×0.5
+    /// covers base pixels 2.5..<4 × 1..<2, so columns 2..<4 of row 1 (the canary `a` pixels),
+    /// which are cropped columns 1..<3 of cropped row 1. The renderer subtracts the unsnapped
+    /// crop origin and also blacks out cropped row 0, content the user never selected.
+    @Test func d18TwoTimesCropKeepsTheRedactionOnItsContent() async throws {
         let base = try picture([
             "........",
-            "........",
+            "..aa....",
             "........",
             "........"
         ])
-        // Crop 0.75,0.25 2×1 at 2× → output 1.5..<5.5 × 0.5..<2.5 → 1..<6 × 0..<3.
-        // Redaction 1.25,0.5 0.75×0.5 → cropped 0.5,0.25 → output 1.0..<2.5 × 0.5..<1.5.
-        #expect(try render(base, scale: 2, crop: (0.75, 0.25, 2, 1), [(1.25, 0.5, 0.75, 0.5)]) == picture([
-            ".##..",
+        let rendered = try render(base, scale: 2, crop: (0.75, 0.25, 2, 1), [(1.25, 0.5, 0.75, 0.5)])
+        let expected = try picture([
+            ".....",
             ".##..",
             "....."
-        ]))
+        ])
+        #expect(!rendered.contains(palette["a"]!), "the canary stays concealed either way")
+        try await knownDefect("D18") {
+            #expect(rendered == expected, "D18: the redaction moved off the content it covers after a fractional 2× crop")
+        }
     }
 
     @Test func renderEqualsAnIndependentCropThenRedactSnapshot() throws {
@@ -302,4 +319,181 @@ private func render(_ base: Bitmap, scale: Double = 1, crop: (Double, Double, Do
     let edits = try #require(DocumentEdits(scale: scale, crop: cropRect, redactions: redactions,
                                            annotations: annotations, effects: effects))
     return DocumentRenderer.render(EditorDocument(base: base, edits: edits))
+}
+
+private extension Bitmap {
+    func contains(_ colour: RGBAPixel) -> Bool {
+        (0..<height).contains { y in (0..<width).contains { x in pixel(x: x, y: y) == colour } }
+    }
+
+    /// The first row where two same-sized bitmaps differ, or nil when they are identical.
+    func firstDifferingRow(from other: Bitmap) -> Int? {
+        guard width == other.width, height == other.height else { return 0 }
+        let rowBytes = width * 4
+        return (0..<height).first { y in
+            bytes[(y * rowBytes)..<((y + 1) * rowBytes)] != other.bytes[(y * rowBytes)..<((y + 1) * rowBytes)]
+        }
+    }
+
+    /// Half-open pixel bounds of every pixel equal to `colour`.
+    func bounds(of colour: RGBAPixel) -> (minX: Int, minY: Int, maxX: Int, maxY: Int)? {
+        var box: (minX: Int, minY: Int, maxX: Int, maxY: Int)?
+        for y in 0..<height {
+            for x in 0..<width where pixel(x: x, y: y) == colour {
+                box = (min(box?.minX ?? x, x), min(box?.minY ?? y, y), max(box?.maxX ?? x + 1, x + 1), max(box?.maxY ?? y + 1, y + 1))
+            }
+        }
+        return box
+    }
+}
+
+/// SplitMix64: the same seed always generates the same documents.
+private struct SeededGenerator: RandomNumberGenerator {
+    private var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9e37_79b9_7f4a_7c15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xbf58_476d_1ce4_e5b9
+        z = (z ^ (z >> 27)) &* 0x94d0_49bb_1331_11eb
+        return z ^ (z >> 31)
+    }
+}
+
+/// A 48-px-wide patterned capture with at least one of every edit kind: Solid redaction,
+/// rectangle, arrow, label, Blur and Magnify. Positions are anywhere in the image.
+private func generatedDocument(seed: UInt64, height: Int) throws -> EditorDocument {
+    var random = SeededGenerator(seed: seed)
+    let width = 48
+    var pixels: [RGBAPixel] = []
+    pixels.reserveCapacity(width * height)
+    for y in 0..<height {
+        for x in 0..<width {
+            pixels.append(RGBAPixel(red: UInt8((x * 37 + y * 11) % 256), green: UInt8((x * 5 + y * 3) % 256),
+                                    blue: UInt8((y * 7) % 256), alpha: 255))
+        }
+    }
+    let base = try #require(Bitmap(width: width, height: height, pixels: pixels))
+    let w = Double(width), h = Double(height)
+    func box() -> (x: Double, y: Double, width: Double, height: Double) {
+        let x = Double.random(in: 0..<(w - 4), using: &random)
+        let y = Double.random(in: 0..<max(1, h - 2), using: &random)
+        return (x, y, Double.random(in: 2...(w - x), using: &random), Double.random(in: 1...max(1, min(h - y, 400)), using: &random))
+    }
+    func point() -> (x: Double, y: Double) { (Double.random(in: 0..<w, using: &random), Double.random(in: 0..<h, using: &random)) }
+    let redactions = try (0..<Int.random(in: 1...2, using: &random)).map { _ in
+        let b = box()
+        return try #require(SolidRedaction(x: b.x, y: b.y, width: b.width, height: b.height))
+    }
+    var annotations: [DocumentAnnotation] = []
+    let outline = box()
+    annotations.append(try #require(DocumentAnnotation(.rectangle(x: outline.x, y: outline.y, width: outline.width, height: outline.height))))
+    for _ in 0..<Int.random(in: 1...2, using: &random) {
+        let tail = point(), head = point()
+        annotations.append(try #require(DocumentAnnotation(.arrow(x0: tail.x, y0: tail.y, x1: head.x + 0.5, y1: head.y))))
+        let label = String((0..<Int.random(in: 1...4, using: &random)).map { _ in Array("AB12 XYZ").randomElement(using: &random)! })
+        let at = point()
+        if let text = DocumentAnnotation(.text(x: at.x, y: at.y, characters: label)) { annotations.append(text) }
+    }
+    let blurred = box(), magnified = box()
+    let effects = [
+        try #require(DocumentEffect(.blur(x: blurred.x, y: blurred.y, width: blurred.width, height: blurred.height))),
+        try #require(DocumentEffect(.magnify(x: magnified.x, y: magnified.y, width: magnified.width, height: magnified.height)))
+    ]
+    let edits = try #require(DocumentEdits(scale: 1, redactions: redactions, annotations: annotations, effects: effects))
+    return EditorDocument(base: base, edits: edits)
+}
+
+/// Known defects in edited output (ticket 44). Each stays red until its fix removes the wrapper.
+@Suite struct EditedOutputDefectTests {
+    /// D1: the save path renders strip by strip (`forEachStrip`, 256 rows in production), while the
+    /// editor preview renders the whole image. Arrows and labels ignore the strip's row offset, and
+    /// Blur and Magnify read only a 1-row halo, so marks vanish or repeat at strip boundaries.
+    @Test(arguments: [7, 64, DocumentRenderer.stripHeight])
+    func d1StripOutputEqualsTheWholeImageRenderForEveryEditKind(stripHeight: Int) async throws {
+        let heights = [8, 13, 255, 256, 257, 600, 1024, 1500, 2000]
+        var cases: [(seed: UInt64, height: Int, whole: Bitmap, strips: Bitmap)] = []
+        for (index, height) in heights.enumerated() {
+            let seed = UInt64(index + 1)
+            let document = try generatedDocument(seed: seed, height: height)
+            var strips: [Bitmap] = []
+            DocumentRenderer.forEachStrip(document, stripHeight: stripHeight) { strips.append($0) }
+            let joined = try #require(DocumentRenderer.concatenate(strips))
+            cases.append((seed, height, DocumentRenderer.render(document), joined))
+        }
+        try await knownDefect("D1") {
+            for item in cases {
+                let row = item.strips.firstDifferingRow(from: item.whole)
+                #expect(row == nil, "D1: strip height \(stripHeight), image height \(item.height), seed \(item.seed): strips differ from the whole render from row \(row ?? -1)")
+            }
+        }
+    }
+
+    /// D23 mirrors the editor preview. `CaptureSurfaces.edit` decodes a proxy at most
+    /// `EditorProxy.maxEdge` px on a side (`ThumbnailImage`), and `EditorWindow.refresh()` renders
+    /// `DocumentRenderer.render` over it with the edits rescaled by `EditorProxy.displayScale`. The
+    /// base here is uniform, so any downsampling filter gives the same proxy. The saved output is the
+    /// whole-image render at full size (what the save path gives once D1 is fixed). A mark in the
+    /// preview may cover the whole preview pixels its saved pixels touch, and no more; strokes and
+    /// glyph cells floored at 2 px (and arrow heads at 8 px) are larger than that.
+    @Test(arguments: [1.0, 2.0])
+    func d23DownscaledPreviewDrawsMarksNoLargerThanTheSavedOutput(scale: Double) async throws {
+        let full = (width: 64, height: Int(4096 * scale))
+        let proxy = EditorProxy.displaySize(width: full.width, height: full.height)
+        let displayScale = EditorProxy.displayScale(fullWidth: full.width, proxyWidth: proxy.width, scale: scale)
+        let kx = Double(proxy.width) / Double(full.width), ky = Double(proxy.height) / Double(full.height)
+        #expect(kx < 1 && ky < 1, "the capture must be downscaled for the preview")
+        let fullBase = try blank(full.width, full.height)
+        let proxyBase = try blank(proxy.width, proxy.height)
+        func cover(_ box: (minX: Int, minY: Int, maxX: Int, maxY: Int)) -> (minX: Int, minY: Int, maxX: Int, maxY: Int) {
+            (Int((Double(box.minX) * kx).rounded(.down)), Int((Double(box.minY) * ky).rounded(.down)),
+             Int((Double(box.maxX) * kx).rounded(.up)), Int((Double(box.maxY) * ky).rounded(.up)))
+        }
+        let marks: [(name: String, annotations: [DocumentAnnotation], redactions: [SolidRedaction], colour: RGBAPixel)] = [
+            ("label", [try #require(DocumentAnnotation(.text(x: 2, y: 4, characters: "A")))], [], DocumentAnnotation.stroke),
+            ("arrow", [try #require(DocumentAnnotation(.arrow(x0: 2, y0: 40, x1: 28, y1: 40)))], [], DocumentAnnotation.stroke),
+            ("Solid redaction", [], [try #require(SolidRedaction(x: 3.3, y: 60.2, width: 7.1, height: 5.6))], SolidRedaction.fill)
+        ]
+        var measured: [(name: String, saved: (minX: Int, minY: Int, maxX: Int, maxY: Int), preview: (minX: Int, minY: Int, maxX: Int, maxY: Int))] = []
+        for mark in marks {
+            let saved = DocumentRenderer.render(EditorDocument(base: fullBase, edits: try #require(
+                DocumentEdits(scale: scale, redactions: mark.redactions, annotations: mark.annotations))))
+            let preview = DocumentRenderer.render(EditorDocument(base: proxyBase, edits: try #require(
+                DocumentEdits(scale: displayScale, redactions: mark.redactions, annotations: mark.annotations))))
+            measured.append((mark.name, try #require(saved.bounds(of: mark.colour)), try #require(preview.bounds(of: mark.colour))))
+        }
+        try await knownDefect("D23") {
+            for item in measured {
+                let allowed = cover(item.saved)
+                let inside = item.preview.minX >= allowed.minX && item.preview.minY >= allowed.minY
+                    && item.preview.maxX <= allowed.maxX && item.preview.maxY <= allowed.maxY
+                #expect(inside, "D23: at \(Int(scale))× the preview draws the \(item.name) over preview pixels \(item.preview), but the saved output covers only \(allowed) at that scale")
+            }
+        }
+    }
+
+    /// D6: the 5×7 label font keeps only A–Z, 0–9 and space, and uppercases everything.
+    /// Each typed character must add ink to the label, and lowercase must differ from uppercase.
+    @Test func d6LabelKeepsEveryTypedCharacter() async throws {
+        let typed = "v2.1 $4.99 -10%"
+        let base = try blank(220, 24)
+        func label(_ characters: String) throws -> Bitmap? {
+            guard let annotation = DocumentAnnotation(.text(x: 2, y: 2, characters: characters)) else { return nil }
+            return DocumentRenderer.render(EditorDocument(base: base, edits: try #require(
+                DocumentEdits(scale: 1, annotations: [annotation]))))
+        }
+        var steps: [(character: Character, before: Bitmap?, after: Bitmap?)] = []
+        for (index, character) in typed.enumerated() where character != " " {
+            let prefix = String(typed.prefix(index))
+            steps.append((character, try label(prefix), try label(prefix + String(character))))
+        }
+        let lower = try label("v"), upper = try label("V")
+        try await knownDefect("D6") {
+            for step in steps {
+                #expect(step.after != nil && step.after != step.before,
+                        "D6: typing '\(step.character)' in \"\(typed)\" adds nothing to the label")
+            }
+            #expect(lower != upper, "D6: lowercase v is drawn as uppercase V")
+        }
+    }
 }
