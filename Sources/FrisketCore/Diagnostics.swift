@@ -6,7 +6,7 @@ public enum DiagnosticEventName: String, Codable, Sendable {
     case noTextFound
 }
 
-public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done, deleteHistory, copyRecognizedText }
+public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done, deleteHistory, copyRecognizedText, restoreFromHistory }
 public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history, fileExport, drag }
 public enum DiagnosticErrorCode: String, Codable, Sendable {
     case missingHistoryImage
@@ -92,6 +92,7 @@ extension DiagnosticEvent {
         case .done, .render: operation = .done
         case .deleteHistory: operation = .deleteHistory
         case .copyRecognizedText: operation = .copyRecognizedText
+        case .restoreFromHistory: operation = .restoreFromHistory
         }
         let name: DiagnosticEventName
         let error: DiagnosticError?
@@ -125,6 +126,9 @@ extension DiagnosticEvent {
             error = nil
         case .historyDeleted:
             name = .captureDiscarded
+            error = nil
+        case .restored:
+            name = .captureFinalized
             error = nil
         case .noTextFound:
             name = .noTextFound

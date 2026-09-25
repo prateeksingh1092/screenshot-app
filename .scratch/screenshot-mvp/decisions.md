@@ -296,6 +296,13 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Unchanged elsewhere:** Undo and Redo do nothing while the editor is finishing. Closing asks only when the current edits differ from none, so undoing every edit makes Esc and Close close without asking, as before.
     - **Why:** plan O11: the custom stack had no Redo, no menu names, and could drift from the menu's enabled state. The editor has no document architecture, so a plain `UndoManager` returned by the window delegate is the smallest native route; it stays in the core so every edit kind is tested there.
 
+78. **Restore to Thumbnail reuses the kept card (implementer, 2026-09-25, ticket 79; DA-10, decisions 28, 54, 57 and 76):**
+    - **Command:** `CaptureCommand.restoreFromHistory(id)` looks the row up with `finalizedImage`, marks the capture finalized at History's revision, and puts it back in the stack as a kept card (this ticket's outcome `.restored(revision)`). No pixels come back into memory: Copy, Save, drag and Copy Text read from History, as on any kept card after decision 76, and Edit is absent because the card is finalized.
+    - **No second row:** a restored card leaves by timeout, Close, swipe, Escape, overflow or quit through the kept-card path, which never commits. `.dismiss` is refused as already finalized.
+    - **Again:** restoring a capture whose card is still listed keeps the one card and restarts its timeout in full. A pending capture has no row, so it can't be restored (`unknownCapture`), and nor can a deleted one.
+    - **Delete:** History Delete closes the restored card, as it does any kept card.
+    - **App:** the History window gains one row action, "Restore to Thumbnail" (Return). The card's preview is decoded from History's image, and it opens on the pointer's display.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

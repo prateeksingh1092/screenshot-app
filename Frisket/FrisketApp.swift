@@ -108,6 +108,11 @@ import FrisketCore
             }
             captures = presentation
             historyWindow.model.onHistoryDeleted = { [weak presentation] id in presentation?.historyDeleted(id) }
+            historyWindow.model.onRestore = { [weak presentation] id in
+                await presentation?.restoreFromHistory(id) {
+                    if case let .success((_, pngData)) = await historyStore.finalizedImage(id) { pngData } else { nil }
+                } ?? false
+            }
         }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)

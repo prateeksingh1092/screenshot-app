@@ -275,6 +275,8 @@ public actor CaptureLifecycleCoordinator {
                 return .historyDeleted(id)
             case .failure, nil: return .rejected(.unknownCapture)
             }
+        case let .restoreFromHistory(id):
+            return await restoreFromHistory(id)
         case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes), let .captureWindow(id, maximumBytes):
             guard !isBusy(id) else { return .rejected(.commandInProgress) }
             guard !isDiscarded(id) else { return .rejected(.discardedCapture) }
@@ -508,6 +510,27 @@ public actor CaptureLifecycleCoordinator {
             return .recognizedText(RecognizedTextOutcome(revision: revision, characterCount: text.count,
                                                          delivery: .failed(error)))
         }
+    }
+
+    /// Ticket 79 (DA-10): a History item comes back as a kept, finalized card (decision 76). Its pixels
+    /// stay in History, so it delivers from there, offers no Edit, and leaving it never commits again.
+    private func restoreFromHistory(_ id: CaptureID) async -> CaptureCommandOutcome {
+        guard !isBusy(id) else { return .rejected(.commandInProgress) }
+        guard pending[id] == nil || isFinalized(id) else { return .rejected(.unknownCapture) }
+        inProgress.insert(id)
+        let found = await history?.finalizedImage(id)
+        inProgress.remove(id)
+        guard case let .success((number, _))? = found else { return .rejected(.unknownCapture) }
+        if stack.contains(id) {
+            // Still listed: keep the one card and give it its full timeout again.
+            stack.restartTimeout(id, at: clock())
+            return .restored(CaptureRevision(captureID: id, number: currentRevision(id)))
+        }
+        let revision = CaptureRevision(captureID: id, number: number)
+        settled[id] = SettledCapture(revision: number, finalized: true, delivered: false,
+                                     recoveryRequired: false, discarded: false)
+        stack.insert(revision, at: clock())
+        return .restored(revision)
     }
 
     /// A Thumbnail exit or quit: finalize if still pending, then close the card. `.dismiss`

@@ -19,12 +19,12 @@ import Testing
             .copy(revision), .retryCopy(revision), .save(revision), .retrySave(revision),
             .dismiss(revision), .discard(id), .exitThumbnail(revision, .close), .exitThumbnail(revision, .delete),
             .drag(revision, .copy), .done(revision, edits), .render(revision, edits),
-            .deleteHistory(id), .copyRecognizedText(revision),
+            .deleteHistory(id), .copyRecognizedText(revision), .restoreFromHistory(id),
         ]
     }
 
     private static var outcomes: [CaptureCommandOutcome] {
-        var all: [CaptureCommandOutcome] = [.pending(revision), .discarded(id), .historyDeleted(id), .noTextFound(revision)]
+        var all: [CaptureCommandOutcome] = [.pending(revision), .discarded(id), .historyDeleted(id), .restored(revision), .noTextFound(revision)]
         for commit in commits {
             all.append(.copy(CopyOutcome(revision: revision, commit: commit, delivery: .copied(receipt))))
             all.append(.copy(CopyOutcome(revision: revision, commit: commit, delivery: .failed(.unavailable))))
