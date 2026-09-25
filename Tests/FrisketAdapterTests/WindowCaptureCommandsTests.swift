@@ -283,3 +283,25 @@ extension WindowCaptureCommandsTests {
         #expect(await commands.execute(.captureWindow(CaptureID(), maximumBytes: 1024)) == .captureFailed(.unavailable))
     }
 }
+
+extension WindowCaptureCommandsTests {
+    /// D2 as seen live: ⌘⇧5 over the pattern window captured the cursor, which ScreenCaptureKit
+    /// lists with an empty owning-app bundle ID at layer 2147483630.
+    @Test func d2WindowCaptureTakesTheWindowUnderTheCursorNotTheCursor() async throws {
+        try await knownDefect("D2") {
+            let platform = FixtureWindowPlatform()
+            let pointer = try #require(platform.pointer)
+            let cursor = WindowCandidate(id: 4, ownerProcessID: 380, bundleIdentifier: "",
+                frame: CGRect(x: pointer.x - 4, y: pointer.y - 4, width: 20, height: 26),
+                layer: 2_147_483_630, isOnScreen: true, isMinimized: false)
+            platform.windows = [cursor, window(7)]
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+                windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
+                clipboard: WindowClipboard(), pendingByteLimit: 1024)
+            let id = CaptureID()
+            #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(CaptureRevision(captureID: id, number: 1)))
+            #expect(platform.offered == [7], "D2: the cursor window is offered as a capture target")
+            #expect(platform.captured == [7], "D2: the cursor was captured instead of the window under it")
+        }
+    }
+}
