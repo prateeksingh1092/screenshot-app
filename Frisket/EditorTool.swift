@@ -127,22 +127,18 @@ enum EditorToolRole: Equatable {
     override var symbolName: String { "line.diagonal" }
 }
 
+/// Labels typed on the image (ticket 86): a click starts a label there, typed on the canvas. Its
+/// size and style menus set `format` for new labels.
 @MainActor final class TextTool: EditorTool {
     let title = "Text"
-    let accessibilityLabel = "Text label tool. Drawing does not hide pixels."
+    let accessibilityLabel = "Text label tool. Click and type on the image. Labels do not hide pixels."
     let keyEquivalent = "t"
     let symbolName = "textformat"
     let role = EditorToolRole.draw
-    var text: () -> String = { "A" }
+    var format = LabelFormat.standard
 
-    func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
-        let originX = edits.crop?.x ?? 0
-        let originY = edits.crop?.y ?? 0
-        guard let annotation = DocumentAnnotation(.text(x: start.x + originX, y: start.y + originY,
-                                                        characters: text())) else { return false }
-        edits.annotations.append(annotation)
-        return true
-    }
+    /// The editor starts a typing session instead; a drag draws nothing.
+    func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool { false }
 }
 
 @MainActor final class BlurTool: EditorTool {

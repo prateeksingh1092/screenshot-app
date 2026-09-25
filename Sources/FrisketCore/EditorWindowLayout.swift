@@ -59,8 +59,8 @@ extension EditorWindowLayout {
 }
 
 /// What a key the editor window receives means. Command keys belong to the main menu (⌘C, ⌘S,
-/// ⌘W, ⌘Z); Return and keypad Enter mean Done; a letter selects a tool. While the label field
-/// is editing, every key is typing, so Return there never means Done (D5).
+/// ⌘W, ⌘Z); Return and keypad Enter mean Done; a letter selects a tool. While a label is
+/// being typed on the canvas, every key is typing, so Return there never means Done (D5).
 public enum EditorKey: Equatable, Sendable {
     case done
     case tool(Character)

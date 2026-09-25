@@ -28,6 +28,9 @@ A visual addition to a capture, such as an arrow, line, label, or shape.
 **Arrow style**:
 How an arrow is drawn: Standard (a tapered shaft with a solid head), Curved (bent by its middle handle; the head follows the curve) or Double (a head at each end). A **Line** is the same mark with no head.
 
+**Label style**:
+How a label is drawn: Standard (ink letters with a thin white edge), Outlined (white letters in an ink outline) or Box (white letters on a box of ink). A label also has a size and, once its side handle is dragged, a width its text wraps at.
+
 **Solid redaction**:
 An opaque replacement of a selected image region to conceal its contents in the delivered image. Its fill is one colour from a small neutral palette, black by default, always at full opacity.
 _Avoid_: Blur, pixelate, black box (none of these is guaranteed to conceal)
