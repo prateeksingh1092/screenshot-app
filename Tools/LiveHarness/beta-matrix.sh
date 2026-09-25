@@ -679,6 +679,23 @@ row_editor_style_bar() {  # ticket 92
   return $ok
 }
 
+# ---------------------------------------------------------------- ticket 98: the Thumbnail's hover × (decision 91)
+# Uncalibrated: the first --live run confirms the × appears on hover; adjust from its log.
+close_x() { "$H/drive" axfind frisket "Close thumbnail and keep capture in History" >>"$log" 2>&1; }   # the × is in the tree only while shown
+row_thumbnail_close() {
+  pattern_up --show && capture_pattern && wait_for 4 card_ready || return 1
+  local x y w h images
+  images=$(history_images)
+  read -r x y w h <<<"$("$H/drive" axframe frisket "Pending capture")"
+  [ -n "${h:-}" ] || { note "no Thumbnail frame"; return 1; }
+  drv move $(( x + w / 2 )) $(( y + h / 3 )); drv move $(( x + w / 2 + 4 )) $(( y + h / 3 ))   # over the picture
+  wait_for 2 close_x || { note "no × while the pointer is over the card"; return 1; }
+  drv axclick frisket "Close thumbnail and keep capture in History" || return 1
+  wait_for 5 no_cards || { note "the Thumbnail is still up after ×"; return 1; }
+  note "History images $images -> $(history_images)"
+  [ "$(history_images)" -eq $(( images + 1 )) ]
+}
+
 # ---------------------------------------------------------------- run
 case $display_choice in
   all) displays="builtin external" ;;

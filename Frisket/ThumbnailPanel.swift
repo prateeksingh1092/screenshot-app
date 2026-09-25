@@ -12,6 +12,8 @@ import FrisketCore
     @Published var copiedWhilePending = false
     @Published var dismissFailed = false
     @Published var keptInHistory = false
+    /// The pointer is over the card, so it shows its Close × (decision 91).
+    @Published var pointerOver = false
     /// The core's status for this Thumbnail (ticket 73); `CaptureSurfaces` applies it after every command.
     @Published var status: ThumbnailStatus = .pending
     @Published var editable = true
@@ -39,17 +41,27 @@ private struct ThumbnailCard: View {
     @ObservedObject var model: ThumbnailModel
     let actions: ThumbnailCardActions
     let announce: (String) -> Void
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     var body: some View {
         VStack(spacing: 8) {
             if !model.keptInHistory {
-                ThumbnailCardControls(model: model, actions: actions)
+                // Decision 91: the × sits in the glass controls area, beside the five-button row
+                // (decision 60), never over the picture. It shows while the pointer is over the card,
+                // and always while VoiceOver runs, so VoiceOver can reach it.
+                HStack(alignment: .top, spacing: 4) {
+                    ThumbnailCardControls(model: model, actions: actions)
+                    Spacer(minLength: 0)
+                    if model.pointerOver || voiceOver {
+                        ThumbnailCloseButton(model: model, close: actions.close)
+                    }
+                }
             }
             if !status.isEmpty {
                 Text(status)
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(2)   // the card has a fixed size (D9); VoiceOver hears the whole status
-                    .accessibilityLabel(status)
+                    .accessibilityLabel(status.replacingOccurrences(of: "(×)", with: "(Close)"))
             }
         }
         .padding(12)
@@ -69,25 +81,47 @@ private struct ThumbnailCard: View {
     private var status: String {
         if model.keptInHistory { return "Kept in History" }
         if !model.textNotice.isEmpty { return model.textNotice }
-        if model.copiedWhilePending { return "Copied. Could not add to History. Edit, retry Close, or delete." }
+        // Ticket 98: "Close" is the × (decision 91), which shows while the pointer is over the card.
+        if model.copiedWhilePending { return "Copied. Could not add to History. Edit, close (×) to try again, or delete." }
         if model.saveFailed {
             return model.historyCommitted
-                ? "Kept in History. Save failed. Retry Save or Close."
+                ? "Kept in History. Save failed. Retry Save or close (×)."
                 : "Save failed. Check the export folder in Settings, then Retry Save."
         }
         if model.dragFailed {
             return model.historyCommitted
-                ? "Kept in History. Drag failed. Drag again or Close."
-                : "Drag failed. Drag again or close to add it to History."
+                ? "Kept in History. Drag failed. Drag again or close (×)."
+                : "Drag failed. Drag again or close (×) to add it to History."
         }
-        if model.dismissFailed { return "Could not add to History. Retry Close or Copy." }
+        if model.dismissFailed { return "Could not add to History. Close (×) to try again, or Copy." }
         if model.copyFailed {
             return model.historyCommitted
-                ? "Kept in History. Copy failed. Retry Copy or Close."
-                : "Copy failed. Retry Copy or close to add it to History."
+                ? "Kept in History. Copy failed. Retry Copy or close (×)."
+                : "Copy failed. Retry Copy or close (×) to add it to History."
         }
         if model.historyCommitted { return "Kept in History" }   // ticket 91: the card stays until it leaves
         return ""
+    }
+}
+
+/// Decision 91: the hover ×. It is the same exit as swipe and Esc (`ThumbnailExit.close`), and its
+/// VoiceOver name matches the card's custom action, which the live harness also presses.
+private struct ThumbnailCloseButton: View {
+    @ObservedObject var model: ThumbnailModel
+    let close: () -> Void
+
+    var body: some View {
+        Button(action: close) {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .frame(width: 14, height: 14)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.circle)
+        .controlSize(.small)
+        .help("Close")
+        .accessibilityLabel(model.status == .finalized ? "Close thumbnail" : "Close thumbnail and keep capture in History")
+        .disabled(model.busy)
     }
 }
 
@@ -144,6 +178,23 @@ private struct OptionalKeyShortcut: ViewModifier {
             content
         }
     }
+}
+
+/// Tracks the pointer over the whole card, picture included, while the panel is not key (decision 91).
+private final class ThumbnailHoverView: NSView {
+    var onHover: ((Bool) -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover?(true) }
+    override func mouseExited(with event: NSEvent) { onHover?(false) }
+    // A card that appears under a resting pointer gets no mouseEntered; the first move shows the ×.
+    override func mouseMoved(with event: NSEvent) { onHover?(true) }
 }
 
 /// Recognizes single-key commands, arrows, Escape, and a horizontal two-finger swipe.
@@ -289,7 +340,10 @@ private final class ThumbnailCardPanel: NSPanel {
         well.wantsLayer = true
         well.layer?.cornerRadius = 8
         well.layer?.masksToBounds = true
-        let container = NSView()
+        let container = ThumbnailHoverView()
+        container.onHover = { [weak model] inside in
+            if model?.pointerOver != inside { model?.pointerOver = inside }
+        }
         container.addSubview(well)
         container.addSubview(glass)
         panel.contentView = container

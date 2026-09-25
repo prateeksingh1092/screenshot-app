@@ -393,6 +393,12 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - The redaction colour, ink colour, arrow style, line width, label size and label style persist across editors and relaunches. They are stored in UserDefaults through `PreferenceKey` (decision 80).
     - A remembered redaction colour is still one of the opaque palette colours, so Solid redaction's guarantees are unchanged.
 
+NN. **The Thumbnail's hover × sits in the glass controls area (implementer, 2026-09-25, ticket 98; decision 91):**
+    - The × is the trailing item of the controls row inside the one `NSGlassEffectView`, after a spacer, so it never overlaps the five-button row (decision 60) or the picture, and no glass covers the image (visual-pass map, issue 01).
+    - The whole card's content view carries an always-active tracking area (enter, exit and move), so hovering the picture also shows the ×. It is added to the view tree only while shown, so the live harness can tell visible from hidden through AX; it is always shown while VoiceOver runs. The card window keeps its custom action "Close thumbnail and keep capture in History".
+    - The × issues `ThumbnailExit.close`, the same exit as swipe and Esc. Status lines that said "Retry Close" now say "close (×)"; VoiceOver hears "(Close)".
+    - **Why:** the glass rule allows glass only around controls; a spacer slot keeps the row unchanged; an AppKit tracking area sees the pointer over the image, which lies outside the SwiftUI host.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

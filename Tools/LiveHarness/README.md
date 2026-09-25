@@ -61,6 +61,10 @@ the main menu's Edit menu to validate its titles and lists its items; Frisket is
 with no visible menu bar, so opening can fail, and the row also reads the Undo button's tooltip.
 Style-bar pop-ups are set with the `pick` helper: an AX press on the pop-up, then on the menu item.
 
+**Ticket 98 row** (uncalibrated): `thumbnail-close` moves the pointer over a pending Thumbnail with
+`drive move`, waits for its × ("Close thumbnail and keep capture in History") to enter the AX tree,
+clicks it with `drive axclick`, and checks that the card is gone and History has one more image.
+
 ## Safety rails (in `drive`, not the caller)
 
 - **Keys:** `key`, `type`, `kdown` and `kup` refuse unless Frisket or `pattern` is frontmost. Global ⌘⇧ hot keys follow the same rule.

@@ -66,6 +66,20 @@ private struct StackFixture {
         #expect(await fixture.commands.execute(.exitThumbnail(revision, exit)) == .rejected(.alreadyFinalized))
     }
 
+    /// Ticket 98 (decision 91): the hover × issues `.close`, the same exit as swipe. Each keeps the
+    /// pending capture in History, releases its pixels and closes the card.
+    @Test(arguments: [ThumbnailExit.close, .swipe])
+    func theCloseButtonKeepsThePendingCaptureInHistoryAndClosesTheCardLikeSwipe(exit: ThumbnailExit) async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let revision = try await fixture.capture()
+        #expect(await fixture.commands.thumbnails().map(\.revision) == [revision])
+        #expect(await fixture.commands.execute(.exitThumbnail(revision, exit)) == .finalized(revision, .committed))
+        #expect(try await fixture.historyIDs() == [revision.captureID])
+        #expect(await fixture.commands.thumbnails().isEmpty)
+        #expect(await fixture.commands.image(for: revision) == nil)
+    }
+
     @Test func deleteCaptureDiscardsThePendingCaptureAndWritesNothing() async throws {
         let fixture = StackFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
