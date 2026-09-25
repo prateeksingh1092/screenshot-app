@@ -34,13 +34,11 @@ import Testing
     }
 
     @Test(arguments: ["cursor", "empty bundle ID", "pop-up menu level", "Dock", "tiny helper"])
-    func d2WindowUnderThePointerIsPickedNotSystemChrome(_ kind: String) async throws {
-        try await knownDefect("D2") {
-            let selection = WindowSelection(windows: [Self.intruder(kind), Self.pattern], ownProcessID: 42,
-                                            ownBundleIdentifier: Self.ownBundle)
-            let picked = selection.window(at: Self.pointer)
-            #expect(picked?.id == Self.pattern.id, "D2: the \(kind) window was picked instead of the window under the pointer")
-        }
+    func d2WindowUnderThePointerIsPickedNotSystemChrome(_ kind: String) {
+        let selection = WindowSelection(windows: [Self.intruder(kind), Self.pattern], ownProcessID: 42,
+                                        ownBundleIdentifier: Self.ownBundle)
+        let picked = selection.window(at: Self.pointer)
+        #expect(picked?.id == Self.pattern.id, "D2: the \(kind) window was picked instead of the window under the pointer")
     }
 
     /// The deliberate floating-window support stays (plan O2): a foreign utility panel is a real target.
@@ -50,5 +48,25 @@ import Testing
         let selection = WindowSelection(windows: [floating, Self.pattern], ownProcessID: 42,
                                         ownBundleIdentifier: Self.ownBundle)
         #expect(selection.window(at: Self.pointer)?.id == floating.id)
+    }
+
+    /// Story 84: every window failure message names its own cause, not the area-capture advice.
+    @Test func everyWindowFailureMessageNamesItsCause() {
+        let messages = WindowCaptureFailure.allCases.map(\.message)
+        #expect(Set(messages).count == WindowCaptureFailure.allCases.count)
+        for failure in WindowCaptureFailure.allCases {
+            #expect(!failure.title.isEmpty && !failure.message.isEmpty)
+            #expect(!failure.message.contains("smaller area"), "\(failure) reuses the area-capture advice")
+            #expect(failure.message.contains("window"), "\(failure) does not say it is about the window")
+        }
+    }
+
+    /// Each rejection rule's boundary: the last accepted level and size stay capturable.
+    @Test func windowsJustInsideTheRulesArePicked() {
+        let utility = WindowCandidate(id: 11, ownerProcessID: 501, bundleIdentifier: "fixture.utility",
+            frame: CGRect(x: 484, y: 284, width: 32, height: 32), layer: 19, isOnScreen: true, isMinimized: false)
+        let selection = WindowSelection(windows: [utility, Self.pattern], ownProcessID: 42,
+                                        ownBundleIdentifier: Self.ownBundle)
+        #expect(selection.window(at: Self.pointer)?.id == utility.id)
     }
 }

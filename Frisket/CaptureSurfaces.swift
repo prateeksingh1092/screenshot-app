@@ -70,6 +70,8 @@ import FrisketCore
             case .captureFailed(.cancelled): break
             case let .permissionRequired(state):
                 permissionRequired?(state)
+            case let .captureFailed(.window(failure)):
+                notice(failure.title, failure.message)
             case .captureFailed:
                 notice("Capture unavailable", "A disconnected display or an oversized capture can prevent capture. Try again with a smaller area.")
             default:

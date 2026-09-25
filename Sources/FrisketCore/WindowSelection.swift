@@ -25,18 +25,27 @@ public struct WindowCandidate: Equatable, Sendable {
 
 /// Pure selection policy shared by the live overlay and fixture capture source.
 public struct WindowSelection: Sendable {
+    /// `kCGDockWindowLevel`. The Dock, pop-up menus, the menu bar and the cursor sit at or above it.
+    public static let dockLevel = 20
+    /// Helper windows smaller than this on a side are never a capture target.
+    public static let minimumSide: CGFloat = 32
+    public static let dockBundleIdentifier = "com.apple.dock"
+
     public let candidates: [WindowCandidate]
 
     public init(windows: [WindowCandidate], ownProcessID: Int32, ownBundleIdentifier: String) {
-        // The platform excludes desktop elements. Exclude Frisket by identity,
-        // not window level: foreign floating windows remain valid candidates.
+        // The platform excludes desktop elements. Exclude Frisket by identity, and system
+        // chrome by level, owner and size (D2): foreign floating windows below the Dock
+        // level remain valid candidates.
         candidates = windows.filter { window in
-            window.isOnScreen && !window.isMinimized
+            guard let bundle = window.bundleIdentifier, !bundle.isEmpty else { return false }
+            return window.isOnScreen && !window.isMinimized
                 && window.ownerProcessID != ownProcessID
-                && window.bundleIdentifier != nil && window.bundleIdentifier != ownBundleIdentifier
+                && bundle != ownBundleIdentifier && bundle != Self.dockBundleIdentifier
+                && window.layer < Self.dockLevel
                 && window.frame.origin.x.isFinite && window.frame.origin.y.isFinite
                 && window.frame.width.isFinite && window.frame.height.isFinite
-                && window.frame.width > 0 && window.frame.height > 0
+                && window.frame.width >= Self.minimumSide && window.frame.height >= Self.minimumSide
         }
     }
 

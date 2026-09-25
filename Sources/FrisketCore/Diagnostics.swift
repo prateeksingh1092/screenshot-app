@@ -14,6 +14,7 @@ public enum DiagnosticErrorCode: String, Codable, Sendable {
     case invalidByteAllowance, alreadyFinalized, unknownMigrations, invalidImage, recoveryRequired, insideHistory, unwritable
     case permissionRequired, thumbnailExitNotDue, dragOperationRefused, editingUnavailable, recognitionUnavailable
     case captureExceedsHistoryLimit, pixelCap, memoryBudget, rejectedAlignment
+    case noCapturableWindow, windowChanged, windowTooLarge, windowRefused
 }
 
 public struct DiagnosticError: Equatable, Codable, Sendable {
@@ -138,6 +139,10 @@ extension DiagnosticEvent {
             case .cancelled: error = DiagnosticError(domain: .captureSource, code: .cancelled)
             case .emptyImage: error = DiagnosticError(domain: .captureSource, code: .emptyImage)
             case .permissionRequired: error = DiagnosticError(domain: .captureSource, code: .permissionRequired)
+            case .window(.noWindow): error = DiagnosticError(domain: .captureSource, code: .noCapturableWindow)
+            case .window(.windowChanged): error = DiagnosticError(domain: .captureSource, code: .windowChanged)
+            case .window(.tooLarge): error = DiagnosticError(domain: .captureSource, code: .windowTooLarge)
+            case .window(.systemRefused): error = DiagnosticError(domain: .captureSource, code: .windowRefused)
             }
         case let .drag(result):
             switch result.delivery {
