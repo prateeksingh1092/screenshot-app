@@ -339,7 +339,7 @@ private actor AcceptingTextClipboard: TextClipboard {
     func leavingTheEditorReleasesTheOriginalCapture(leave: EditorLeave) async throws {
         let png = try CaptureRendererTests.encode(CaptureRendererTests.pattern(width: 8, height: 6), width: 8, height: 6)
         let source = ReleaseTrackingPixels(png: png)
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: AcceptingClipboard(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: source, clipboard: AcceptingClipboard(),
                                            pendingByteLimit: 4_000_000, flattener: CaptureRenderer())
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.capture(revision.captureID, maximumBytes: 1_000_000)) == .pending(revision))
@@ -355,7 +355,7 @@ private actor AcceptingTextClipboard: TextClipboard {
         let flattened = try CaptureRendererTests.encode(CaptureRendererTests.pattern(width: 8, height: 6, seed: 5), width: 8, height: 6)
         let flattener = ScriptedFlattener(always: flattened)
         let recognizer = RecordingRecognizer()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: ReleaseTrackingPixels(png: original),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: ReleaseTrackingPixels(png: original),
                                            clipboard: AcceptingClipboard(), pendingByteLimit: 4_000_000, flattener: flattener,
                                            textRecognizer: recognizer, textClipboard: AcceptingTextClipboard())
         let id = CaptureID()

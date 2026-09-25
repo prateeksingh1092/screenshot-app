@@ -1,9 +1,9 @@
 # History contract
 
-`CaptureCommandLayer.execute(.dismiss(revision))` freezes the current unedited
+`CaptureLifecycleCoordinator.execute(.dismiss(revision))` freezes the current unedited
 output and returns `.finalized(revision, commit)`. A successful commit releases
 pending bytes; a failed dismissal retains them. Duplicate completed dismissals
-return `alreadyFinalized`. `historyEntries()` reads finalized entries in date/key
+return `alreadyFinalized`. `HistoryStore.entries()` reads finalized entries in date/key
 order without creating storage. Delete of a pending capture still discards it.
 
 `CaptureHistory` accepts only `AuthorizedFinalization`, whose initializer is
@@ -115,13 +115,13 @@ unrecovered History even if called before that task runs. An absent root stays
 absent until authorized finalization. The lazy `HistoryStore(root:)` initializer
 remains available for fixtures and explicit lifecycle control.
 
-`CaptureCommandLayer.recoverHistory()` forwards through the coordinator to
-`CaptureHistory.recover()`, returning a typed `HistoryRecoveryReport` or closed
+`HistoryStore.recover()` (the app calls the store directly; ticket 74 removed the
+coordinator pass-throughs) returning a typed `HistoryRecoveryReport` or closed
 `HistoryFailure`. The report includes measured logical bytes and the number of
 missing-image rows removed. An explicit repeat call rechecks the filesystem;
 it does not reuse a cached report. A failure disables History queries/commits
 for that store until an explicit successful recovery; capture and delivery
-continue. `historyAvailability()` surfaces that outcome for Settings and the
+continue. `HistoryStore.availability()` surfaces that outcome for Settings and the
 History window. The recovery option is retry plus revealing the History folder;
 it never deletes the refused database. Recovery diagnostics accept only closed events/error codes, never
 file paths, identifiers, pixel data or underlying error strings.
@@ -155,8 +155,8 @@ check; the automated test moves the root on this Intel Mac.
 
 ## Ticket 16 retention and quota
 
-Call `CaptureCommandLayer.maintainHistory()` at launch, before capture work, and
-`maintainHistory(limits:)` when applying Settings. Both preserve an absent root.
+Call `HistoryStore.maintain(limits: nil)` at launch, before capture work, and
+`maintain(limits:)` when applying Settings. Both preserve an absent root.
 The defaults are 30 days and 1,000,000,000 logical bytes; Settings persists days
 and decimal MB in bundle-scoped preferences. Each successful finalization runs
 an oldest-first sweep ordered by date then integer key, excluding that capture.

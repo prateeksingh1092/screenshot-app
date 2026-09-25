@@ -32,7 +32,7 @@ Every change keeps these true:
 ## Workflow
 
 - **Technical choices are yours to make.** Prateek delegates them (decisions 54 and 57): vet the options against evidence, apply the best-supported one, and record it in `decisions.md`. Bring him only product-visible trade-offs, explained in plain language with a recommendation.
-- **Test first, at the production seam.** Test through the interface real callers use: `CaptureCommandLayer.execute` for the capture lifecycle, the save-path renderer for edits, `WindowSelection` for window picking. Write the test, watch it go red, then fix.
+- **Test first, at the production seam.** Test through the interface real callers use: `CaptureLifecycleCoordinator.execute` for the capture lifecycle, the save-path renderer for edits, `WindowSelection` for window picking. Write the test, watch it go red, then fix.
 - **Before calling work done,** run `scripts/ci.sh`: the repository checks, the package tests and the unsigned app build. A test that reproduces an open defect is wrapped in `knownDefect("Dn")`; a fix deletes the wrapper. Build and install steps are in `docs/app-build.md`.
 - **Live checks** use the synthetic patterns from `Tools/FrisketTestPattern.swift`. Capture only synthetic content, and restore the user's clipboard after driving the app.
 - **Triage failures in one pass.**

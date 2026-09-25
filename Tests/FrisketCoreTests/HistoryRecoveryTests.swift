@@ -18,8 +18,8 @@ private struct RecoveryClipboard: ImageClipboard {
 
 private enum RecoveryStop: Error { case stop }
 
-private func recoveryCommands(_ store: HistoryStore) -> CaptureCommandLayer {
-    CaptureCommandLayer(permission: GrantedTestPermission(), source: RecoveryPixels(), clipboard: RecoveryClipboard(), pendingByteLimit: 1024, history: store)
+private func recoveryCommands(_ store: HistoryStore) -> CaptureLifecycleCoordinator {
+    CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: RecoveryPixels(), clipboard: RecoveryClipboard(), pendingByteLimit: 1024, history: store)
 }
 
 private func interruptedCommit(at root: URL, point: HistoryCommitPoint, id: CaptureID) async throws {
@@ -40,9 +40,10 @@ private func interruptedCommit(at root: URL, point: HistoryCommitPoint, id: Capt
         let id = CaptureID()
         try await interruptedCommit(at: root, point: .recordRenamed, id: id)
         #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("images/\(id.rawValue.uuidString).finalization.json").path))
-        let commands = recoveryCommands(HistoryStore(root: root))
-        _ = try await commands.recoverHistory().get()
-        let entries = try await commands.historyEntries().get()
+        let history = HistoryStore(root: root)
+        let commands = recoveryCommands(history)
+        _ = try await history.recover().get()
+        let entries = try await history.entries().get()
         #expect(entries.map(\.captureID) == [id])
         #expect(entries.first?.width == 2)
         #expect(entries.first?.height == 1)
@@ -71,9 +72,10 @@ private func recoverySnapshot(_ root: URL) throws -> [String: Data] {
 }
 
 private func verifyRecoveredRoot(_ root: URL, point: HistoryCommitPoint, id: CaptureID) async throws {
-    let commands = recoveryCommands(HistoryStore(root: root))
-    let first = try await commands.recoverHistory().get()
-    let entries = try await commands.historyEntries().get()
+    let history = HistoryStore(root: root)
+    let commands = recoveryCommands(history)
+    let first = try await history.recover().get()
+    let entries = try await history.entries().get()
     let survives = [.recordRenamed, .directorySynced, .rowCommitted, .thumbnailCached].contains(point)
     #expect(entries.map(\.captureID) == (survives ? [id] : []))
     let snapshot = try recoverySnapshot(root)
@@ -92,9 +94,9 @@ private func verifyRecoveredRoot(_ root: URL, point: HistoryCommitPoint, id: Cap
         } else { #expect(entry.thumbnailBytes == 0) }
     }
     #expect(Set(snapshot.keys.filter { $0.hasPrefix("images/") || $0.hasPrefix("thumbnails/") }) == expectedFiles)
-    let second = try await commands.recoverHistory().get()
+    let second = try await history.recover().get()
     #expect(second.logicalBytes == first.logicalBytes)
-    #expect(try await commands.historyEntries().get() == entries)
+    #expect(try await history.entries().get() == entries)
     let after = try recoverySnapshot(root)
     #expect(Set(after.keys) == Set(snapshot.keys))
     for name in snapshot.keys { #expect(after[name] == snapshot[name], Comment(rawValue: name)) }
@@ -115,21 +117,23 @@ extension HistoryRecoveryTests {
     @Test func anotherInstanceCannotRecoverReadOrCommitWhileTheRootIsOwned() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
-        let owner = recoveryCommands(HistoryStore(root: root, commitPoint: { if $0 == .recordRenamed { throw RecoveryStop.stop } }))
+        let ownerHistory = HistoryStore(root: root, commitPoint: { if $0 == .recordRenamed { throw RecoveryStop.stop } })
+        let owner = recoveryCommands(ownerHistory)
         let id = CaptureID()
         _ = await owner.execute(.capture(id, maximumBytes: 1024))
         _ = await owner.execute(.dismiss(CaptureRevision(captureID: id, number: 1)))
         let before = try recoverySnapshot(root)
-        let contender = recoveryCommands(HistoryStore(root: root))
-        #expect(await contender.recoverHistory() == .failure(.rootLocked))
-        #expect(await contender.historyEntries() == .failure(.rootLocked))
+        let contenderHistory = HistoryStore(root: root)
+        let contender = recoveryCommands(contenderHistory)
+        #expect(await contenderHistory.recover() == .failure(.rootLocked))
+        #expect(await contenderHistory.entries() == .failure(.rootLocked))
         let second = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await contender.execute(.capture(second.captureID, maximumBytes: 1024))
         #expect(await contender.execute(.copy(second)) == .copy(CopyOutcome(revision: second,
             commit: .notCommitted(.historyUnavailable), delivery: .copied(ClipboardReceipt(changeCount: 1)))))
         #expect(try recoverySnapshot(root) == before)
-        _ = try await owner.recoverHistory().get()
-        #expect(try await owner.historyEntries().get().map(\.captureID) == [id])
+        _ = try await ownerHistory.recover().get()
+        #expect(try await ownerHistory.entries().get().map(\.captureID) == [id])
     }
 }
 
@@ -180,7 +184,7 @@ private func committedEntries(_ root: URL, ids: [CaptureID]) async throws -> [Hi
         _ = await commands.execute(.capture(id, maximumBytes: 1024))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
     }
-    let entries = try await commands.historyEntries().get()
+    let entries = try await store.entries().get()
     try await store.close().get()
     return entries
 }
@@ -210,9 +214,10 @@ extension HistoryRecoveryTests {
         try FileManager.default.createDirectory(at: root.appendingPathComponent("archives"), withIntermediateDirectories: false)
         try Data(repeating: 42, count: 117).write(to: root.appendingPathComponent("archives/recovery.sqlite"))
         let log = LocalDiagnosticLog()
-        let commands = recoveryCommands(HistoryStore(root: root, diagnostics: log))
-        let report = try await commands.recoverHistory().get()
-        let after = try await commands.historyEntries().get()
+        let history = HistoryStore(root: root, diagnostics: log)
+        let commands = recoveryCommands(history)
+        let report = try await history.recover().get()
+        let after = try await history.entries().get()
         #expect(after.map(\.captureID) == [ids[2]])
         let survivor = try #require(after.first)
         let snapshot = try recoverySnapshot(root)
@@ -235,9 +240,9 @@ extension HistoryRecoveryTests {
                 error: DiagnosticError(domain: .history, code: .missingHistoryImage)),
             DiagnosticEvent(name: .historyRecovered, operation: .launchRecovery)
         ])
-        _ = try await commands.recoverHistory().get()
+        _ = try await history.recover().get()
         #expect(try recoverySnapshot(root) == snapshot)
-        #expect(try await commands.historyEntries().get() == after)
+        #expect(try await history.entries().get() == after)
     }
 }
 
@@ -272,14 +277,15 @@ extension HistoryRecoveryTests {
         case "fileName": try FileManager.default.moveItem(at: image, to: root.appendingPathComponent("images/not-an-identifier.png"))
         default: break
         }
-        let commands = recoveryCommands(HistoryStore(root: root))
-        _ = try await commands.recoverHistory().get()
-        #expect(try await commands.historyEntries().get().isEmpty)
+        let history = HistoryStore(root: root)
+        let commands = recoveryCommands(history)
+        _ = try await history.recover().get()
+        #expect(try await history.entries().get().isEmpty)
         #expect(!FileManager.default.fileExists(atPath: image.path))
         #expect(!FileManager.default.fileExists(atPath: record.path))
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("images").path).isEmpty)
         let snapshot = try recoverySnapshot(root)
-        _ = try await commands.recoverHistory().get()
+        _ = try await history.recover().get()
         #expect(try recoverySnapshot(root) == snapshot)
     }
 
@@ -292,8 +298,9 @@ extension HistoryRecoveryTests {
         try FileManager.default.moveItem(at: root.appendingPathComponent("images"), to: external)
         try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("images"), withDestinationURL: external)
         let before = try recoverySnapshot(external)
-        let commands = recoveryCommands(HistoryStore(root: root))
-        #expect(await commands.recoverHistory() == .failure(.unavailable))
+        let history = HistoryStore(root: root)
+        let commands = recoveryCommands(history)
+        #expect(await history.recover() == .failure(.unavailable))
         #expect(try recoverySnapshot(external) == before)
     }
 }
@@ -309,8 +316,9 @@ extension HistoryRecoveryTests {
         let outside = directory.appendingPathComponent("outside.png")
         try FileManager.default.moveItem(at: image, to: outside)
         try FileManager.default.createSymbolicLink(at: image, withDestinationURL: outside)
-        let commands = recoveryCommands(HistoryStore(root: root))
-        #expect(await commands.recoverHistory() == .failure(.unavailable))
+        let history = HistoryStore(root: root)
+        let commands = recoveryCommands(history)
+        #expect(await history.recover() == .failure(.unavailable))
         #expect(try Data(contentsOf: outside) == RecoveryPixels().bytes)
     }
 }
@@ -325,9 +333,10 @@ extension HistoryRecoveryTests {
         let before = try await committedEntries(oldRoot, ids: [id])
         try FileManager.default.createDirectory(at: newRoot.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.moveItem(at: oldRoot, to: newRoot)
-        let commands = recoveryCommands(HistoryStore(root: newRoot))
-        _ = try await commands.recoverHistory().get()
-        #expect(try await commands.historyEntries().get() == before)
+        let history = HistoryStore(root: newRoot)
+        let commands = recoveryCommands(history)
+        _ = try await history.recover().get()
+        #expect(try await history.entries().get() == before)
         for entry in before {
             for location in [entry.imageLocation, entry.recordLocation, entry.thumbnailLocation].compactMap({ $0 }) {
                 #expect(!location.hasPrefix("/") && !location.contains(".."))
@@ -337,7 +346,7 @@ extension HistoryRecoveryTests {
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
-        #expect(try await commands.historyEntries().get().count == 2)
+        #expect(try await history.entries().get().count == 2)
         #expect(!FileManager.default.fileExists(atPath: oldRoot.path))
     }
 
@@ -346,14 +355,15 @@ extension HistoryRecoveryTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let entry = try #require(try await committedEntries(root, ids: [CaptureID()]).first)
         try FileManager.default.removeItem(at: root.appendingPathComponent(try #require(entry.thumbnailLocation)))
-        let commands = recoveryCommands(HistoryStore(root: root))
-        _ = try await commands.recoverHistory().get()
-        let after = try #require(try await commands.historyEntries().get().first)
+        let history = HistoryStore(root: root)
+        let commands = recoveryCommands(history)
+        _ = try await history.recover().get()
+        let after = try #require(try await history.entries().get().first)
         #expect(after.captureID == entry.captureID)
         #expect(after.thumbnailLocation == nil && after.thumbnailBytes == 0)
         #expect(try Data(contentsOf: root.appendingPathComponent(after.imageLocation)) == RecoveryPixels().bytes)
         let snapshot = try recoverySnapshot(root)
-        _ = try await commands.recoverHistory().get()
+        _ = try await history.recover().get()
         #expect(try recoverySnapshot(root) == snapshot)
     }
 
@@ -381,9 +391,10 @@ extension HistoryRecoveryTests {
         try #require(process.terminationStatus == 0)
         let before = try recoverySnapshot(root)
         let log = LocalDiagnosticLog()
-        let commands = recoveryCommands(HistoryStore(root: root, diagnostics: log))
-        #expect(await commands.recoverHistory() == .failure(.unknownMigrations))
-        #expect(await commands.historyEntries() == .failure(.unknownMigrations))
+        let history = HistoryStore(root: root, diagnostics: log)
+        let commands = recoveryCommands(history)
+        #expect(await history.recover() == .failure(.unknownMigrations))
+        #expect(await history.entries() == .failure(.unknownMigrations))
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
         #expect(await commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
@@ -403,23 +414,25 @@ extension HistoryRecoveryTests {
         let log = LocalDiagnosticLog()
         // Crash-helper rows are stamped 1970. Keep them past the default 30-day
         // window so this launch-gate case is not also an age-eviction case.
-        let commands = recoveryCommands(HistoryStore.launch(root: root,
-            limits: HistoryLimits(retentionDays: 40_000), diagnostics: log))
-        #expect(try await commands.historyEntries().get().map(\.captureID) == [id])
-        #expect(try await commands.historyEntries().get().map(\.captureID) == [id])
+        let history = HistoryStore.launch(root: root,
+            limits: HistoryLimits(retentionDays: 40_000), diagnostics: log)
+        let commands = recoveryCommands(history)
+        #expect(try await history.entries().get().map(\.captureID) == [id])
+        #expect(try await history.entries().get().map(\.captureID) == [id])
         #expect(await log.entries().map(\.event) == [DiagnosticEvent(name: .historyRecovered, operation: .launchRecovery)])
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.capture(revision.captureID, maximumBytes: 1024)) == .pending(revision))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
-        #expect(try await commands.historyEntries().get().map(\.captureID) == [id, revision.captureID])
+        #expect(try await history.entries().get().map(\.captureID) == [id, revision.captureID])
         #expect(await log.entries().count == 1)
     }
 
     @Test func launchAndPendingCaptureCreateNothingInANewRoot() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
-        let commands = recoveryCommands(HistoryStore.launch(root: root))
-        #expect(try await commands.historyEntries().get().isEmpty)
+        let history = HistoryStore.launch(root: root)
+        let commands = recoveryCommands(history)
+        #expect(try await history.entries().get().isEmpty)
         let id = CaptureID()
         #expect(await commands.execute(.capture(id, maximumBytes: 1024)) == .pending(CaptureRevision(captureID: id, number: 1)))
         #expect(!FileManager.default.fileExists(atPath: root.path))
@@ -450,14 +463,15 @@ extension HistoryRecoveryTests {
         }
         try #require(ready.fileHandleForReading.readData(ofLength: 1) == Data([1]))
         let before = try recoverySnapshot(root)
-        let commands = recoveryCommands(HistoryStore(root: root))
-        #expect(await commands.recoverHistory() == .failure(.rootLocked))
+        let history = HistoryStore(root: root)
+        let commands = recoveryCommands(history)
+        #expect(await history.recover() == .failure(.rootLocked))
         #expect(try recoverySnapshot(root) == before)
         try release.fileHandleForWriting.close()
         child.waitUntilExit()
         #expect(child.terminationReason == .uncaughtSignal && child.terminationStatus == SIGKILL)
-        _ = try await commands.recoverHistory().get()
-        #expect(try await commands.historyEntries().get().map(\.captureID) == [id])
+        _ = try await history.recover().get()
+        #expect(try await history.entries().get().map(\.captureID) == [id])
     }
 }
 
@@ -471,10 +485,11 @@ extension HistoryRecoveryTests {
         _ = await commands.execute(.capture(id, maximumBytes: 1024))
         _ = await commands.execute(.dismiss(CaptureRevision(captureID: id, number: 1)))
         try await store.close().get()
-        #expect(await commands.historyEntries() == .failure(.unavailable))
-        let next = recoveryCommands(HistoryStore(root: root))
-        _ = try await next.recoverHistory().get()
-        #expect(try await next.historyEntries().get().map(\.captureID) == [id])
+        #expect(await store.entries() == .failure(.unavailable))
+        let nextHistory = HistoryStore(root: root)
+        let next = recoveryCommands(nextHistory)
+        _ = try await nextHistory.recover().get()
+        #expect(try await nextHistory.entries().get().map(\.captureID) == [id])
     }
 }
 
@@ -489,14 +504,15 @@ extension HistoryRecoveryTests {
         let drag = root.appendingPathComponent("staging/drag")
         try FileManager.default.createDirectory(at: drag, withIntermediateDirectories: true)
         try Data(repeating: 7, count: 744).write(to: drag.appendingPathComponent("\(UUID().uuidString).png"))
-        let commands = recoveryCommands(HistoryStore(root: root))
-        let report = try await commands.recoverHistory().get()
+        let history = HistoryStore(root: root)
+        let commands = recoveryCommands(history)
+        let report = try await history.recover().get()
         #expect(!FileManager.default.fileExists(atPath: drag.path))
-        #expect(try await commands.historyEntries().get() == before)
+        #expect(try await history.entries().get() == before)
         let snapshot = try recoverySnapshot(root)
         #expect(!snapshot.keys.contains { $0.hasPrefix("staging/") })
         #expect(report.logicalBytes == snapshot.values.reduce(Int64(0)) { $0 + Int64($1.count) })
-        _ = try await commands.recoverHistory().get()
+        _ = try await history.recover().get()
         #expect(try recoverySnapshot(root) == snapshot)
     }
 }

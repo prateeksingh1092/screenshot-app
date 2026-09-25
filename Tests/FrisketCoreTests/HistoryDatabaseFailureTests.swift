@@ -67,19 +67,20 @@ private enum HistoryOpenFailure: String, CaseIterable {
         let before = try snapshot(root, locking: kind == .permissionDenied)
         let source = FailurePixels()
         let handoff = FailureDragHandoff()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: FailureClipboard(),
-            pendingByteLimit: source.bytes.count, history: HistoryStore(root: root),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: source, clipboard: FailureClipboard(),
+            pendingByteLimit: source.bytes.count, history: history,
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
             drag: handoff)
-        let availability = await commands.historyAvailability()
+        let availability = await history.availability()
         #expect(availability != nil)
         if kind == .unknownMigration {
             #expect(availability == .unknownMigrations)
         }
         #expect(try snapshot(root, locking: kind == .permissionDenied) == before)
-        #expect(await commands.recoverHistory().isFailure)
+        #expect(await history.recover().isFailure)
         #expect(try snapshot(root, locking: kind == .permissionDenied) == before)
-        #expect(await commands.historyItems().isFailure)
+        #expect(await history.rows().isFailure)
 
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.capture(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
@@ -117,17 +118,18 @@ private enum HistoryOpenFailure: String, CaseIterable {
         let sqlite = root.appendingPathComponent("history.sqlite")
         try Data("not a sqlite database".utf8).write(to: sqlite)
         let source = FailurePixels()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, clipboard: FailureClipboard(),
-            pendingByteLimit: source.bytes.count, history: HistoryStore(root: root))
-        #expect(await commands.historyAvailability() != nil)
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: source, clipboard: FailureClipboard(),
+            pendingByteLimit: source.bytes.count, history: history)
+        #expect(await history.availability() != nil)
         try FileManager.default.removeItem(at: sqlite)
-        let recovered = try await commands.recoverHistory().get()
+        let recovered = try await history.recover().get()
         #expect(recovered.removedMissingImages == 0)
-        #expect(await commands.historyAvailability() == nil)
+        #expect(await history.availability() == nil)
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.capture(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
-        #expect(try await commands.historyItems().get().map(\.captureID) == [revision.captureID])
+        #expect(try await history.rows().get().map(\.captureID) == [revision.captureID])
     }
 }
 

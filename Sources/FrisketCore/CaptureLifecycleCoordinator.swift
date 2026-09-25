@@ -1,6 +1,9 @@
 import Foundation
 
-actor CaptureLifecycleCoordinator {
+/// The sole action interface. It owns lifecycle policy and the Pending capture bytes;
+/// History reads go to `HistoryStore` directly.
+public actor CaptureLifecycleCoordinator {
+    private let diagnostics: any DiagnosticSink
     private let permission: any CapturePermissionSource
     private let pendingByteLimit: Int
     private var pendingBytes = 0
@@ -30,13 +33,17 @@ actor CaptureLifecycleCoordinator {
     private var stack: ThumbnailStack
     private let clock: @Sendable () -> ContinuousClock.Instant
 
-    init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)?,
-         windowSource: (any CapturePixelSource)?,
-         clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?, exporter: (any CaptureExport)?,
-         drag: (any DragHandoff)?,
-         thumbnailPolicy: ThumbnailStackPolicy, clock: @escaping @Sendable () -> ContinuousClock.Instant,
-         flattener: (any CaptureFlattening)?,
-         textRecognizer: (any TextRecognizer)?, textClipboard: (any TextClipboard)?) {
+    public init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
+                windowSource: (any CapturePixelSource)? = nil,
+                clipboard: any ImageClipboard, pendingByteLimit: Int,
+                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil, exporter: (any CaptureExport)? = nil,
+                drag: (any DragHandoff)? = nil,
+                thumbnailPolicy: ThumbnailStackPolicy = ThumbnailStackPolicy(),
+                clock: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
+                flattener: (any CaptureFlattening)? = nil,
+                textRecognizer: (any TextRecognizer)? = nil,
+                textClipboard: (any TextClipboard)? = nil) {
+        self.diagnostics = diagnostics
         stack = ThumbnailStack(policy: thumbnailPolicy)
         self.clock = clock
         self.pendingByteLimit = max(0, pendingByteLimit)
@@ -53,63 +60,19 @@ actor CaptureLifecycleCoordinator {
         self.textClipboard = textClipboard
     }
 
-    func recoverHistory() async -> Result<HistoryRecoveryReport, HistoryFailure> {
-        guard let history else { return .failure(.unavailable) }
-        return await history.recover()
-    }
-
-    func historyAvailability() async -> HistoryFailure? {
-        guard let history else { return .unavailable }
-        return await history.availability()
-    }
-
-    func maintainHistory(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure> {
-        guard let history else { return .failure(.unavailable) }
-        return await history.maintain(limits: limits)
-    }
-
-    func historyStatus(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure> {
-        guard let history else { return .failure(.unavailable) }
-        return await history.status(consumeNotice: consumeNotice)
-    }
-
-    func historyEntries() async -> Result<[HistoryEntry], HistoryFailure> {
-        guard let history else { return .failure(.unavailable) }
-        return await history.entries()
-    }
-
-    func historyItems() async -> Result<[HistoryItem], HistoryFailure> {
-        switch await historyEntries() {
-        case let .success(entries):
-            return .success(entries.reversed().map {
-                HistoryItem(captureID: $0.captureID, revision: $0.revision, width: $0.width,
-                            height: $0.height, finalizedAt: $0.finalizedAt)
-            })
-        case let .failure(failure):
-            return .failure(failure)
-        }
-    }
-
-    func historyThumbnail(_ id: CaptureID) async -> Data? {
-        await history?.thumbnailPNG(id)
-    }
-
-    func historyImage(_ id: CaptureID) async -> CaptureImage? {
-        guard case let .success((_, pngData)) = await history?.finalizedImage(id) else { return nil }
-        return CaptureImage(pngData: pngData)
-    }
-
-    func image(for revision: CaptureRevision) -> CaptureImage? {
+    /// Read-only presentation query; the coordinator remains the owner of pending bytes.
+    public func image(for revision: CaptureRevision) -> CaptureImage? {
         guard revision.number == currentRevision(revision.captureID) else { return nil }
         return pending[revision.captureID]?.image
     }
 
-    func setThumbnailStackFocus(_ focused: Bool) {
+    /// Keyboard or VoiceOver focus on the stack pauses timeout; overflow still finalizes.
+    public func setThumbnailStackFocus(_ focused: Bool) {
         stackFocused = focused
         focusedCapture = focused ? stack.cards(at: clock()).first?.revision.captureID : nil
     }
 
-    func focusedThumbnail() -> CaptureRevision? {
+    public func focusedThumbnail() -> CaptureRevision? {
         guard stackFocused else { return nil }
         let cards = stack.cards(at: clock())
         if let id = focusedCapture, let card = cards.first(where: { $0.revision.captureID == id }) {
@@ -119,7 +82,7 @@ actor CaptureLifecycleCoordinator {
         return cards.first?.revision
     }
 
-    func moveThumbnailFocus(_ move: ThumbnailFocusMove) -> CaptureRevision? {
+    public func moveThumbnailFocus(_ move: ThumbnailFocusMove) -> CaptureRevision? {
         guard stackFocused else { return nil }
         let cards = stack.cards(at: clock())
         guard !cards.isEmpty else {
@@ -135,21 +98,22 @@ actor CaptureLifecycleCoordinator {
         return cards[next].revision
     }
 
-    func setThumbnailPolicy(_ policy: ThumbnailStackPolicy) {
+    public func setThumbnailPolicy(_ policy: ThumbnailStackPolicy) {
         stack.setPolicy(policy)
     }
 
-    func assignThumbnailDisplay(_ id: CaptureID, displayID: UInt32) {
+    public func assignThumbnailDisplay(_ id: CaptureID, displayID: UInt32) {
         stack.assignDisplay(id, displayID: displayID)
     }
 
-    func handleSystemEvent(_ event: ThumbnailSystemEvent) async -> [CaptureCommandOutcome] {
+    /// Quit, lock, unlock, and display-unplug outcomes. Quit finalizes oldest first.
+    public func handleSystemEvent(_ event: ThumbnailSystemEvent) async -> [CaptureCommandOutcome] {
         switch event {
         case .quit:
             var outcomes: [CaptureCommandOutcome] = []
             // D25: try every Thumbnail; one that History refuses stays pending and is reported.
             for revision in stack.arrivalOrder() {
-                outcomes.append(await execute(.dismiss(revision)))
+                outcomes.append(await perform(.dismiss(revision)))
             }
             return outcomes
         case .screenLocked:
@@ -164,7 +128,7 @@ actor CaptureLifecycleCoordinator {
         }
     }
 
-    func thumbnails() -> Thumbnails {
+    public func thumbnails() -> Thumbnails {
         let now = clock()
         let paused = stackFocused || screenLocked
         let cards = stack.cards(at: now).map { card in
@@ -184,7 +148,13 @@ actor CaptureLifecycleCoordinator {
         return Thumbnails(cards: cards, nextDueAt: nextDueAt)
     }
 
-    func execute(_ command: CaptureCommand) async -> CaptureCommandOutcome {
+    public func execute(_ command: CaptureCommand) async -> CaptureCommandOutcome {
+        let outcome = await perform(command)
+        await diagnostics.record(DiagnosticEvent(command: command, outcome: outcome))
+        return outcome
+    }
+
+    private func perform(_ command: CaptureCommand) async -> CaptureCommandOutcome {
         switch command {
         case let .dismiss(revision):
             let id = revision.captureID
@@ -375,8 +345,8 @@ actor CaptureLifecycleCoordinator {
                 guard stack.admits(exit, for: id, at: clock()) else { return .rejected(.thumbnailExitNotDue) }
             }
             switch exit.outcome {
-            case .finalizeToHistory: return await execute(.dismiss(revision))
-            case .discard: return await execute(.discard(id))
+            case .finalizeToHistory: return await perform(.dismiss(revision))
+            case .discard: return await perform(.discard(id))
             }
         case let .drag(revision, operation):
             guard operation == .copy else { return .rejected(.dragOperationRefused) }
@@ -495,8 +465,8 @@ actor CaptureLifecycleCoordinator {
         let image: CaptureImage
         if let record = pending[id] {
             image = record.image
-        } else if isFinalized(id), let stored = await historyImage(id) {
-            image = stored
+        } else if isFinalized(id), case let .success((_, pngData))? = await history?.finalizedImage(id) {
+            image = CaptureImage(pngData: pngData)
         } else {
             return .rejected(isDelivered(id) ? .alreadyDelivered : .unknownCapture)
         }

@@ -158,11 +158,11 @@ v1 is not declared until Codex assesses the verification report.
 
 ## Ticket 06 command interface
 
-`CaptureCommandLayer.execute(_:) async -> CaptureCommandOutcome` is seam 1.
-Construct one layer for the app, injecting `CapturePixelSource`, `ImageClipboard`,
-a `pendingByteLimit`, and optionally a `DiagnosticSink`. Copies of the layer
-share one actor-isolated Capture lifecycle coordinator; independent layer
-instances are independent sessions. There are no public lifecycle mutators or
+`CaptureLifecycleCoordinator.execute(_:) async -> CaptureCommandOutcome` is seam 1.
+Construct one coordinator for the app, injecting `CapturePixelSource`, `ImageClipboard`,
+a `pendingByteLimit`, and optionally a `DiagnosticSink`. It is a public actor;
+independent coordinators are independent sessions. (Ticket 74 retired the
+command-layer wrapper that only forwarded to it.) There are no public lifecycle mutators or
 private-state queries.
 
 - `capture(CaptureID, maximumBytes:)` reserves that allowance across the entire
@@ -235,7 +235,7 @@ review. No real root or clipboard is touched by the command tests.
 
 See [app build and signing](app-build.md). The app links a native static target
 from the exact core source directory; SwiftPM remains the automated test runner.
-`CaptureCommandLayer.image(for:)` exposes revision-bound in-memory bytes for
+`CaptureLifecycleCoordinator.image(for:)` exposes revision-bound in-memory bytes for
 thumbnail downsampling, returning nil for unknown, stale, released or discarded
 revisions. Editable copied captures with a pre-write History failure remain
 queryable until resolved. Cancellation is a typed capture-source outcome. Lifecycle and byte
@@ -249,7 +249,7 @@ screen-capture call, permission prompt, or application host is used in tests.
 ## Ticket 20 full-screen capture
 
 `captureFullScreen(CaptureID, maximumBytes:)` uses the optional `fullScreenSource`
-injected into the same command layer. Without that source it reports unavailable;
+injected into the same coordinator. Without that source it reports unavailable;
 it never falls back to area capture. Both capture commands share one coordinator,
 Pending capture budget and revision-bound Copy, Retry Copy, Dismiss and Delete flow.
 With History injected, both finalize through the same commit protocol; the app
@@ -283,7 +283,7 @@ captures: a card arrives with `.pending` and leaves whenever the capture stops
 being pending (a committed exit, Delete, or a successful Copy, Save or Drag). The public interface:
 
 - `ThumbnailStackPolicy(maximumCount: 4, autoDismiss: .after(.seconds(10)))` and a
-  `clock: () -> ContinuousClock.Instant`, both optional on the command layer's
+  `clock: () -> ContinuousClock.Instant`, both optional on the coordinator's
   initializer. Decision 54 selects these working defaults; Settings can change
   them later.
 - `thumbnails() -> [ThumbnailCard]`: newest first. Each card has its revision,
@@ -330,14 +330,17 @@ seconds separately and call `setThumbnailPolicy`.
 | displaysChanged(remaining) | move cards whose display left to `remaining.first`; cards stay pending |
 
 A crash loses unedited pending captures: they exist only in the coordinator's
-memory (decision 31). A new command layer on the same History root sees no
+memory (decision 31). A new coordinator on the same History root sees no
 pending cards and no History rows. The app observes `didChangeScreenParameters`
 and `com.apple.screenIsLocked` / `com.apple.screenIsUnlocked`.
 
 ## Ticket 15 History window
 
-`historyItems()` is newest first and carries no paths. `historyImage` reads the
-finalized PNG. `execute(.copy/.save/.drag)` on a History revision reuses the
+The History window reads the store directly (ticket 74, decision 70) through
+`HistoryList`: a reload is one `HistoryStore.rows()` query, newest first, with no
+paths, and reports whether the rows changed. The list is lazy: each visible row
+looks up its picture by ID with `thumbnailPNG(_:)` (falling back to
+`finalizedImage(_:)`), cached by revision. `execute(.copy/.save/.drag)` on a History revision reuses the
 delivery adapters and leaves the owned file. Repeat
 Copy is allowed. `deleteHistory` uses the same `deleting` → unlink → row-removed
 path as quota eviction; an interrupted delete finishes at the next launch.
@@ -378,7 +381,7 @@ the drag finalizes it only on an accepted drop. The launch sweep removes any
   or antialiasing.
 - **Codec seam:** `BitmapCodec` converts PNG bytes to and from `Bitmap` in
   memory. The app injects `PNGBitmapCodec` (ImageIO, fixed sRGB) through
-  `CaptureCommandLayer(…, codec:)`; without one, Done returns
+  `CaptureLifecycleCoordinator(…, codec:)`; without one, Done returns
   `rejected(.editingUnavailable)`.
 - **Done (seam 1):** `execute(.done(revision, edits))` decodes the current
   pending image, renders, encodes, and replaces the pending image with the
@@ -538,7 +541,7 @@ PNGs and a recording clipboard stand-in.
 ## Ticket 21 window capture
 
 `captureWindow(CaptureID, maximumBytes:)` uses the optional `windowSource` on
-`CaptureCommandLayer`, sharing the permission gate, Pending capture budget,
+`CaptureLifecycleCoordinator`, sharing the permission gate, Pending capture budget,
 Copy/Save and their retries, Delete and History finalization with the other
 capture commands.
 A missing window source fails unavailable without falling back to area capture.

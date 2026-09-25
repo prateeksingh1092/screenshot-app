@@ -87,7 +87,7 @@ private actor WindowClipboard: ImageClipboard {
 @Suite @MainActor struct WindowCaptureCommandsTests {
     @Test func frontmostWindowAtNegativeCoordinatesBecomesPendingAndCopiesUnchanged() async throws {
         let platform = FixtureWindowPlatform(), clipboard = WindowClipboard()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: clipboard, pendingByteLimit: 1024)
         let id = CaptureID(), revision = CaptureRevision(captureID: CaptureID(), number: 1)
@@ -118,7 +118,7 @@ extension WindowCaptureCommandsTests {
             window(6, x: x, y: y, bundle: nil), // Fail closed for unknown app identity.
             window(80, x: x, y: y), window(7, x: x, y: y)
         ]
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID()
@@ -135,7 +135,7 @@ extension WindowCaptureCommandsTests {
             window(80, layer: 3), // Visible foreign floating window.
             window(7) // Normal window behind it.
         ]
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID(), revision: CaptureRevision
@@ -151,7 +151,7 @@ extension WindowCaptureCommandsTests {
     @Test func noEligibleWindowsDoesNotOpenSelectionOrConsumeTheBudget() async {
         let platform = FixtureWindowPlatform()
         platform.windows = [window(1, owner: 42)]
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID()
@@ -178,7 +178,7 @@ extension WindowCaptureCommandsTests {
     @Test(arguments: [CapturePermissionState.notAsked, .denied, .revokedWhileRunning, .needsRelaunch])
     func missingPermissionNeverPreparesWindowsOrSelection(_ state: CapturePermissionState) async {
         let platform = FixtureWindowPlatform()
-        let commands = CaptureCommandLayer(permission: WindowPermission(state: state), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: WindowPermission(state: state), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         #expect(await commands.execute(.captureWindow(CaptureID(), maximumBytes: 1024)) == .permissionRequired(state))
@@ -190,7 +190,7 @@ extension WindowCaptureCommandsTests {
     @Test func selectionWaitsUntilPreparationCompletes() async {
         let platform = FixtureWindowPlatform()
         platform.suspendPreparation = true
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID()
@@ -207,7 +207,7 @@ extension WindowCaptureCommandsTests {
         let platform = FixtureWindowPlatform()
         if duringPixels { platform.captureFailure = .permissionRequired(.revokedWhileRunning) }
         else { platform.prepareFailure = .permissionRequired(.needsRelaunch) }
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID(), revision: CaptureRevision
@@ -225,7 +225,7 @@ extension WindowCaptureCommandsTests {
     func cancelOrNoHitTakesNoPixelsAndAllowsAnotherCapture(_ pointer: CGPoint?) async {
         let platform = FixtureWindowPlatform()
         platform.pointer = pointer
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID()
@@ -238,7 +238,7 @@ extension WindowCaptureCommandsTests {
 
     @Test func windowAndOtherToolsSharePendingBudgetAndDeleteReleasesIt() async {
         let platform = FixtureWindowPlatform()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             fullScreenSource: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: fixturePNG.count)
@@ -258,7 +258,7 @@ extension WindowCaptureCommandsTests {
     func invalidSourceBytesNeverBecomePendingAndReleaseTheBudget(_ bytes: Data) async {
         let platform = FixtureWindowPlatform()
         platform.bytes = bytes
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID()
@@ -272,15 +272,16 @@ extension WindowCaptureCommandsTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
         defer { try? FileManager.default.removeItem(at: root) }
         let platform = FixtureWindowPlatform()
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
-            clipboard: WindowClipboard(), pendingByteLimit: 1024, history: HistoryStore(root: root))
+            clipboard: WindowClipboard(), pendingByteLimit: 1024, history: history)
         let id = CaptureID(), revision: CaptureRevision
         revision = CaptureRevision(captureID: id, number: 1)
         #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(revision))
         #expect(!FileManager.default.fileExists(atPath: root.path))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
-        let entries = try await commands.historyEntries().get()
+        let entries = try await history.entries().get()
         #expect(entries.count == 1)
         let entry = try #require(entries.first)
         #expect(entry.captureID == id)
@@ -290,7 +291,7 @@ extension WindowCaptureCommandsTests {
     }
 
     @Test func absentWindowSourceCannotFallBackToArea() async {
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: AvailableFixturePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: AvailableFixturePixels(),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         #expect(await commands.execute(.captureWindow(CaptureID(), maximumBytes: 1024)) == .captureFailed(.unavailable))
     }
@@ -306,7 +307,7 @@ extension WindowCaptureCommandsTests {
             frame: CGRect(x: pointer.x - 4, y: pointer.y - 4, width: 20, height: 26),
             layer: 2_147_483_630, isOnScreen: true, isMinimized: false)
         platform.windows = [cursor, window(7)]
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID()
@@ -326,7 +327,7 @@ extension WindowCaptureCommandsTests {
             window(6, bundle: "com.apple.dock", layer: 20), // The Dock.
             window(1, owner: 42, layer: 3) // Frisket's own panel.
         ]
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         #expect(await commands.execute(.captureWindow(CaptureID(), maximumBytes: 1024)) == .captureFailed(.window(.noWindow)))
@@ -339,7 +340,7 @@ extension WindowCaptureCommandsTests {
     func platformFailureIsReportedAsAWindowFailure(duringPixels: Bool) async {
         let platform = FixtureWindowPlatform()
         if duringPixels { platform.captureFailure = .unavailable } else { platform.prepareFailure = .unavailable }
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         #expect(await commands.execute(.captureWindow(CaptureID(), maximumBytes: 1024)) == .captureFailed(.window(.systemRefused)))
@@ -351,7 +352,7 @@ extension WindowCaptureCommandsTests {
     func platformWindowCauseReachesTheCaller(_ cause: WindowCaptureFailure) async {
         let platform = FixtureWindowPlatform()
         platform.captureFailure = .window(cause)
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID()
@@ -367,7 +368,7 @@ extension WindowCaptureCommandsTests {
     @Test func excludedAppsWindowIsNeverOffered() async {
         let platform = FixtureWindowPlatform()
         platform.windows = [window(7, bundle: "test.synthetic-vault"), window(8)]
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle,
                                               exclusions: { ["test.synthetic-vault"] }),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
@@ -384,7 +385,7 @@ extension WindowCaptureCommandsTests {
             SelectionDisplay(id: 1, frame: CGRect(x: 0, y: 0, width: 1440, height: 900), scale: 2),
             SelectionDisplay(id: 2, frame: CGRect(x: -1920, y: -180, width: 1920, height: 1080), scale: 1)
         ]
-        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: UnavailablePixels(),
             windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
             clipboard: WindowClipboard(), pendingByteLimit: 1024)
         let id = CaptureID()

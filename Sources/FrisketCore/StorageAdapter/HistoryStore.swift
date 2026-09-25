@@ -6,7 +6,7 @@ import ImageIO
 /// Disk access is lazy: initialization and an empty query create nothing.
 /// The directory lock is held until this store is released, including while
 /// History queries and authorized commits run.
-public actor HistoryStore: CaptureHistory {
+public actor HistoryStore: CaptureHistory, HistoryRowSource {
     private let root: URL
     private let clock: @Sendable () -> Date
     private let evictionPoint: @Sendable (HistoryEvictionPoint) throws -> Void
@@ -304,16 +304,10 @@ public actor HistoryStore: CaptureHistory {
     public func entries() async -> Result<[HistoryEntry], HistoryFailure> {
         await ensureLaunchRecovery()
         do {
-            guard !closed else { throw HistoryFailure.unavailable }
-            if let recoveryFailure { throw recoveryFailure }
-            try acquireRootLockIfPresent()
-            if let database { return .success(try readEntries(database)) }
-            let path = root.appendingPathComponent("history.sqlite")
-            guard FileManager.default.fileExists(atPath: path.path) else { return .success([]) }
-            let reader = try readOnlyDatabase()
-            defer { try? reader.close() }
-            try validateMigrations(reader)
-            return .success(try readEntries(reader))
+            let entries = try readExisting { db in
+                try Row.fetchAll(db, sql: "SELECT * FROM history WHERE state = 'finalized' ORDER BY finalized_at, id").map(Self.entry(from:))
+            }
+            return .success(entries ?? [])
         } catch let failure as HistoryFailure { return .failure(failure) }
         catch { return .failure(.unavailable) }
     }
@@ -330,24 +324,11 @@ public actor HistoryStore: CaptureHistory {
             if let recoveryFailure { throw recoveryFailure }
             try acquireRootLockIfPresent()
             let database = try writerForExistingHistory()
-            let entries = try readEntries(database)
-            guard let entry = entries.first(where: { $0.captureID == id }) else { throw HistoryFailure.unavailable }
+            guard let entry = try readEntry(id, database) else { throw HistoryFailure.unavailable }
             try evict(entry, database: database)
             return .success(())
         } catch let failure as HistoryFailure { return .failure(failure) }
         catch { return .failure(.unavailable) }
-    }
-
-    // D19: recovery closes the writer after its checkpoint, and a relaunch never opens it, so row
-    // actions open what they need on demand. A root with no History database has no rows, and
-    // nothing is created for it.
-    private func currentEntries() throws -> [HistoryEntry] {
-        if let database { return try readEntries(database) }
-        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) else { return [] }
-        let reader = try readOnlyDatabase()
-        defer { try? reader.close() }
-        try validateMigrations(reader)
-        return try readEntries(reader)
     }
 
     private func writerForExistingHistory() throws -> DatabaseQueue {
@@ -358,26 +339,59 @@ public actor HistoryStore: CaptureHistory {
         return try writableDatabase()
     }
 
+    /// History window rows, newest first, from one query. Rows carry no file names or paths.
+    public func rows() async -> Result<[HistoryItem], HistoryFailure> {
+        await ensureLaunchRecovery()
+        do {
+            let rows = try readExisting { db in
+                try Row.fetchAll(db, sql: """
+                    SELECT capture_identifier, revision, width, height, finalized_at FROM history
+                    WHERE state = 'finalized' ORDER BY finalized_at DESC, id DESC
+                    """).map { row in
+                    guard let uuid = UUID(uuidString: row["capture_identifier"]) else { throw HistoryFailure.unavailable }
+                    return HistoryItem(captureID: CaptureID(uuid), revision: UInt64(row["revision"] as Int64),
+                                       width: row["width"], height: row["height"],
+                                       finalizedAt: Date(timeIntervalSince1970: row["finalized_at"]))
+                }
+            }
+            return .success(rows ?? [])
+        } catch let failure as HistoryFailure { return .failure(failure) }
+        catch { return .failure(.unavailable) }
+    }
+
+    /// The cached thumbnail of one History item, looked up by ID.
     public func thumbnailPNG(_ id: CaptureID) async -> Data? {
-        guard case let .success(entries) = await entries(),
-              let location = entries.first(where: { $0.captureID == id })?.thumbnailLocation else { return nil }
-        return try? Data(contentsOf: root.appendingPathComponent(location))
+        await ensureLaunchRecovery()
+        guard let entry = try? readExisting({ try Self.entry(id, in: $0) }) ?? nil,
+              let thumbnail = try? ownedLocations(entry).dropFirst(2).first else { return nil }
+        return try? Data(contentsOf: thumbnail)
     }
 
     public func finalizedImage(_ id: CaptureID) async -> Result<(revision: UInt64, pngData: Data), HistoryFailure> {
         await ensureLaunchRecovery()
         do {
-            guard !closed else { throw HistoryFailure.unavailable }
-            if let recoveryFailure { throw recoveryFailure }
-            try acquireRootLockIfPresent()
-            let entries = try currentEntries()
-            guard let entry = entries.first(where: { $0.captureID == id }) else { throw HistoryFailure.unavailable }
+            guard let entry = try readExisting({ try Self.entry(id, in: $0) }) ?? nil else { throw HistoryFailure.unavailable }
             let image = try ownedLocations(entry)[0]
             let data = try Data(contentsOf: image)
             guard !data.isEmpty else { throw HistoryFailure.invalidImage }
             return .success((entry.revision, data))
         } catch let failure as HistoryFailure { return .failure(failure) }
         catch { return .failure(.unavailable) }
+    }
+
+    // D19: recovery closes the writer after its checkpoint, and a relaunch never opens it, so row
+    // actions open what they need on demand. A root with no History database has no rows, and
+    // nothing is created for it: this returns nil.
+    private func readExisting<T>(_ body: (Database) throws -> T) throws -> T? {
+        guard !closed else { throw HistoryFailure.unavailable }
+        if let recoveryFailure { throw recoveryFailure }
+        try acquireRootLockIfPresent()
+        if let database { return try database.read(body) }
+        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) else { return nil }
+        let reader = try readOnlyDatabase()
+        defer { try? reader.close() }
+        try validateMigrations(reader)
+        return try reader.read(body)
     }
 
     private func finalizeAfterRecovery(_ request: AuthorizedFinalization) -> CommitOutcome {
@@ -456,7 +470,18 @@ public actor HistoryStore: CaptureHistory {
     }
 
     /// Explicit launch/settings maintenance; an unused History root stays absent.
-    public func maintain(limits: HistoryLimits?) -> Result<HistoryUsage, HistoryFailure> {
+    /// `maintain` and `status` are `async` like their `CaptureHistory` requirements: a synchronous
+    /// actor method loses overload resolution to the protocol extension's `.unavailable` default
+    /// when the app awaits it on a `HistoryStore` directly.
+    public func maintain(limits: HistoryLimits?) async -> Result<HistoryUsage, HistoryFailure> {
+        maintainNow(limits: limits)
+    }
+
+    public func status(consumeNotice: Bool) async -> Result<HistoryUsage, HistoryFailure> {
+        statusNow(consumeNotice: consumeNotice)
+    }
+
+    private func maintainNow(limits: HistoryLimits?) -> Result<HistoryUsage, HistoryFailure> {
         if let limits { self.limits = limits }
         do {
             guard database != nil || FileManager.default.fileExists(atPath: root.appendingPathComponent("history.sqlite").path) else {
@@ -470,12 +495,12 @@ public actor HistoryStore: CaptureHistory {
             try remeasure(database)
             measurementFailed = false
             try enforce(database, protecting: nil)
-            return status(consumeNotice: false)
+            return statusNow(consumeNotice: false)
         } catch let failure as HistoryFailure { return .failure(failure) }
         catch { return .failure(.unavailable) }
     }
 
-    public func status(consumeNotice: Bool) -> Result<HistoryUsage, HistoryFailure> {
+    private func statusNow(consumeNotice: Bool) -> Result<HistoryUsage, HistoryFailure> {
         do {
             guard !measurementFailed else { throw HistoryFailure.unavailable }
             guard let database else {
@@ -810,15 +835,28 @@ public actor HistoryStore: CaptureHistory {
 
     private func readEntries(_ database: DatabaseQueue, includeDeleting: Bool = false) throws -> [HistoryEntry] {
         try database.read { db in
-            try Row.fetchAll(db, sql: "SELECT * FROM history WHERE state = 'finalized' OR ? ORDER BY finalized_at, id", arguments: [includeDeleting]).map { row in
-                guard let uuid = UUID(uuidString: row["capture_identifier"]) else { throw HistoryFailure.unavailable }
-                return HistoryEntry(key: row["id"], captureID: CaptureID(uuid), revision: UInt64(row["revision"] as Int64),
-                    imageLocation: row["image_location"], recordLocation: row["record_location"],
-                    thumbnailLocation: row["thumbnail_location"], width: row["width"], height: row["height"],
-                    imageBytes: row["image_bytes"], recordBytes: row["record_bytes"], thumbnailBytes: row["thumbnail_bytes"],
-                    finalizedAt: Date(timeIntervalSince1970: row["finalized_at"]), state: HistoryState(rawValue: row["state"])!)
-            }
+            try Row.fetchAll(db, sql: "SELECT * FROM history WHERE state = 'finalized' OR ? ORDER BY finalized_at, id", arguments: [includeDeleting])
+                .map(Self.entry(from:))
         }
+    }
+
+    private func readEntry(_ id: CaptureID, _ database: DatabaseQueue) throws -> HistoryEntry? {
+        try database.read { try Self.entry(id, in: $0) }
+    }
+
+    /// One finalized History item by ID; the capture identifier is unique and indexed.
+    private static func entry(_ id: CaptureID, in db: Database) throws -> HistoryEntry? {
+        try Row.fetchOne(db, sql: "SELECT * FROM history WHERE capture_identifier = ? AND state = 'finalized'",
+                         arguments: [id.rawValue.uuidString]).map(entry(from:))
+    }
+
+    private static func entry(from row: Row) throws -> HistoryEntry {
+        guard let uuid = UUID(uuidString: row["capture_identifier"]) else { throw HistoryFailure.unavailable }
+        return HistoryEntry(key: row["id"], captureID: CaptureID(uuid), revision: UInt64(row["revision"] as Int64),
+            imageLocation: row["image_location"], recordLocation: row["record_location"],
+            thumbnailLocation: row["thumbnail_location"], width: row["width"], height: row["height"],
+            imageBytes: row["image_bytes"], recordBytes: row["record_bytes"], thumbnailBytes: row["thumbnail_bytes"],
+            finalizedAt: Date(timeIntervalSince1970: row["finalized_at"]), state: HistoryState(rawValue: row["state"])!)
     }
 
     private func durableWrite(_ data: Data, to location: URL, staged: HistoryCommitPoint, synced: HistoryCommitPoint) throws {
