@@ -6,7 +6,7 @@ import Foundation
 public enum LabelStyle: String, CaseIterable, Sendable {
     /// Ink glyphs with a 1 px white plate around them (decision 68).
     case standard
-    /// White glyphs inside an ink outline.
+    /// White glyphs (black in a light ink) inside an ink outline.
     case outlined
     /// White glyphs (black on a light ink) on a box filled with the ink.
     case box
@@ -132,7 +132,8 @@ public struct LabelLayout: Equatable, Sendable {
 extension AnnotationPainter {
     /// Draws one layer of a label whose text starts at `top` (output pixels). Standard: the plate
     /// strokes the glyphs 2 px wide in white, the ink fills them. Outlined: the plate strokes them
-    /// wider than the outline, the ink strokes the outline, then the glyphs fill white. Box: the
+    /// wider than the outline, the ink strokes the outline, then the glyphs fill white (black in a
+    /// light ink). Box: the
     /// plate fills the box snapped outward and 1 px larger, the ink fills the box, then the glyphs
     /// fill in white (black on a light ink).
     static func drawLabel(_ characters: String, format: LabelFormat, colour: RGBAPixel, top: CGPoint, scale: Double,
@@ -164,7 +165,7 @@ extension AnnotationPainter {
             } else {
                 context.setLineWidth(2 * outline)
                 glyphs(.stroke)
-                context.setFillColor(plateColour)
+                context.setFillColor(letterColour(on: colour))
                 glyphs(.fill)
             }
         case .box:
@@ -178,14 +179,15 @@ extension AnnotationPainter {
                 context.fill(rect.insetBy(dx: -1, dy: -1))
             } else {
                 context.fill(rect)
-                context.setFillColor(boxTextColour(on: colour))
+                context.setFillColor(letterColour(on: colour))
                 glyphs(.fill)
             }
         }
     }
 
-    /// White on a dark or mid ink, black on a light one.
-    static func boxTextColour(on ink: RGBAPixel) -> CGColor {
+    /// The letters inside an Outlined or Box label: white on a dark or mid ink, black on a light
+    /// one (Yellow, White), so the letters never vanish into their ink (ticket 99).
+    static func letterColour(on ink: RGBAPixel) -> CGColor {
         let luma = (0.299 * Double(ink.red) + 0.587 * Double(ink.green) + 0.114 * Double(ink.blue)) / 255
         return luma > 0.6 ? CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1) : plateColour
     }
@@ -200,7 +202,7 @@ extension AnnotationPainter {
     public let document: UndoableEdits
     /// Where the text starts, in document points of the uncropped capture.
     public let x: Double, y: Double
-    public let colour: RGBAPixel
+    public private(set) var colour: RGBAPixel
     public private(set) var characters: String
     public private(set) var format: LabelFormat
     /// The label's index in the annotations while it has visible characters.
@@ -274,6 +276,19 @@ extension AnnotationPainter {
         // Written first: the document's change handler may ask `isCurrent`.
         written = next
         document.apply(next, named: name, coalescing: key)
+    }
+
+    /// A new ink for the label being typed (ticket 99): its own undo step once the label exists
+    /// ("Restyle Label"). A colour that is not opaque is ignored.
+    public func recolour(_ colour: RGBAPixel) {
+        guard isCurrent, colour != self.colour, colour.alpha == 255 else { return }
+        self.colour = colour
+        guard let index, let label = DocumentAnnotation(.text(x: x, y: y, characters: characters), colour: colour,
+                                                        label: format) else { return }
+        var next = document.edits
+        next.annotations[index] = label
+        written = next
+        document.apply(next, named: "Restyle Label")
     }
 
     /// A new style, size or wrap width for the label being typed: its own undo step once the label

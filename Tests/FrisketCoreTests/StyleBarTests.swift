@@ -23,10 +23,10 @@ import Testing
             (.select, []),
             (.solidRedaction, [.redactionColour]),
             (.crop, []),
-            (.arrow, [.arrowStyle, .lineWidth]),
-            (.line, [.lineWidth]),
-            (.shape, [.lineWidth]),
-            (.text, [.labelSize, .labelStyle]),
+            (.arrow, [.inkColour, .arrowStyle, .lineWidth]),
+            (.line, [.inkColour, .lineWidth]),
+            (.shape, [.inkColour, .lineWidth]),
+            (.text, [.inkColour, .labelSize, .labelStyle]),
             (.blur, []),
             (.magnify, []),
         ]
@@ -40,10 +40,10 @@ import Testing
         let edits = try Self.marked()
         let expected: [(MarkReference, [StyleControl])] = [
             (.redaction(0), [.redactionColour]),
-            (.annotation(0), [.lineWidth]),
-            (.annotation(1), [.arrowStyle, .lineWidth]),
-            (.annotation(2), [.lineWidth]),
-            (.annotation(3), [.labelSize, .labelStyle]),
+            (.annotation(0), [.inkColour, .lineWidth]),
+            (.annotation(1), [.inkColour, .arrowStyle, .lineWidth]),
+            (.annotation(2), [.inkColour, .lineWidth]),
+            (.annotation(3), [.inkColour, .labelSize, .labelStyle]),
         ]
         for tool in EditorToolKind.allCases {
             for (mark, controls) in expected {
@@ -56,7 +56,19 @@ import Testing
         let edits = try Self.marked()
         #expect(StyleBar.controls(tool: .solidRedaction, selection: .effect(0), in: edits) == [.redactionColour])
         #expect(StyleBar.controls(tool: .select, selection: .effect(0), in: edits) == [])
-        #expect(StyleBar.controls(tool: .text, selection: .annotation(9), in: edits) == [.labelSize, .labelStyle],
+        #expect(StyleBar.controls(tool: .text, selection: .annotation(9), in: edits) == [.inkColour, .labelSize, .labelStyle],
                 "a stale reference falls back to the tool")
+    }
+
+    /// Ticket 99: the ink swatches never show for Solid redaction, Crop, Blur or Magnify, nor for a
+    /// selected redaction or effect.
+    @Test func inkIsOfferedOnlyForArrowsLinesShapesAndLabels() throws {
+        let edits = try Self.marked()
+        for tool in [EditorToolKind.select, .solidRedaction, .crop, .blur, .magnify] {
+            #expect(!StyleBar.controls(tool: tool, selection: nil, in: edits).contains(.inkColour), "\(tool)")
+        }
+        for mark in [MarkReference.redaction(0), .effect(0)] {
+            #expect(!StyleBar.controls(tool: .select, selection: mark, in: edits).contains(.inkColour), "\(mark)")
+        }
     }
 }

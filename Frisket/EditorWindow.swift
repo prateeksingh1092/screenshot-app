@@ -353,6 +353,13 @@ enum EditorAction {
     /// The Solid redaction palette (ticket 88): one swatch per colour, for the tool and a selected redaction.
     private var swatchButtons: [NSButton] = []
     private let swatchStack = NSStackView()
+    /// The annotation ink palette (ticket 99, decision 92): for new arrows, lines, shapes and labels,
+    /// and to recolour the selected one or the label being typed.
+    private var inkButtons: [NSButton] = []
+    private let inkStack = NSStackView()
+    /// The ink for new marks, shared by every ink tool. Red until the user picks another; not
+    /// remembered between editors (ticket 100 does that).
+    private var ink = DocumentAnnotation.stroke
     /// The style bar (ticket 92): the style controls that apply to the selected mark or the active
     /// tool, in the content area so none of them falls into the toolbar's overflow menu.
     private let styleBar = NSStackView()
@@ -445,7 +452,7 @@ enum EditorAction {
         labelStylePopUp.toolTip = "Label style: Standard, Outlined or Box"
         labelStylePopUp.sizeToFit()
         // The drawing tool's contextual controls (ticket 85): line width and arrow style for new marks,
-        // and for the selected mark when there is one. Colour arrives with the palette (ticket 88).
+        // and for the selected mark when there is one. Ink colour has its own swatches (ticket 99).
         for width in DocumentAnnotation.lineWidths {
             widthPopUp.addItem(withTitle: "\(Int(width)) pt")
             widthPopUp.lastItem?.representedObject = width
@@ -483,7 +490,23 @@ enum EditorAction {
         swatchStack.setAccessibilityElement(true)
         swatchStack.setAccessibilityRole(.group)
         swatchStack.setAccessibilityLabel("Redaction colour")
-        for control in [swatchStack, stylePopUp, widthPopUp, labelSizePopUp, labelStylePopUp] {
+        for (index, choice) in DocumentAnnotation.palette.enumerated() {
+            let button = NSButton(image: Self.swatch(choice.pixel), target: self, action: #selector(chooseInk(_:)))
+            button.setButtonType(.pushOnPushOff)
+            button.bezelStyle = .texturedRounded
+            button.controlSize = .small
+            button.tag = index
+            button.setAccessibilityLabel("Ink colour: \(choice.name)")
+            button.toolTip = "Ink colour: \(choice.name)"
+            inkButtons.append(button)
+            inkStack.addArrangedSubview(button)
+        }
+        inkStack.orientation = .horizontal
+        inkStack.spacing = 2
+        inkStack.setAccessibilityElement(true)
+        inkStack.setAccessibilityRole(.group)
+        inkStack.setAccessibilityLabel("Ink colour")
+        for control in [swatchStack, inkStack, stylePopUp, widthPopUp, labelSizePopUp, labelStylePopUp] {
             styleBar.addArrangedSubview(control)
         }
         styleBar.orientation = .horizontal
@@ -655,6 +678,7 @@ enum EditorAction {
         let shown = Set(StyleBar.controls(tool: tools[activeTool].kind,
                                           selection: labelSession == nil ? marks.selection : nil, in: edits))
         swatchStack.isHidden = !shown.contains(.redactionColour)
+        inkStack.isHidden = !shown.contains(.inkColour)
         stylePopUp.isHidden = !shown.contains(.arrowStyle)
         widthPopUp.isHidden = !shown.contains(.lineWidth)
         labelSizePopUp.isHidden = !shown.contains(.labelSize)
@@ -677,6 +701,12 @@ enum EditorAction {
         for button in swatchButtons {
             button.isEnabled = !finishing && (fill != nil || tools[activeTool] is SolidRedactionTool)
             button.state = SolidRedaction.palette[button.tag].pixel == shownFill ? .on : .off
+        }
+        // The label being typed, else the selected mark's ink, else the ink for new marks.
+        let shownInk = labelSession?.colour ?? marks.selectionInk ?? ink
+        for button in inkButtons {
+            button.isEnabled = !finishing && shown.contains(.inkColour)
+            button.state = DocumentAnnotation.palette[button.tag].pixel == shownInk ? .on : .off
         }
         // The selected mark's width and style, or else the active tool's.
         let widthTool = tools[activeTool] as? LineWidthTool
@@ -852,7 +882,8 @@ enum EditorAction {
             }
             if isClick, marks.click(atX: end.x, y: end.y, tolerance: tolerance) { return }
             let origin = (x: edits.crop?.x ?? 0, y: edits.crop?.y ?? 0)
-            beginLabel(LabelSession(document: document, x: start.x + origin.x, y: start.y + origin.y, format: textTool.format))
+            beginLabel(LabelSession(document: document, x: start.x + origin.x, y: start.y + origin.y, format: textTool.format,
+                                    colour: textTool.ink))
             return
         }
         if isClick {
@@ -891,6 +922,21 @@ enum EditorAction {
         let choice = SolidRedaction.palette[sender.tag]
         redactionTool.colour = choice.pixel
         if marks.selectionFill != nil { marks.recolourSelection(choice.pixel) }
+        refresh()
+    }
+
+    /// An ink becomes the colour of new arrows, lines, shapes and labels, and recolours the label
+    /// being typed or the selected annotation (one "Restyle" undo step).
+    @objc private func chooseInk(_ sender: NSButton) {
+        guard !finishing, DocumentAnnotation.palette.indices.contains(sender.tag) else { return }
+        let choice = DocumentAnnotation.palette[sender.tag]
+        ink = choice.pixel
+        for case let tool as InkTool in tools { tool.ink = choice.pixel }
+        if let labelSession {
+            labelSession.recolour(choice.pixel)
+        } else if marks.selectionInk != nil {
+            marks.recolourSelection(choice.pixel)
+        }
         refresh()
     }
 

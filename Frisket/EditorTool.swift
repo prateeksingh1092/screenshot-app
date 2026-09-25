@@ -25,6 +25,12 @@ enum EditorToolRole: Equatable {
     var width: Double { get set }
 }
 
+/// A tool whose marks are drawn in an ink from the style bar's palette (ticket 99). The editor
+/// sets one ink on every such tool, so a colour chosen with one tool carries to the others.
+@MainActor protocol InkTool: EditorTool {
+    var ink: RGBAPixel { get set }
+}
+
 /// Selects marks (ticket 84): a press on any mark takes hold of it. It draws nothing.
 @MainActor final class SelectTool: EditorTool {
     let title = "Select"
@@ -77,8 +83,9 @@ enum EditorToolRole: Equatable {
     }
 }
 
-@MainActor final class RectangleTool: LineWidthTool {
+@MainActor final class RectangleTool: LineWidthTool, InkTool {
     var width = DocumentAnnotation.defaultWidth
+    var ink = DocumentAnnotation.stroke
     let title = "Shape"
     let accessibilityLabel = "Rectangle shape tool. Drawing does not hide pixels."
     let keyEquivalent = "s"
@@ -91,15 +98,16 @@ enum EditorToolRole: Equatable {
         let originY = edits.crop?.y ?? 0
         guard let annotation = DocumentAnnotation(.rectangle(x: min(start.x, end.x) + originX, y: min(start.y, end.y) + originY,
                                                              width: abs(end.x - start.x), height: abs(end.y - start.y)),
-                                                width: width) else { return false }
+                                                colour: ink, width: width) else { return false }
         edits.annotations.append(annotation)
         return true
     }
 }
 
 /// Arrows in the style chosen in its style menu (ticket 85): Standard, Curved or Double.
-@MainActor class ArrowTool: LineWidthTool {
+@MainActor class ArrowTool: LineWidthTool, InkTool {
     var width = DocumentAnnotation.defaultWidth
+    var ink = DocumentAnnotation.stroke
     var style: ArrowStyle
     var title: String { "Arrow" }
     var accessibilityLabel: String { "Arrow tool. Drawing does not hide pixels." }
@@ -117,7 +125,7 @@ enum EditorToolRole: Equatable {
         let originY = edits.crop?.y ?? 0
         guard let annotation = DocumentAnnotation(.arrow(x0: start.x + originX, y0: start.y + originY,
                                                          x1: end.x + originX, y1: end.y + originY),
-                                                  width: width, style: style) else { return false }
+                                                  colour: ink, width: width, style: style) else { return false }
         edits.annotations.append(annotation)
         return true
     }
@@ -137,7 +145,7 @@ enum EditorToolRole: Equatable {
 
 /// Labels typed on the image (ticket 86): a click starts a label there, typed on the canvas. Its
 /// size and style menus set `format` for new labels.
-@MainActor final class TextTool: EditorTool {
+@MainActor final class TextTool: InkTool {
     let title = "Text"
     let accessibilityLabel = "Text label tool. Click and type on the image. Labels do not hide pixels."
     let keyEquivalent = "t"
@@ -145,6 +153,7 @@ enum EditorToolRole: Equatable {
     let kind = EditorToolKind.text
     let role = EditorToolRole.draw
     var format = LabelFormat.standard
+    var ink = DocumentAnnotation.stroke
 
     /// The editor starts a typing session instead; a drag draws nothing.
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool { false }
