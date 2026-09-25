@@ -16,7 +16,7 @@ copytext-text	-	pass	Copy Text on the pattern caption puts its text on the clipb
 copytext-none	D8	pass	Copy Text on a capture with no text leaves the clipboard unchanged, shows no alert, and says "No text found" on the Thumbnail
 stack	D9	pass	Two pending Thumbnails don't overlap
 focus-latest	D12	pass	After ⌘⇧2, the Thumbnail's C key copies (keys reach the Thumbnail, not the frontmost app)
-history-copy	D30	xfail	History row Copy puts the newest capture on the clipboard (pattern --verify)
+history-copy	D30	pass	History row Copy puts the newest capture on the clipboard (a run-unique size, pattern --verify-full)
 history-save	D17	pass	History row Save writes one export whose name carries the date
 history-display	D15	pass	⌘⇧1 with the pointer on this display opens History on it
 settings-focus	D15,D17	pass	⌘, opens Settings on this display; the auto-dismiss field doesn't have first focus; no shortcut reads ⇧⌘

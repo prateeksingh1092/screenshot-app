@@ -413,17 +413,26 @@ row_focus_latest() {
   [ "$after" != "$before" ]
 }
 
-history_newest() {  # open History (⌘⇧1) and click its newest row
+history_newest() {  # open History (⌘⇧1); it selects its newest row itself (D30), so no click
   hotkey 1; nap 1.2
   local x y w h
   read -r x y w h <<<"$("$H/drive" axframe frisket "History captures, newest first")"
   [ -n "${h:-}" ] || return 1
-  drv click $(( x + w / 2 )) $(( y + 24 )); nap 0.4
+  nap 0.4
 }
 keep_card() { drv axpress frisket "Pending capture" "Close thumbnail and keep capture in History"; nap 1; }
 row_history_copy() {
-  pattern_up --show && capture_pattern && keep_card && history_newest || return 1
-  drv axpress frisket "Copy selected History capture" && nap 1 && clip_to history-copy && "$H/pattern" --verify "$ev/history-copy.png" "$DS" >>"$log" 2>&1
+  # A size no other row captures, varied per run, so an older identical pattern can't pass (D30):
+  # the pattern plus a margin of 2–80 points on each side, and the copy must have exactly that size.
+  local m w h cw ch
+  m=$(( 2 * (1 + $(date +%s) % 40) )); w=$(( 320 + 2 * m )); h=$(( 180 + 2 * m ))
+  pattern_up --show && capture_area $(( CX - w / 2 )) $(( CY - h / 2 )) $(( CX + w / 2 )) $(( CY + h / 2 )) \
+    && keep_card && history_newest || return 1
+  drv axpress frisket "Copy selected History capture" && nap 1 && clip_to history-copy || return 1
+  read -r cw ch <<<"$("$H/drive" size "$ev/history-copy.png")"
+  note "captured ${w}x${h} points at scale $DS; History copied ${cw}x${ch}"
+  [ "${cw:-0}" -eq $(( w * DS )) ] && [ "${ch:-0}" -eq $(( h * DS )) ] \
+    && "$H/pattern" --verify-full "$ev/history-copy.png" $(( w * DS )) $(( h * DS )) "$DS" >>"$log" 2>&1
 }
 row_history_save() {
   pattern_up --show && capture_pattern && keep_card && history_newest || return 1

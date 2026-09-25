@@ -18,6 +18,8 @@ import FrisketCore
     @Published private(set) var message: String?
     @Published private(set) var disabled = false
     @Published private(set) var busy = false
+    /// Bumped when History opens, so the list scrolls to the selected (newest) row.
+    @Published private(set) var scrollRequest = 0
     private var history: HistoryStore?
     private var list: HistoryList<NSImage>?
     private var commands: CaptureLifecycleCoordinator?
@@ -32,13 +34,15 @@ import FrisketCore
     }
 
     /// One query; the rows are published only when they changed, and pictures load per visible row.
-    func reload(clearingMessage: Bool = true) async {
+    /// `opening` selects the newest row and scrolls to it (D30); otherwise the user's row is kept.
+    func reload(clearingMessage: Bool = true, opening: Bool = false) async {
         guard let list else { return }
         switch await list.reload() {
         case let .success(changed):
             if changed || disabled { rows = list.rows.map(Row.init(item:)) }
-            if selected == nil { selected = rows.first?.id }
-            else if !rows.contains(where: { $0.id == selected }) { selected = rows.first?.id }
+            let next = list.selection(keeping: selected, opening: opening)
+            if next != selected { selected = next }
+            if opening { scrollRequest &+= 1 }
             if clearingMessage, message != nil { message = nil }
             if disabled { disabled = false }
         case let .failure(failure):
@@ -169,16 +173,22 @@ private struct HistoryWindowView: View {
                         .accessibilityLabel("Show History folder")
                 }
             }
-            List(model.rows, selection: $model.selected) { row in
-                HistoryRowView(row: row, preview: model.preview(for:), startDrag: startDrag)
-                    .tag(row.id)
-                    // One element per row, so VoiceOver speaks the label once (part of D16).
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(row.label)
-                    .accessibilityAddTraits(model.selected == row.id ? .isSelected : [])
+            ScrollViewReader { proxy in
+                List(model.rows, selection: $model.selected) { row in
+                    HistoryRowView(row: row, preview: model.preview(for:), startDrag: startDrag)
+                        .id(row.id)
+                        .tag(row.id)
+                        // One element per row, so VoiceOver speaks the label once (part of D16).
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(row.label)
+                        .accessibilityAddTraits(model.selected == row.id ? .isSelected : [])
+                }
+                .listStyle(.inset)
+                .accessibilityLabel("History captures, newest first")
+                .onChange(of: model.scrollRequest) {
+                    if let selected = model.selected { proxy.scrollTo(selected, anchor: .top) }
+                }
             }
-            .listStyle(.inset)
-            .accessibilityLabel("History captures, newest first")
             HStack {
                 Button("Copy", action: model.copy)
                     .keyboardShortcut("c", modifiers: [])
@@ -307,7 +317,7 @@ final class HistoryDragView: NSImageView {
         NSApp.activate(ignoringOtherApps: true)
         window.moveToActiveDisplay()
         window.makeKeyAndOrderFront(nil)
-        Task { await model.reload() }
+        Task { await model.reload(opening: true) }
     }
 
     func reloadIfVisible() async {
