@@ -35,6 +35,11 @@ Every change keeps these true:
 - **Test first, at the production seam.** Test through the interface real callers use: `ScrollingCaptureSession.ingest` for scrolling, the save-path renderer for edits, `WindowSelection` for window picking. Write the test, watch it go red, then fix.
 - **Before calling work done,** run `scripts/ci.sh`: the repository checks, the package tests and the unsigned app build. A test that reproduces an open defect is wrapped in `knownDefect("Dn")`; a fix deletes the wrapper. Build and install steps are in `docs/app-build.md`.
 - **Live checks** use the synthetic patterns from `Tools/FrisketTestPattern.swift`. Capture only synthetic content, and restore the user's clipboard after driving the app.
+- **Triage failures in one pass.**
+  1. Read the evidence of every failed row before rerunning any of them.
+  2. Sort each failure into a harness fault or a Frisket defect.
+  3. Set a time limit, and tell Prateek what it is. Any harness run or user test lasts 15 minutes at most; `beta-matrix.sh` enforces this, so run one display at a time.
+  4. At the limit, record the results and list what is still open. Tell Prateek before the scope grows.
 - **Commit messages** record the model and effort level that produced the change.
 - **Billing:** only the user's existing included allowances (decision 9).
 - **Lead agent:** decisions 7, 8 and 11 name Codex as lead and Cursor's Claude Opus 5.5 as the complement. Plan item DA-7 proposes changing that. Until it is recorded, the user's in-session instruction decides who leads.

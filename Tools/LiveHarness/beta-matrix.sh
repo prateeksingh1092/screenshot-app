@@ -11,6 +11,12 @@
 # The clipboard is saved first and restored on every exit path. Evidence and the report go
 # to .build/live-harness/runs/<time>/, which git ignores. Screenshots are cropped to the
 # test windows. Only synthetic pattern content is ever captured.
+#
+# Time cap (CLAUDE.md): a live run lasts at most --minutes (default and maximum 15). No row starts in
+# the last minute, and a watchdog ends the run at the cap. Rows left over are SKIP. A full run of
+# both displays doesn't fit in 15 minutes, so run one display at a time.
+# Every FAIL, XPASS, ERROR and SKIP is written to failures.md with its log tail and evidence path,
+# so one file shows all the failures before any row is rerun.
 set -u
 
 here=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
@@ -20,18 +26,22 @@ bundle=${FRISKET_BUNDLE_ID:-io.github.prateeksingh1092.frisket.debug}
 history_root="$HOME/Library/Application Support/$bundle/History.noindex"
 exports="$HOME/Pictures/Frisket"
 
-mode="" display_choice=all only_row=""
+mode="" display_choice=all only_row="" minutes=15
+usage="usage: $0 --dry-run|--live [--display builtin|external|all] [--row ID] [--minutes 1-15]"
 while [ $# -gt 0 ]; do
   case $1 in
     --dry-run) mode=dry ;;
     --live) mode=live ;;
     --display) display_choice=$2; shift ;;
     --row) only_row=$2; shift ;;
-    *) echo "usage: $0 --dry-run|--live [--display builtin|external|all] [--row ID]" >&2; exit 2 ;;
+    --minutes) minutes=$2; shift ;;
+    *) echo "$usage" >&2; exit 2 ;;
   esac
   shift
 done
-[ -n "$mode" ] || { echo "usage: $0 --dry-run|--live [--display builtin|external|all] [--row ID]" >&2; exit 2; }
+[ -n "$mode" ] || { echo "$usage" >&2; exit 2; }
+case $minutes in ''|*[!0-9]*) echo "$usage" >&2; exit 2 ;; esac
+[ "$minutes" -ge 1 ] && [ "$minutes" -le 15 ] || { echo "--minutes must be 1-15 (the 15-minute cap)" >&2; exit 2; }
 
 rows() { awk -F'\t' '!/^#/ && NF == 4' "$here/matrix.tsv"; }
 if [ -n "$only_row" ] && ! rows | cut -f1 | grep -qx "$only_row"; then
@@ -69,7 +79,13 @@ private=$(mktemp -d -t frisket-harness)   # holds the user's saved clipboard: ow
 chmod 700 "$private"
 "$H/drive" clip-save "$private/clipboard.plist" >>"$run/harness.log" 2>&1 || { echo "could not save the clipboard" >&2; exit 2; }
 
+failures="$run/failures.md"
+echo "# Failures in $(basename "$run") (read all of these before rerunning any row)" >"$failures"
+# The watchdog ends the run at the cap; the EXIT trap still restores the clipboard.
+( sleep $(( minutes * 60 )); kill -TERM $$ 2>/dev/null ) &
+watchdog=$!
 cleanup() {
+  pkill -P "$watchdog" 2>/dev/null; kill "$watchdog" 2>/dev/null   # its sleep too, so no late kill hits a reused PID
   pkill -x pattern 2>/dev/null
   if "$H/drive" clip-restore "$private/clipboard.plist" >>"$run/harness.log" 2>&1; then
     rm -rf "$private"
@@ -78,7 +94,8 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
-trap 'exit 130' INT TERM
+trap 'exit 130' INT
+trap 'echo "STOPPED at the ${minutes}-minute cap; rows after the last one listed did not run" | tee -a "$failures"; exit 124' TERM
 
 # ---------------------------------------------------------------- helpers
 log=/dev/null
@@ -492,7 +509,9 @@ for display in $displays; do
     ev="$run/$display"; mkdir -p "$ev"; log="$ev/$id.log"
     echo "# $id on $display (${DW}×${DH} pt, scale ${DS}): $check" >"$log"
     fn="row_$(echo "$id" | tr - _)"
-    if ! "$H/drive" frisket >/dev/null 2>&1; then
+    if [ $SECONDS -ge $(( minutes * 60 - 60 )) ]; then
+      result=skip   # no row starts in the cap's last minute
+    elif ! "$H/drive" frisket >/dev/null 2>&1; then
       result=error
     elif "$fn" </dev/null; then
       result=pass
@@ -504,12 +523,21 @@ for display in $displays; do
       fail/xfail) verdict=XFAIL ;;
       pass/xfail) verdict=XPASS; status=1 ;;
       fail/pass) verdict=FAIL; status=1 ;;
+      skip/*) verdict=SKIP; status=1 ;;
       *) verdict=ERROR; status=1 ;;
     esac
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$display" "$defects" "$expect" "$result" "$verdict" >>"$report"
     printf '%-6s %-22s %-9s %s\n' "$verdict" "$id" "$display" "$defects"
+    case $verdict in
+      FAIL|XPASS|ERROR|SKIP)
+        { echo; echo "## $verdict $id on $display ($defects)"; echo "$check"; echo
+          echo '```'; grep -vE '^not found: (OK|Cancel scrolling capture)$' "$log" | tail -15 | cut -c1-200; echo '```'
+          ls "$ev" | grep -E "^$id(-failed)?\.png$" | sed "s#^#evidence: $ev/#"; } >>"$failures" ;;
+    esac
+    [ "$verdict" = SKIP ] && continue
     reset_state </dev/null
   done < <(rows)
 done
 echo "report: $report"
+echo "failures: $failures ($(grep -c '^## ' "$failures") rows)"
 exit $status

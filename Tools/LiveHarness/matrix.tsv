@@ -17,7 +17,7 @@ editor-crop	-	pass	Crop to the middle half: the copied image has the crop's size
 editor-finish-visible	D5	pass	At the default editor width Done, Copy and Save are on screen, not in the toolbar overflow
 copytext-text	-	pass	Copy Text on the pattern caption puts its text on the clipboard
 copytext-none	D8	pass	Copy Text on a capture with no text leaves the clipboard unchanged, shows no alert, and says "No text found" on the Thumbnail
-stack	D9	xfail	Two pending Thumbnails don't overlap
+stack	D9	pass	Two pending Thumbnails don't overlap
 focus-latest	D12	pass	After ⌘⇧2, the Thumbnail's C key copies (keys reach the Thumbnail, not the frontmost app)
 history-copy	-	pass	History row Copy puts the newest capture on the clipboard (pattern --verify)
 history-save	D17	xfail	History row Save writes one export whose name carries the date

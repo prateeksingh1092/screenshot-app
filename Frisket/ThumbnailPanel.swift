@@ -331,9 +331,13 @@ private final class ThumbnailCardPanel: NSPanel {
             imageSize.height = imageArea.height
             imageSize.width = imageArea.height * aspect
         }
-        let origin = panel.frame.origin
-        panel.setContentSize(card)
-        if shown { panel.setFrameOrigin(origin) }
+        // Resize only when the size differs. Re-setting the origin on every model change put a card
+        // back in its old slot while place(at:) moved it (D9: two cards on one frame).
+        if panel.contentRect(forFrameRect: panel.frame).size != card {
+            let origin = panel.frame.origin
+            panel.setContentSize(card)
+            if shown { panel.setFrameOrigin(origin) }
+        }
         controlGlass?.frame = NSRect(x: 0, y: 0, width: card.width, height: glassHeight)
         imageWell?.frame = NSRect(x: (card.width - imageSize.width) / 2,
                                   y: glassHeight + gap + (imageArea.height - imageSize.height) / 2,
@@ -358,10 +362,9 @@ private final class ThumbnailCardPanel: NSPanel {
                                             .priority: NSAccessibilityPriorityLevel.medium.rawValue])
             return
         }
+        // Set directly, not animated: an in-flight animation left the frame at the old slot (D9).
         guard panel.frame.origin != origin else { return }
-        NSAnimationContext.runAnimationGroup { _ in
-            panel.animator().setFrameOrigin(origin)
-        }
+        panel.setFrameOrigin(origin)
     }
     func focus() {
         panel.makeKeyAndOrderFront(nil)

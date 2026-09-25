@@ -25,6 +25,23 @@
 > - Run long commands in the background, with logs.
 
 
+## Tickets left (2026-09-25): 26 open, grouped by what they do
+
+Every live check lasts 15 minutes at most, on one display per run (`beta-matrix.sh --minutes`, `CLAUDE.md`). **xhigh** marks the tickets that need xhigh effort (decision 58). Run at most two agents at a time.
+
+| Group | Tickets, in order | What it delivers | Live check |
+|---|---|---|---|
+| 0. Finish Phase 1 | 56 (D9, fix in `main` working tree), 48 (2 harness rows, History-window leak) | Thumbnails stack; the harness is trustworthy | stack row, then one display per run |
+| 1. Scrolling capture | 64 **xhigh** (Gate A) → 70 **xhigh** → 71 → 72 | No silent corruption; exact stitch; "Slow down" keeps the part captured; 32,768 px on any display | scroll rows |
+| 2. One Capture renderer | 65 **xhigh** → 66 **xhigh** → 67 **xhigh** (Gate B) → 68 **xhigh** → 69 | What you see in the editor is what you get (D1, D6, D18, D23); native Blur/Magnify; `@_silgen_name` zlib gone; ⌘Z/⌘⇧Z everywhere | editor rows |
+| 3. Editor features (decision 59) | 84 → 85, 86 | Editable marks; arrow styles and Line; text typed on the image | editor rows + a short user test |
+| 4. Lifecycle and History inside | 73 → 74, 76 → 78 → 79; 75 (after 72); 77 (after 74, 75, 76) | One Pending capture record; fast History; notices never block; simpler storage; Restore to Thumbnail; one Region request; adapters tested as a package | history rows |
+| 5. Polish | 81 (after 76) | History/Settings on the active display; accessible Thumbnail picture; dated export names (D15–D17) | history-save row |
+| 6. Clean-up and docs | 80 (after 67, 70, 77) → 82 (after 80, 81) | Only the six invariant checks; dead code gone; docs match the product | none |
+| 7. Acceptance | 83 (after all), 40 | Prateek accepts the remediated Frisket | user test, 15 min per part |
+
+Tracks 1 and 2 are independent until 72, so they can run in parallel. Ticket 40 (the old v1 acceptance, branch `ticket/40-final-acceptance`) overlaps 83; the recommendation is to close it into 83.
+
 ## Steps 1–2 done (2026-09-25, live run on `7ea997e`)
 
 - **Installed:** signed build `7ea997e` in `~/Applications/Frisket.app`. The previous bundle is at `.build/Frisket-previous-20260925-002715.app`.

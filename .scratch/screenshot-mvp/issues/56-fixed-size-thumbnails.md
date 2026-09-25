@@ -40,3 +40,10 @@ Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82â
 - **Suspect:** `ThumbnailPanel.layoutChrome` (lines 334â€“336) runs on every model change through `syncChrome`. It reads `panel.frame.origin`, then sets it again, which cancels the animated move that `place(at:)` has just started.
 - **Likely fix:** resize only when the size changes, and never re-set the origin there, because `setContentSize` keeps the bottom-left origin.
 - **Matrix:** the row is back to `xfail` until the fix is verified live.
+
+### 2026-09-25: coordinator, fix (Claude Opus 5.5, Claude Code, high effort)
+
+- **`layoutChrome`:** it resizes only when the content size differs, and it no longer re-sets the origin on every model change.
+- **`place(at:)`:** it sets the origin directly instead of animating it, so no animation still in flight can leave a card in its old slot.
+- **No package seam:** this is app-layer window code, so the live `stack` row is the test. The row expects pass again.
+- **Not verified yet:** the row can't be run until the fix is installed. That is one row at about 1 minute, inside the 15-minute cap.
