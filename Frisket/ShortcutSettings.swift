@@ -54,9 +54,7 @@ import FrisketCore
 
 extension ShortcutBinding {
     var displayName: String {
-        let symbols = [(UInt32(controlKey), "⌃"), (UInt32(optionKey), "⌥"),
-                       (UInt32(shiftKey), "⇧"), (UInt32(cmdKey), "⌘")]
-        return symbols.filter { modifiers & $0.0 != 0 }.map(\.1).joined() + Self.keyName(keyCode)
+        modifierSymbols + Self.keyName(keyCode)   // ⌘⇧ order (story 101)
     }
 
     private static func keyName(_ code: UInt32) -> String {

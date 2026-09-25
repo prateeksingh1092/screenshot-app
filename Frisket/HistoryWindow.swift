@@ -90,10 +90,16 @@ import FrisketCore
         Task {
             let result = await commands.execute(.save(row.revision))
             busy = false
-            if case .save(let outcome) = result, case .saved = outcome.delivery { message = nil }
+            if case .save(let outcome) = result, case .saved = outcome.delivery {
+                message = nil
+                Notice.after(.save(row.revision), result).map { onNotice?($0) }   // Save confirms (D17)
+            }
             else { message = "Save failed. Try again." }
         }
     }
+
+    /// Shows a notice on the notice line, never a modal (DA-5).
+    var onNotice: ((Notice) -> Void)?
 
     /// Called after a History item is deleted, so its open Thumbnail closes on screen too (D10).
     var onHistoryDeleted: ((CaptureID) -> Void)?
@@ -281,6 +287,7 @@ final class HistoryDragView: NSImageView {
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
+        window.moveToActiveDisplay()
         window.makeKeyAndOrderFront(nil)
         Task { await model.reload() }
     }

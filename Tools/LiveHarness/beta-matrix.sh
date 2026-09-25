@@ -422,6 +422,65 @@ row_history_save() {
   printf '%s\n' "$new" | while read -r name; do [ -n "$name" ] && rm -f "$exports/$name"; done
   [ "$(printf '%s\n' "$new" | grep -c .)" -eq 1 ] && printf '%s\n' "$new" | grep -Eq '20[0-9]{2}-[01][0-9]-[0-3][0-9]'
 }
+# Ticket 81 (D15–D17). Uncalibrated: adjust from the first --live logs.
+window_on_display() {  # window_on_display LABEL: the window's centre lies on the current display (D15)
+  local x y w h
+  read -r x y w h <<<"$("$H/drive" axframe frisket "$1" 2>/dev/null)"
+  [ -n "${h:-}" ] || { note "no window $1"; return 1; }
+  note "$1 at $x $y ${w}x$h"
+  local mx=$(( x + w / 2 )) my=$(( y + h / 2 ))
+  [ $mx -ge $DX ] && [ $mx -lt $(( DX + DW )) ] && [ $my -ge $DY ] && [ $my -lt $(( DY + DH )) ]
+}
+row_history_display() {
+  pattern_up --show && drv move $CX $CY && hotkey 1 && nap 1 || return 1
+  local ok=1
+  window_on_display "Frisket History" && ok=0
+  drv key 13 cmd; nap 0.4
+  return $ok
+}
+row_settings_focus() {
+  pattern_up --show && drv move $CX $CY && drv activate frisket && key 43 cmd && nap 1 || return 1
+  local ok=0 field
+  window_on_display "Frisket Settings" || ok=1
+  field=$("$H/drive" axfind frisket "Thumbnail auto-dismiss delay in seconds" 2>/dev/null)
+  note "auto-dismiss field: $field"
+  printf '%s' "$field" | grep -q 'focused="1"' && { note "the auto-dismiss field has first focus"; ok=1; }
+  "$H/drive" axfind frisket "⇧⌘" >>"$log" 2>&1 && { note "a shortcut reads ⇧⌘, not ⌘⇧"; ok=1; }
+  drv key 13 cmd; nap 0.4
+  return $ok
+}
+row_thumbnail_picture() {
+  pattern_up --show && capture_pattern && wait_for 4 card_present || return 1
+  local ok=1
+  "$H/drive" axfind frisket "Pending capture preview" >>"$log" 2>&1 && ok=0
+  keep_card
+  return $ok
+}
+row_save_confirms() {
+  pattern_up --show && capture_pattern && wait_for 4 card_ready || return 1
+  local before new ok=1
+  before=$(ls -1 "$exports" 2>/dev/null)
+  drv axpress frisket "Save capture"
+  wait_for 3 "$H/drive" axfind frisket "is in the export folder" >>"$log" 2>&1 && ok=0
+  "$H/drive" axdump frisket 2>/dev/null | grep -q 'AXSheet\|AXDialog' && { note "Save showed a modal"; ok=1; }
+  nap 0.5
+  new=$(comm -13 <(echo "$before") <(ls -1 "$exports" 2>/dev/null))
+  note "new exports: $new"
+  printf '%s\n' "$new" | while read -r name; do [ -n "$name" ] && rm -f "$exports/$name"; done
+  return $ok
+}
+row_menu_latest() {
+  # With no Thumbnail, Copy Latest and Delete Latest are disabled (D17).
+  pattern_up --show || return 1
+  wait_for 12 no_cards || { note "a Thumbnail is still up"; return 1; }
+  drv axpress frisket "Frisket capture menu"; nap 0.6
+  local copy delete
+  copy=$("$H/drive" axfind frisket "Copy Latest Capture" 2>/dev/null)
+  delete=$("$H/drive" axfind frisket "Delete Latest Capture" 2>/dev/null)
+  note "copy: $copy"; note "delete: $delete"
+  key 53; nap 0.3
+  printf '%s' "$copy" | grep -q 'enabled="0"' && printf '%s' "$delete" | grep -q 'enabled="0"'
+}
 row_history_delete() {
   # Copy finalizes and keeps the Thumbnail open (editor Done closes it). Stay inside its 10 s timeout.
   pattern_up --show && capture_pattern && card_copy && card_present && history_newest || return 1

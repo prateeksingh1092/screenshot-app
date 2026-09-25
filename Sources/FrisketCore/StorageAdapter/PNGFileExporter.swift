@@ -5,10 +5,15 @@ import Darwin
 public actor PNGFileExporter: CaptureExport {
     private let folder: @Sendable () async -> URL
     private let historyRoot: URL
+    private let now: @Sendable () -> Date
+    private let timeZone: TimeZone
 
-    public init(folder: @escaping @Sendable () async -> URL, historyRoot: URL) {
+    public init(folder: @escaping @Sendable () async -> URL, historyRoot: URL,
+                now: @escaping @Sendable () -> Date = { Date() }, timeZone: TimeZone = .current) {
         self.folder = folder
         self.historyRoot = historyRoot
+        self.now = now
+        self.timeZone = timeZone
     }
 
     public func export(_ request: AuthorizedFinalization) async -> Result<ExportReceipt, ExportFailure> {
@@ -41,8 +46,9 @@ public actor PNGFileExporter: CaptureExport {
             }
             if Darwin.close(descriptor) != 0 { succeeded = false }
             guard succeeded else { return .failure(.unavailable) }
+            let savedAt = now()
             for collision in UInt(0)..<10_000 {
-                let filename = ExportFilenamePolicy.filename(for: request.revision, collisionIndex: collision)
+                let filename = ExportFilenamePolicy.filename(at: savedAt, in: timeZone, collisionIndex: collision)
                 let file = destination.appendingPathComponent(filename)
                 if renamex_np(temporary.path, file.path, UInt32(RENAME_EXCL)) == 0 {
                     temporaryExists = false

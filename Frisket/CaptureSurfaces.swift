@@ -130,16 +130,22 @@ import FrisketCore
     }
 
     func copyLatest() {
-        Task { if let id = await latestThumbnail() { copy(id) } }
+        Task {
+            guard let id = await commands.thumbnails().latestToCopy?.revision.captureID, panels[id] != nil else { return }
+            copy(id)
+        }
     }
 
     func deleteLatest() {
-        Task { if let id = await latestThumbnail() { discard(id) } }
+        Task {
+            guard let id = await commands.thumbnails().latestToDelete?.revision.captureID, panels[id] != nil else { return }
+            discard(id)
+        }
     }
 
-    private func latestThumbnail() async -> CaptureID? {
-        await commands.thumbnails().first { panels[$0.revision.captureID] != nil }?.revision.captureID
-    }
+    /// Menu enablement (D17): the panels mirror the core's `Thumbnails`, so these answer synchronously.
+    var canCopyLatest: Bool { !panels.isEmpty }
+    var canDeleteLatest: Bool { panels.values.contains { $0.model.status == .pending } }
 
     func screenLocked() {
         Task {

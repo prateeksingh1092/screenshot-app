@@ -82,7 +82,8 @@ import FrisketCore
     }
 
     public func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String) -> String {
-        "Capture.png"
+        // Dragged-out files are named like Save's exports (D17, ticket 81); the receiver resolves collisions.
+        ExportFilenamePolicy.filename(at: Date(), in: .current)
     }
 
     public func operationQueue(for filePromiseProvider: NSFilePromiseProvider) -> OperationQueue { .main }

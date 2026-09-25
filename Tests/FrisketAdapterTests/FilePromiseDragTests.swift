@@ -138,3 +138,11 @@ import Testing
         #expect(events.sessionEnded && !events.writeReturned)
     }
 }
+
+/// D17: a dragged-out file is named like a Save export, with the date, not "Capture.png" (ticket 81).
+@MainActor @Test func draggedFileNameCarriesTheDate() {
+    let adapter = FilePromiseDragAdapter { _, _ in }
+    let provider = NSFilePromiseProvider(fileType: "public.png", delegate: adapter)
+    let name = adapter.filePromiseProvider(provider, fileNameForType: "public.png")
+    #expect(name.wholeMatch(of: /Frisket \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}\.png/) != nil, "\(name)")
+}

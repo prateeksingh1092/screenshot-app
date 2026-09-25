@@ -17,6 +17,11 @@ copytext-none	D8	pass	Copy Text on a capture with no text leaves the clipboard u
 stack	D9	pass	Two pending Thumbnails don't overlap
 focus-latest	D12	pass	After ⌘⇧2, the Thumbnail's C key copies (keys reach the Thumbnail, not the frontmost app)
 history-copy	-	pass	History row Copy puts the newest capture on the clipboard (pattern --verify)
-history-save	D17	xfail	History row Save writes one export whose name carries the date
+history-save	D17	pass	History row Save writes one export whose name carries the date
+history-display	D15	pass	⌘⇧1 with the pointer on this display opens History on it
+settings-focus	D15,D17	pass	⌘, opens Settings on this display; the auto-dismiss field doesn't have first focus; no shortcut reads ⇧⌘
+thumbnail-picture	D16	pass	A Thumbnail's picture is an accessibility element named "Pending capture preview"
+save-confirms	D17	pass	Thumbnail Save shows "… is in the export folder" on the notice line, with no modal
+menu-latest	D17	pass	With no Thumbnail, Copy Latest Capture and Delete Latest Capture are disabled
 history-delete	D10	pass	History Delete with the capture's Thumbnail still open asks first, then succeeds
 drag-cancel	D7	pass	A cancelled editor drag leaves History and drag staging unchanged

@@ -134,21 +134,50 @@ extension SaveCommandsTests {
         let root = directory.appendingPathComponent("History.noindex")
         let folder = directory.appendingPathComponent("Exports")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let existing = "Frisket-11111111-2222-3333-4444-555555555555-r1.png"
-        let second = "Frisket-11111111-2222-3333-4444-555555555555-r1-2.png"
+        let existing = "Frisket 2026-09-25 at 14.03.07.png"
+        let second = "Frisket 2026-09-25 at 14.03.07 (2).png"
         try Data("existing export".utf8).write(to: folder.appendingPathComponent(existing))
         // Even an existing symlink must count as a collision, without touching its target.
         try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent(second), withDestinationURL: folder.appendingPathComponent(existing))
         let history = HistoryStore(root: root)
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
-            history: history, exporter: PNGFileExporter(folder: { folder }, historyRoot: root))
-        let revision = CaptureRevision(captureID: CaptureID(UUID(uuidString: "11111111-2222-3333-4444-555555555555")!), number: 1)
+            history: history, exporter: PNGFileExporter(folder: { folder }, historyRoot: root,
+                                                        now: { SaveCommandsTests.savedAt }, timeZone: SaveCommandsTests.utc))
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
         #expect(await commands.execute(.save(revision)) == .save(SaveOutcome(revision: revision, commit: .committed,
-            delivery: .saved(ExportReceipt(filename: "Frisket-11111111-2222-3333-4444-555555555555-r1-3.png")))))
+            delivery: .saved(ExportReceipt(filename: "Frisket 2026-09-25 at 14.03.07 (3).png")))))
         #expect(try Data(contentsOf: folder.appendingPathComponent(existing)) == Data("existing export".utf8))
         #expect(try Data(contentsOf: folder.appendingPathComponent(second)) == Data("existing export".utf8))
-        #expect(try Data(contentsOf: folder.appendingPathComponent("Frisket-11111111-2222-3333-4444-555555555555-r1-3.png")) == SavePixels().bytes)
+        #expect(try Data(contentsOf: folder.appendingPathComponent("Frisket 2026-09-25 at 14.03.07 (3).png")) == SavePixels().bytes)
+    }
+
+    static let utc = TimeZone(identifier: "UTC")!
+    /// 2026-09-25 14:03:07 UTC.
+    static let savedAt = Date(timeIntervalSince1970: 1_790_344_987)
+
+    /// D17: an export is named for the day and time it was saved, macOS style, never by capture ID (ticket 81).
+    @Test func exportNameCarriesTheDateAndTimeOfTheSave() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("History.noindex")
+        let folder = directory.appendingPathComponent("Exports")
+        let history = HistoryStore(root: root)
+        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
+            history: history, exporter: PNGFileExporter(folder: { folder }, historyRoot: root,
+                                                        now: { SaveCommandsTests.savedAt }, timeZone: SaveCommandsTests.utc))
+        let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+        _ = await commands.execute(.capture(revision.captureID, maximumBytes: 1024))
+        #expect(await commands.execute(.save(revision)) == .save(SaveOutcome(revision: revision, commit: .committed,
+            delivery: .saved(ExportReceipt(filename: "Frisket 2026-09-25 at 14.03.07.png")))))
+        // Saving again from History in the same second gets the next free name.
+        #expect(await commands.execute(.save(revision)) == .save(SaveOutcome(revision: revision, commit: .committed,
+            delivery: .saved(ExportReceipt(filename: "Frisket 2026-09-25 at 14.03.07 (2).png")))))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+                == ["Frisket 2026-09-25 at 14.03.07 (2).png", "Frisket 2026-09-25 at 14.03.07.png"])
+        // Local time: the same moment in Kolkata (UTC+5:30) names the local day and time.
+        #expect(ExportFilenamePolicy.filename(at: SaveCommandsTests.savedAt, in: TimeZone(identifier: "Asia/Kolkata")!)
+                == "Frisket 2026-09-25 at 19.33.07.png")
     }
 }
 
