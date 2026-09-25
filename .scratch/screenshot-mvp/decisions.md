@@ -211,20 +211,22 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
 62. **Effort (Prateek, 2026-09-25):** medium effort for every remaining ticket. This supersedes decision 58's high default and its xhigh list (tickets 65–68). He chose this after being told the risk: the renderer and lifecycle tickets guard the Solid redaction and Pending capture invariants. The mitigation is that those tickets keep their test-first seams and the canary leak tests.
 
 63. **Saved shortcuts outlive removed actions (coordinator, 2026-09-25, ticket 87):** `ShortcutAction.savedBindings(from:)` skips actions it no longer knows, such as `captureScrolling`. Without this, the saved `globalShortcuts.v1` preference would stop decoding and silently reset every shortcut the user had customised. Two tests cover it.
+    - **Drift check:** `Checks/check_drift.py` runs in `ci.sh` and fails when a term retired by a decision (listed in `Checks/retired-terms.tsv`) appears in a live file.
+
 64. **Capture renderer choices (implementer, 2026-09-25, ticket 65; under decisions 54 and 57):**
     - **Redaction colour as data:** each `SolidRedaction` carries its `colour` (default black). An initializer refuses any colour whose alpha isn't 255. Ticket 88 only adds the choice in the editor.
     - **Synchronous `flatten`:** the coordinator calls it with no suspension between its guards and the replacement of the original, so no in-progress guard moves. An async `flatten` must insert `inProgress` before the await.
     - **One whole-output bitmap:** captures are at most one display (decision 60), so there is no tile or strip path. The 32,768 px cap (DA-6) is read from the PNG header before decoding.
     - **PNG metadata:** the output keeps only the chunks that define pixels and colour (IHDR, IDAT, IEND and the sRGB tag). ImageIO adds an eXIf chunk even when given no properties, so the renderer drops every other chunk after encoding: no text, time, EXIF or resolution chunk.
-    - **Drift check:** `Checks/check_drift.py` runs in `ci.sh` and fails when a term retired by a decision (listed in `Checks/retired-terms.tsv`) appears in a live file.
 
-64. **One Region request; window listings joined in the core (coordinator's delegate, 2026-09-25, ticket 75; decisions 57 and 60):**
+65. **One Region request; window listings joined in the core (coordinator's delegate, 2026-09-25, ticket 75; decisions 57 and 60):**
     - **Region request:** the core's `RegionRequest.area`/`.fullScreen` turn a Selection or a whole display into the display ID, the display-local top-left source rectangle snapped to pixels, and the output size. The adapters no longer compute it.
     - **Displays and flips:** `CaptureDisplays` is the one place that finds a display by pointer (D14 rule), by ID or by largest overlap with a window, and the one place that flips between AppKit and top-left global coordinates.
     - **Display ID:** `CaptureImage` carries `displayID`, and the coordinator assigns the Thumbnail's display from it. The `captureDisplayID` side channels on both platforms are removed.
     - **Window listings:** `WindowSelection(rows:excluding:…)` joins the window-server list with ScreenCaptureKit's shareable windows and filters them, including the Capture exclusion list, so window mode's exclusion is package-tested.
     - **Not done here:** the area platform's step-by-step protocol (prefetch, prepare, select, hide, capture, finish) stays; collapsing it to `select`/`capture` would move the ordering tests behind AppKit. Ticket 77 (adapters as a product) may revisit it.
 
+66. **Live-check cap (Prateek, 2026-09-25):** a harness run lasts 9 minutes at most per display, down from 15. That is how long the full built-in run took. `beta-matrix.sh` enforces it. A user test still lasts 15 minutes at most. Prateek also restated decision 54: every technical choice is the agent's, and nothing waits for him unless it is product-visible.
 
 ## Evaluation update: Xcode question resolved narrowly
 

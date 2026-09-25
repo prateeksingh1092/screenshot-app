@@ -20,7 +20,7 @@ Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82�
 
 ### 2026-09-25: implementer, report
 
-Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62). Recorded as decision 64.
+Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62). Recorded as decision 65.
 
 **Scope note:** the ticket's scrolling and ticket-72 parts are void under decision 60; the Region request covers area and full-screen capture only.
 
@@ -33,4 +33,4 @@ Claude Opus 5.5 (1M context), Claude Code, medium effort (decision 62). Recorded
 
 **Evidence:** `scripts/ci.sh`: `ci: green`, 318 tests in 47 suites, drift 0 failures (4 pending, decision 61, not this ticket), unsigned app build.
 
-**Open:** the area platform's step protocol (prefetch → prepare → select → hide → capture → finish) is kept; collapsing it to `select`/`capture` would move the ordering tests behind AppKit (decision 64). Live-matrix criterion unticked: Thumbnail placement and window highlight on both displays need a live check.
+**Open:** the area platform's step protocol (prefetch → prepare → select → hide → capture → finish) is kept; collapsing it to `select`/`capture` would move the ordering tests behind AppKit (decision 65). Live-matrix criterion unticked: Thumbnail placement and window highlight on both displays need a live check.

@@ -38,7 +38,7 @@ Every change keeps these true:
 - **Triage failures in one pass.**
   1. Read the evidence of every failed row before rerunning any of them.
   2. Sort each failure into a harness fault or a Frisket defect.
-  3. Set a time limit, and tell Prateek what it is. Any harness run or user test lasts 15 minutes at most; `beta-matrix.sh` enforces this, so run one display at a time.
+  3. Set a time limit, and tell Prateek what it is. A harness run lasts 9 minutes at most per display, and a user test 15 minutes; `beta-matrix.sh` enforces the 9 minutes (decision 66).
   4. At the limit, record the results and list what is still open. Tell Prateek before the scope grows.
 - **Record Prateek's decisions** from chat in `decisions.md` in the same turn, before any code. If a decision retires a term, add the term to `Checks/retired-terms.tsv`; `ci.sh` then fails if a live file still uses it.
 - **Commit messages** record the model and effort level that produced the change.

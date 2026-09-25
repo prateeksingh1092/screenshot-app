@@ -12,9 +12,8 @@
 # to .build/live-harness/runs/<time>/, which git ignores. Screenshots are cropped to the
 # test windows. Only synthetic pattern content is ever captured.
 #
-# Time cap (CLAUDE.md): a live run lasts at most --minutes (default and maximum 15). No row starts in
-# the last minute, and a watchdog ends the run at the cap. Rows left over are SKIP. A full run of
-# both displays doesn't fit in 15 minutes, so run one display at a time.
+# Time cap (CLAUDE.md): a live run lasts at most --minutes (default and maximum 9, per display). No row starts in
+# the last minute, and a watchdog ends the run at the cap. Rows left over are SKIP. Run one display at a time.
 # Every FAIL, XPASS, ERROR and SKIP is written to failures.md with its log tail and evidence path,
 # so one file shows all the failures before any row is rerun.
 set -u
@@ -26,8 +25,8 @@ bundle=${FRISKET_BUNDLE_ID:-io.github.prateeksingh1092.frisket.debug}
 history_root="$HOME/Library/Application Support/$bundle/History.noindex"
 exports="$HOME/Pictures/Frisket"
 
-mode="" display_choice=all only_row="" minutes=15
-usage="usage: $0 --dry-run|--live [--display builtin|external|all] [--row ID] [--minutes 1-15]"
+mode="" display_choice=all only_row="" minutes=9
+usage="usage: $0 --dry-run|--live [--display builtin|external|all] [--row ID] [--minutes 1-9]"
 while [ $# -gt 0 ]; do
   case $1 in
     --dry-run) mode=dry ;;
@@ -41,7 +40,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$mode" ] || { echo "$usage" >&2; exit 2; }
 case $minutes in ''|*[!0-9]*) echo "$usage" >&2; exit 2 ;; esac
-[ "$minutes" -ge 1 ] && [ "$minutes" -le 15 ] || { echo "--minutes must be 1-15 (the 15-minute cap)" >&2; exit 2; }
+[ "$minutes" -ge 1 ] && [ "$minutes" -le 9 ] || { echo "--minutes must be 1-9 (the 9-minute cap)" >&2; exit 2; }
 
 rows() { awk -F'\t' '!/^#/ && NF == 4' "$here/matrix.tsv"; }
 if [ -n "$only_row" ] && ! rows | cut -f1 | grep -qx "$only_row"; then

@@ -11,6 +11,8 @@
 >   - the redaction colour comes from a palette (ticket 88);
 >   - effort is medium throughout.
 >
+> **End of the overnight run (Prateek, 2026-09-25):** when every agent-ready ticket is done, shut the Mac down with `osascript -e 'tell application "System Events" to shut down'`. `caffeinate -dimsu` keeps it awake until then.
+>
 > **Next:**
 > 1. Merge ticket 87 and live-check it on one display, in 15 minutes at most.
 > 2. Retire story 100 and the Loupe term in `CONTEXT.md` (decision 60).
@@ -25,7 +27,7 @@
 
 ## Tickets left (2026-09-25): 26 open, grouped by what they do
 
-Every live check lasts 15 minutes at most, on one display per run (`beta-matrix.sh --minutes`, `CLAUDE.md`). Run at most two agents at a time.
+Every harness run lasts 9 minutes at most, on one display per run (decision 66) (`beta-matrix.sh --minutes`, `CLAUDE.md`). Run at most two agents at a time.
 
 | Group | Tickets, in order | What it delivers | Live check |
 |---|---|---|---|
