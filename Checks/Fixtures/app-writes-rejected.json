@@ -1,0 +1,21 @@
+{
+  "check": "app-writes",
+  "files": {
+    "Frisket/BadRoot.swift": "try data.write(to: historyRoot)",
+    "Frisket/RecoveryWithWrite.swift": "NSWorkspace.shared.open(settingsURL); helper.standardOutput = FileHandle.nullDevice; try data.write (to: historyRoot)",
+    "Frisket/RealFileHandle.swift": "let output = try FileHandle(forWritingTo: historyRoot)",
+    "Frisket/POSIXOpen.swift": "Darwin.open(path, O_WRONLY)",
+    "Frisket/Other.swift": "try FileHandle.standardOutput.write(contentsOf: data)",
+    "Frisket/Adapters/CaptureLatencyLog.swift": "try FileHandle.standardOutput.write(contentsOf: row)\nlet other = try FileHandle(forWritingTo: url)",
+    "Frisket/Adapters/Export.swift": "try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)"
+  },
+  "expected": [
+    "Frisket/Adapters/CaptureLatencyLog.swift: app filesystem write outside authorized finalization",
+    "Frisket/Adapters/Export.swift: app filesystem write outside authorized finalization",
+    "Frisket/BadRoot.swift: app filesystem write outside authorized finalization",
+    "Frisket/Other.swift: app filesystem write outside authorized finalization",
+    "Frisket/POSIXOpen.swift: app filesystem write outside authorized finalization",
+    "Frisket/RealFileHandle.swift: app filesystem write outside authorized finalization",
+    "Frisket/RecoveryWithWrite.swift: app filesystem write outside authorized finalization"
+  ]
+}

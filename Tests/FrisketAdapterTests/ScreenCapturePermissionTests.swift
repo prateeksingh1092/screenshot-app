@@ -111,7 +111,6 @@ extension ScreenCapturePermissionTests {
     let spaceGeneration: UInt64 = 0
     var previewsPrepared = false
     func prepareSelection() async { previewsPrepared = true }
-    func discardSelectionPreviews() {}
     var selectionShown = false
     var pixelsTaken = false
     var finished = false
@@ -179,7 +178,6 @@ extension ScreenCapturePermissionTests {
     let spaceGeneration: UInt64 = 0
     var previewsPrepared = false
     func prepareSelection() async { previewsPrepared = true }
-    func discardSelectionPreviews() {}
     private var started: CheckedContinuation<Void, Never>?
     private var pending: CheckedContinuation<Void, Never>?
     var selectionShown = false

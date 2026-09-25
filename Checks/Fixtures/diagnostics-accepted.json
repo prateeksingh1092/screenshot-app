@@ -1,7 +1,0 @@
-{
-  "check": "diagnostics",
-  "files": {
-    "Sources/FrisketCore/Diagnostics.swift": "// print(secret) is not executable\nstruct DiagnosticEvent { let name: DiagnosticEventName; let operation: DiagnosticOperation; let error: DiagnosticError? }\nstruct DiagnosticError { let domain: DiagnosticErrorDomain; let code: DiagnosticErrorCode }\nstruct DiagnosticRecord { let recordedAt: Date; let event: DiagnosticEvent }\nfunc example() { let example = \"Logger().error(secret)\" }"
-  },
-  "expected": []
-}

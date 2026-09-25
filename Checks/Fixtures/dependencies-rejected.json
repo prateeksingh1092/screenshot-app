@@ -1,9 +1,0 @@
-{
-  "check": "dependencies",
-  "manifest": {"dependencies": [
-    {"sourceControl": [{"identity": "analytics", "location": {"remote": [{"urlString": "https://example.invalid/analytics.git"}]}}]},
-    {"fileSystem": [{"identity": "grdb.swift", "path": "/tmp/GRDB.swift"}]},
-    {"sourceControl": [{"identity": "grdb.swift", "location": {"remote": [{"urlString": "https://example.invalid/GRDB.swift.git"}]}}]}
-  ]},
-  "expected": ["dependency is not the approved GRDB source", "dependency is not the approved GRDB source", "dependency is not the approved GRDB source"]
-}

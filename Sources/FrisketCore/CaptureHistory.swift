@@ -15,8 +15,6 @@ public struct HistoryEntry: Equatable, Sendable {
     /// Zero when the disposable thumbnail is not cached.
     public let thumbnailBytes: Int64
     public let finalizedAt: Date
-    public var imageLocation: String { "images/\(captureID.rawValue.uuidString).png" }
-    public var thumbnailLocation: String? { thumbnailBytes > 0 ? "thumbnails/\(captureID.rawValue.uuidString).png" : nil }
 }
 
 /// History window row. No file names or paths.

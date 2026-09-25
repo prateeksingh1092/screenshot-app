@@ -1,0 +1,9 @@
+{
+  "check": "finalization",
+  "files": {
+    "Sources/FrisketCore/CaptureLifecycleCoordinator.swift": "case let .dismiss(revision): let request = AuthorizedFinalization(revision: revision, pngData: image.pngData)",
+    "Sources/FrisketCore/CaptureHistory.swift": "public struct AuthorizedFinalization: Sendable { fileprivate init() {} }\n// AuthorizedFinalization(revision:) is built only by the coordinator.",
+    "Frisket/HistoryWindow.swift": "let hint = \"AuthorizedFinalization(\"\n"
+  },
+  "expected": []
+}

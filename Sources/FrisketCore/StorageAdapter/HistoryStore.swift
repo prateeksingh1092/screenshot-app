@@ -27,7 +27,7 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
     deinit { try? database?.close() }
 
     public init(root: URL, limits: HistoryLimits = HistoryLimits(), clock: @escaping @Sendable () -> Date = { Date() },
-                diagnostics: any DiagnosticSink = LocalDiagnosticLog(),
+                diagnostics: any DiagnosticSink = DroppedDiagnostics(),
                 commitPoint: @escaping @Sendable (HistoryCommitPoint) throws -> Void = { _ in },
                 evictionPoint: @escaping @Sendable (HistoryEvictionPoint) throws -> Void = { _ in }) {
         self.diagnostics = diagnostics
@@ -41,7 +41,7 @@ public actor HistoryStore: CaptureHistory, HistoryRowSource {
     /// Starts one launch sweep. Queries, finalizations and maintenance also join the startup
     /// gate, so scheduling the task cannot expose unrecovered History.
     public static func launch(root: URL, limits: HistoryLimits = HistoryLimits(),
-                              diagnostics: any DiagnosticSink = LocalDiagnosticLog()) -> HistoryStore {
+                              diagnostics: any DiagnosticSink = DroppedDiagnostics()) -> HistoryStore {
         let store = HistoryStore(launchRoot: root, limits: limits, diagnostics: diagnostics)
         Task { await store.ensureLaunchRecovery() }
         return store

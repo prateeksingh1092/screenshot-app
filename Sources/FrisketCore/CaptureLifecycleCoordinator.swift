@@ -38,7 +38,7 @@ public actor CaptureLifecycleCoordinator {
     public init(permission: any CapturePermissionSource, source: any CapturePixelSource, fullScreenSource: (any CapturePixelSource)? = nil,
                 windowSource: (any CapturePixelSource)? = nil,
                 clipboard: any ImageClipboard, pendingByteLimit: Int,
-                diagnostics: any DiagnosticSink = LocalDiagnosticLog(), history: (any CaptureHistory)? = nil, exporter: (any CaptureExport)? = nil,
+                diagnostics: any DiagnosticSink = DroppedDiagnostics(), history: (any CaptureHistory)? = nil, exporter: (any CaptureExport)? = nil,
                 drag: (any DragHandoff)? = nil,
                 thumbnailPolicy: ThumbnailStackPolicy = ThumbnailStackPolicy(),
                 clock: @escaping @Sendable () -> ContinuousClock.Instant = { .now },

@@ -208,7 +208,7 @@ extension HistoryCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try migrationFixture(at: root, wal: wal)
         let before = try diskSnapshot(root)
-        let log = LocalDiagnosticLog()
+        let log = RecordingDiagnostics()
         let history = HistoryStore(root: root)
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: HistoryPixels(), fullScreenSource: HistoryPixels(), clipboard: HistoryClipboard(), pendingByteLimit: 1024,
             diagnostics: log, history: history)
@@ -223,7 +223,7 @@ extension HistoryCommandsTests {
         #expect(await commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
             commit: .notCommitted(reason), delivery: .copied(ClipboardReceipt(changeCount: 1)))))
         #expect(try diskSnapshot(root) == before)
-        #expect(await log.entries().map(\.event) == [
+        #expect(await log.events == [
             DiagnosticEvent(name: .capturePending, operation: .capture),
             DiagnosticEvent(name: .finalizationFailed, operation: .dismiss,
                 error: DiagnosticError(domain: .history, code: code)),

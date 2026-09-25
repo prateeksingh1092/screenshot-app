@@ -1,0 +1,29 @@
+{
+  "check": "core-io",
+  "files": {
+    "Sources/FrisketCore/BadCapture.swift": "import ScreenCaptureKit\nlet root = URL(fileURLWithPath: path)",
+    "Sources/FrisketCore/Disk.swift": "import CoreGraphics\ntry bytes.write(to: location)\n",
+    "Sources/FrisketCore/Posix.swift": "let fd = open(path, 0)",
+    "Sources/FrisketCore/DestinationURL.swift": "import ImageIO\nlet destination = CGImageDestinationCreateWithURL(location, \"public.png\" as CFString, 1, nil)\n",
+    "Sources/FrisketCore/FontFile.swift": "import CoreText\nCTFontManagerRegisterFontsForURL(location, .process, nil)\n",
+    "Sources/FrisketCore/Qualified.swift": "let database: GRDB.Database? = nil\n",
+    "Sources/FrisketCore/Interpolated.swift": "let description = \"\\(GRDB.Database.self)\"\n",
+    "Sources/FrisketCore/Logging.swift": "import os\n",
+    "Sources/FrisketCore/StorageAdapter/History.swift": "@preconcurrency import AppKit\nimport GRDB\n",
+    "Sources/FrisketCore/StorageAdapterFake/Escape.swift": "@_implementationOnly import GRDB\n"
+  },
+  "expected": [
+    "Sources/FrisketCore/BadCapture.swift: forbidden import ScreenCaptureKit",
+    "Sources/FrisketCore/BadCapture.swift: filesystem capability in the memory-only core",
+    "Sources/FrisketCore/DestinationURL.swift: filesystem capability in the memory-only core",
+    "Sources/FrisketCore/Disk.swift: filesystem capability in the memory-only core",
+    "Sources/FrisketCore/FontFile.swift: filesystem capability in the memory-only core",
+    "Sources/FrisketCore/Interpolated.swift: filesystem capability in the memory-only core",
+    "Sources/FrisketCore/Logging.swift: forbidden import os",
+    "Sources/FrisketCore/Posix.swift: filesystem capability in the memory-only core",
+    "Sources/FrisketCore/Qualified.swift: filesystem capability in the memory-only core",
+    "Sources/FrisketCore/StorageAdapter/History.swift: forbidden import AppKit",
+    "Sources/FrisketCore/StorageAdapterFake/Escape.swift: forbidden import GRDB",
+    "Sources/FrisketCore/StorageAdapterFake/Escape.swift: filesystem capability in the memory-only core"
+  ]
+}

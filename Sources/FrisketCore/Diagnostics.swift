@@ -1,14 +1,14 @@
 import Foundation
 
-public enum DiagnosticEventName: String, Codable, Sendable {
+public enum DiagnosticEventName: String, Sendable {
     case historyRecovered, historyRecoveryFailed, historyImageMissing
     case capturePending, captureFailed, captureDiscarded, captureFinalized, finalizationFailed, deliverySucceeded, deliveryFailed, commandRejected
     case noTextFound
 }
 
-public enum DiagnosticOperation: String, Codable, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done, deleteHistory, copyRecognizedText, restoreFromHistory }
-public enum DiagnosticErrorDomain: String, Codable, Sendable { case captureSource, clipboard, lifecycle, history, fileExport, drag }
-public enum DiagnosticErrorCode: String, Codable, Sendable {
+public enum DiagnosticOperation: String, Sendable { case capture, copy, retryCopy, save, retrySave, discard, dismiss, launchRecovery, drag, done, deleteHistory, copyRecognizedText, restoreFromHistory }
+public enum DiagnosticErrorDomain: String, Sendable { case captureSource, clipboard, lifecycle, history, fileExport, drag }
+public enum DiagnosticErrorCode: String, Sendable {
     case missingHistoryImage
     case unavailable, emptyImage, cancelled, unknownCapture, duplicateCapture, staleRevision, alreadyDelivered
     case retryNotAvailable, retryRequired, discardedCapture, pendingByteBudgetExceeded, commandInProgress
@@ -18,7 +18,7 @@ public enum DiagnosticErrorCode: String, Codable, Sendable {
     case noCapturableWindow, windowChanged, windowTooLarge, windowRefused
 }
 
-public struct DiagnosticError: Equatable, Codable, Sendable {
+public struct DiagnosticError: Equatable, Sendable {
     public let domain: DiagnosticErrorDomain
     public let code: DiagnosticErrorCode
     public init(domain: DiagnosticErrorDomain, code: DiagnosticErrorCode) {
@@ -27,8 +27,8 @@ public struct DiagnosticError: Equatable, Codable, Sendable {
     }
 }
 
-/// The only allowed field is a closed operation value. No strings, identifiers or payloads.
-public struct DiagnosticEvent: Equatable, Codable, Sendable {
+/// Closed values only: no strings, identifiers, paths or pixel payloads can be recorded.
+public struct DiagnosticEvent: Equatable, Sendable {
     public let name: DiagnosticEventName
     public let operation: DiagnosticOperation
     public let error: DiagnosticError?
@@ -43,33 +43,11 @@ public protocol DiagnosticSink: Sendable {
     func record(_ event: DiagnosticEvent) async
 }
 
-public struct DiagnosticRecord: Equatable, Codable, Sendable {
-    public let recordedAt: Date
-    public let event: DiagnosticEvent
-}
-
-/// Local, in-memory diagnostics. No filesystem or system-log adapter is installed by the core.
-public actor LocalDiagnosticLog: DiagnosticSink {
-    private let clock: @Sendable () -> Date
-    private var records: [DiagnosticRecord] = []
-
-    public init(clock: @escaping @Sendable () -> Date = { Date() }) { self.clock = clock }
-
-    public func record(_ event: DiagnosticEvent) {
-        let now = clock()
-        expire(at: now)
-        records.append(DiagnosticRecord(recordedAt: now, event: event))
-    }
-
-    public func entries() -> [DiagnosticRecord] {
-        expire(at: clock())
-        return records
-    }
-
-    private func expire(at now: Date) {
-        let cutoff = now.addingTimeInterval(-604_800)
-        records.removeAll { $0.recordedAt <= cutoff }
-    }
+/// Where the app's sink is not injected (tests, previews), events are dropped.
+/// The app injects the adapters' `SystemDiagnosticLog`, which writes to the unified log (decision 25).
+@usableFromInline struct DroppedDiagnostics: DiagnosticSink {
+    @usableFromInline init() {}
+    @usableFromInline func record(_ event: DiagnosticEvent) async {}
 }
 
 extension DiagnosticEvent {

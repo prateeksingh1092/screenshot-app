@@ -1,7 +1,0 @@
-{
-  "check": "capture-memory",
-  "files": {
-    "Sources/FrisketCore/Renderer.swift": "import Accelerate\nimport CoreGraphics\nimport CoreText\nimport Foundation\nimport ImageIO\nlet data = NSMutableData()\nlet destination = CGImageDestinationCreateWithData(data, \"public.png\" as CFString, 1, nil)\nlet source = CGImageSourceCreateWithData(input as CFData, nil)\n"
-  },
-  "expected": []
-}

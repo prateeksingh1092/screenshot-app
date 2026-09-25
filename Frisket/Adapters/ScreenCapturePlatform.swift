@@ -74,8 +74,6 @@ import UniformTypeIdentifiers
         hideSelection()
     }
 
-    public func discardSelectionPreviews() {}
-
     public func selectArea() async -> AreaSelection? {
         // A change on ANY display during preparation invalidates the whole layout.
         areaLayout?.updateDisplays(connectedDisplays())
@@ -95,13 +93,11 @@ import UniformTypeIdentifiers
 
     @objc private func spaceChanged() {
         spaceGeneration &+= 1
-        discardSelectionPreviews()
         overlay.spaceChanged()
     }
 
     @objc private func applicationsChanged() {
         applicationGeneration &+= 1
-        discardSelectionPreviews()
     }
 
     public func finishCapture() {
@@ -113,7 +109,6 @@ import UniformTypeIdentifiers
         content = nil
         areaLayout = nil
         selectionDisplays = []
-        discardSelectionPreviews()
     }
 
     func captureRegion(_ request: AreaCaptureRequest) async throws -> CGImage {

@@ -50,7 +50,6 @@ private struct FixtureSource: CapturePixelSource {
     var request: AreaCaptureRequest?
     func prefetchShareableContent() { events.append("prefetch") }
     func prepareSelection() async {}
-    func discardSelectionPreviews() {}
     func selectArea() async -> AreaSelection? { events.append("select"); return selection }
     func hideSelection() { events.append("hide") }
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {

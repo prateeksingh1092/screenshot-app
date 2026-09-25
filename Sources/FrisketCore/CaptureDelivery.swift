@@ -50,10 +50,9 @@ public protocol CapturePixelSource: Sendable {
     func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure>
 }
 
+/// The pasteboard adapter marks every write concealed and current-host-only (`AreaCaptureCommandsTests`).
 public struct ClipboardImage: Equatable, Sendable {
     public let pngData: Data
-    public let currentHostOnly = true
-    public let concealed = true
     /// Metadata-only guard for replacing this app's earlier copy. Nil means an explicit Copy.
     public let replacing: ClipboardReceipt?
     public init(pngData: Data, replacing: ClipboardReceipt? = nil) {

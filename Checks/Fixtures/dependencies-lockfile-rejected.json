@@ -1,6 +1,0 @@
-{
-  "check": "dependencies",
-  "manifest": {"dependencies": []},
-  "resolved": {"version": 3, "pins": [{"identity": "networking", "kind": "remoteSourceControl", "location": "https://example.invalid/networking.git"}]},
-  "expected": ["resolved dependency is not the approved GRDB source"]
-}

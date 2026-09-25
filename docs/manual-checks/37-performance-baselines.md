@@ -15,7 +15,7 @@ each capture by hand. No captured images may be saved, including temporary image
    capture URL. `PostCaptureActionHandler.swift` passes that URL to Quick Access;
    `TempCaptureManager.swift` writes to Application Support even with Auto-save off.
    Disabling History or deleting afterwards does not prevent those writes. The
-   harness refuses `latency --tool snapzy`, without an override. Do not patch the
+   harness no longer offers a `snapzy` tool (ticket 80). Do not patch the
    reference or pretend a patched persistence path is an unmodified baseline.
    The coordinator must resolve this constraint with Prateek before Snapzy latency
    can be measured. Idle measurement does not capture or need this exception.
@@ -70,32 +70,11 @@ then feeds 20 fabricated intervals through the same calculations and formatter.
 It neither waits ten minutes nor enumerates windows, launches a target, synthesizes
 input, or captures. Its report is explicitly labelled synthetic, not a baseline.
 
-## Snapzy build — coordinator only, not executed
+## Snapzy baseline — removed
 
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  bash Tools/Performance/build-snapzy.sh --plan
-# Only after coordinator obtains approval for package-resolution network use:
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  bash Tools/Performance/build-snapzy.sh --coordinator-build
-```
-
-The script archives the pinned commit from the read-only clone into a **new**
-`.build/snapzy-baseline/source`, then builds there. The clone is never an Xcode
-build input directory. DerivedData, packages and module caches stay under this
-worktree's `.build/`. A preexisting scratch directory is refused, never deleted.
-Release is host-architecture only. `CODE_SIGNING_ALLOWED=NO`,
-`CODE_SIGNING_REQUIRED=NO`, and an empty identity disable signing; there is no
-provisioning option, install, or launch. Public Git credential helpers are disabled.
-
-Locked dependencies are GRDB 7.10.0, Sparkle 2.8.1, Swift-WebP 0.6.1 and transitive
-libwebp-Xcode 1.5.0. Resolving/downloading them requires the coordinator, so the build
-was not attempted. Exact xcodebuild commands are in the script. The result is
-`.build/snapzy-baseline/DerivedData/Build/Products/Release/Snapzy.app`. A launchable
-signed baseline (decision 22) may additionally require Prateek's separate signing
-approval; this script does not provide or infer it. Record build/signing identity
-category, source revision and configuration in the eventual operator notes, with
-no credentials or personal paths.
+Ticket 80 deleted `build-snapzy.sh` and the `snapzy` tool option in `measure.py`:
+the blocker below was never lifted, so no Snapzy baseline is measured. Compare
+against macOS Screenshot only.
 
 ## Operator sequence
 
@@ -134,7 +113,7 @@ no credentials or personal paths.
    ```sh
    /usr/bin/python3 -B Tools/Performance/measure.py idle --tool macos \
      --pid 12345 --operator-approved --output .build/performance/macos-idle.json
-   # Repeat with --tool snapzy and its PID/output after approved launch.
+   # Screenshot is the only comparison target (ticket 80 removed the Snapzy baseline).
    ```
 
    Each of **20 runs** has five continuous nominal minutes of cool-down followed

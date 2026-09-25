@@ -43,7 +43,6 @@ import Testing
     var spaceGeneration: UInt64 { real.spaceGeneration }
     func prefetchShareableContent() async throws { try await real.prefetchShareableContent() }
     func prepareSelection() async {}
-    func discardSelectionPreviews() {}
     func selectArea() async -> AreaSelection? {
         AreaSelection(displayID: display.id, displayFrame: display.frame, rect: display.frame,
                       scale: display.scale, spaceGeneration: real.spaceGeneration)

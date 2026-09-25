@@ -1,8 +1,0 @@
-{
-  "check": "silgen",
-  "files": {
-    "Frisket/Comment.swift": "// @_silgen_name(\"write\") is banned\nlet note = \"@_silgen_name\"",
-    "Tests/Probe.swift": "@_silgen_name(\"open\") func probe()"
-  },
-  "expected": []
-}

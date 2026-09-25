@@ -1,0 +1,8 @@
+{
+  "check": "storage-pixels",
+  "files": {
+    "Sources/FrisketCore/StorageAdapter/HistoryStore.swift": "func commit(_ request: AuthorizedFinalization) async -> HistoryCommit { write(request.pngData) }\n// Never a CaptureImage or the original pixels.",
+    "Sources/FrisketCore/CaptureLifecycleCoordinator.swift": "let original: CaptureImage = image"
+  },
+  "expected": []
+}

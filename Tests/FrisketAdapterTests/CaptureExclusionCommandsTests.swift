@@ -8,7 +8,6 @@ import Testing
     var requests: [AreaCaptureRequest] = []
     func prefetchShareableContent() {}
     func prepareSelection() async {}
-    func discardSelectionPreviews() {}
     func hideSelection() {}
     func finishCapture() {}
     func selectArea() async -> AreaSelection? {
@@ -51,7 +50,7 @@ private actor UnusedExclusionClipboard: ImageClipboard {
     @Test func fullScreenUsesCurrentSettingsWithoutLoggingAppIdentities() async throws {
         let exclusions = CaptureExclusionList()
         let platform = ExclusionPlatform()
-        let log = LocalDiagnosticLog()
+        let log = RecordingDiagnostics()
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(),
             source: AreaCaptureSource(platform: platform, bundleIdentifier: "test.frisket"),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: "test.frisket",
@@ -65,7 +64,7 @@ private actor UnusedExclusionClipboard: ImageClipboard {
             #expect(platform.requests.last?.excludedBundleIdentifiers == expected)
             exclusions.remove("test.synthetic-vault")
         }
-        #expect(await log.entries().map(\.event) == [
+        #expect(await log.events == [
             DiagnosticEvent(name: .capturePending, operation: .capture),
             DiagnosticEvent(name: .capturePending, operation: .capture)
         ])

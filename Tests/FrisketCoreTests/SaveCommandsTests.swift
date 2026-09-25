@@ -62,7 +62,7 @@ extension SaveCommandsTests {
         let folder = directory.appendingPathComponent("export-folder")
         // A regular file blocks directory creation until the user repairs the destination.
         try Data("occupied".utf8).write(to: folder)
-        let diagnostics = LocalDiagnosticLog()
+        let diagnostics = RecordingDiagnostics()
         let history = HistoryStore(root: root)
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: SavePixels().bytes.count,
             diagnostics: diagnostics, history: history,
@@ -90,10 +90,10 @@ extension SaveCommandsTests {
         #expect(try Data(contentsOf: folder.appendingPathComponent(receipt.filename)) == SavePixels().bytes)
         #expect(await commands.image(for: revision) == nil)
         #expect(await commands.execute(.retrySave(revision)) == .rejected(.retryNotAvailable))
-        let events = await diagnostics.entries().map(\.event)
+        let events = await diagnostics.events
         #expect(events.contains { $0.name == .deliveryFailed && $0.operation == .save && $0.error?.domain == .fileExport })
         #expect(events.contains { $0.name == .deliverySucceeded && $0.operation == .retrySave && $0.error == nil })
-        let log = String(decoding: try JSONEncoder().encode(events), as: UTF8.self)
+        let log = String(reflecting: events)
         #expect(!log.contains(directory.path) && !log.contains(receipt.filename))
     }
 }
@@ -191,7 +191,7 @@ extension SaveCommandsTests {
         let folder = directory.appendingPathComponent("Exports")
         try Data("blocked history".utf8).write(to: root)
         if retry { try Data("blocked export".utf8).write(to: folder) }
-        let diagnostics = LocalDiagnosticLog()
+        let diagnostics = RecordingDiagnostics()
         let history = HistoryStore(root: root)
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: SavePixels(), clipboard: UnusedClipboard(), pendingByteLimit: 1024,
             diagnostics: diagnostics, history: history,
@@ -213,7 +213,7 @@ extension SaveCommandsTests {
         guard case let .saved(receipt) = outcome.delivery else { Issue.record("Expected export despite History failure"); return }
         #expect(try Data(contentsOf: folder.appendingPathComponent(receipt.filename)) == SavePixels().bytes)
         #expect(await commands.image(for: revision) == nil)
-        #expect(await diagnostics.entries().last?.event.error == DiagnosticError(domain: .history, code: .unavailable))
+        #expect(await diagnostics.events.last?.error == DiagnosticError(domain: .history, code: .unavailable))
     }
 
     @Test func staleUnknownPrematureRetryAndDiscardedSavesHaveNoDiskSideEffects() async throws {

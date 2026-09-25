@@ -91,9 +91,6 @@ public enum ShortcutFailure: Error, Equatable {
 
 /// macOS screenshot symbolic hotkeys. Frisket uses this same number row.
 public enum SystemScreenshotHotkeys {
-    /// com.apple.symbolichotkeys identifiers for ⇧⌘3/4/5/6 and the Control variants of 3/4/6.
-    public static let familyIdentifiers = ["28", "29", "30", "31", "181", "182", "184"]
-
     public static func isFamily(_ binding: ShortcutBinding) -> Bool {
         let numberRow: Set<UInt32> = [20, 21, 22, 23]
         let commandShift: Set<UInt32> = [768, 4864] // ⇧⌘ and ⌃⇧⌘
