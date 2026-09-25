@@ -12,4 +12,13 @@ public enum PreferenceKey: String, CaseIterable, Sendable {
     case onboardingCompleted = "hasCompletedOnboarding"
     /// The restore record an earlier build kept when it turned macOS screenshot shortcuts off (DA-2).
     case systemScreenshotShortcutsTurnedOff = "systemScreenshotHotkeys.turnedOffByFrisket"
+    /// The editor's last-used styles (ticket 100, decision 93); `EditorStyles` reads and writes them.
+    case editorRedactionColour
+    case editorInkColour
+    case editorArrowStyle
+    case editorArrowWidth
+    case editorLineWidth
+    case editorShapeWidth
+    case editorLabelSize
+    case editorLabelStyle
 }

@@ -29,7 +29,7 @@ A visual addition to a capture, such as an arrow, line, label, or shape.
 How an arrow is drawn: Standard (a tapered shaft with a solid head), Curved (bent by its middle handle; the head follows the curve) or Double (a head at each end). A **Line** is the same mark with no head.
 
 **Label style**:
-How a label is drawn: Standard (ink letters with a thin white edge), Outlined (white letters in an ink outline) or Box (white letters on a box of ink); in a light ink (Yellow, White) the letters of Outlined and Box are black. A label also has a size and, once its side handle is dragged, a width its text wraps at.
+How a label is drawn: Standard (ink letters with a thin white edge), Outlined (white letters in an ink outline) or Box (white letters on a box of ink); in a light ink (Yellow, White) the letters of Outlined and Box are black. A label also has a size, which its corner handle scales, and, once its side handle is dragged, a width its text wraps at.
 
 **Solid redaction**:
 An opaque replacement of a selected image region to conceal its contents in the delivered image. Its fill is one colour from a small neutral palette, black by default, always at full opacity.
@@ -47,7 +47,7 @@ _Avoid_: zoom
 Anything drawn on a capture in the editor that stays an object after drawing: an annotation, a Solid redaction, a Blur or a Magnify box. A mark can be selected, moved, resized, deleted and restyled. A crop is not a mark.
 
 **Style bar**:
-The row under the editor's toolbar that shows only the style controls for the selected mark, or else for the active tool: the Solid redaction colour, the ink colour, the arrow style, the line width, and the label size and style.
+The row under the editor's toolbar that shows only the style controls for the selected mark, or else for the active tool: the Solid redaction colour, the ink colour, the arrow style, the line width, and the label size and style. A new editor opens with the choices last made for new marks.
 
 **OCR**:
 Extraction of text from a capture so that the text can be copied or otherwise used.

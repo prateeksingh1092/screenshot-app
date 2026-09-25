@@ -20,7 +20,7 @@ import FrisketCore
         let completion = OnboardingCompletion(isComplete: preference.isComplete)
         guard FirstLaunch.surface(onboarding: completion, systemAlertPending: systemAlertPending(),
                                   dismissedForLaunch: onboardingDismissedForLaunch, requested: requested) == .onboarding else { return }
-        let panel = OnboardingPanel(content: .current, acknowledge: { [weak self] in
+        let panel = OnboardingPanel(content: .current(for: completion), acknowledge: { [weak self] in
             guard let self else { return }
             self.preference.markComplete()
             self.onboarding = nil
