@@ -11,6 +11,18 @@
 >   - the redaction colour comes from a palette (ticket 88);
 >   - effort is medium throughout.
 >
+> **Overnight run, stopped by Prateek on 2026-09-25 at about 04:10:** main is at `abc0b6c`, with `ci.sh` green (360 tests, 7 known issues).
+> - **Merged:** 87, 75, 65, 73, 66, 89, 74, 67, 76, 78 and 68.
+> - **Resolved with no product defect:** 90. The harness's accessibility search was slow while History was open.
+> - **Decisions:** numbered up to 75.
+> - **Resume here:**
+>   - Ticket 91: the Thumbnail vanishes after Copy or after an edit longer than 10 s, a regression from 73.
+>     - Its agent was stopped mid-test. Worktree `.worktrees/ticket-91` has 2 uncommitted files; restart it or discard them.
+>     - Then rerun the live `editor-redaction` and `history-delete` rows.
+>   - Then ticket 69, then 79, 81, 77, 84–86, 88, 80 and 82.
+> - **Live state:** installed build `c8c85bb`, which has 78 but not 68. The last full live runs were on `03a14d9`: external 16 pass, 1 fail; built-in 14 pass, 3 fail. Tickets 91 and the harness label fix explain those failures.
+> - **History:** migrated by 78 with 293 captures intact. A pre-migration copy is at `~/Library/Application Support/io.github.prateeksingh1092.frisket.debug/History.noindex.pre-78-backup-040008`; Prateek deletes it when satisfied.
+>
 > **End of the overnight run (Prateek, 2026-09-25):** when every agent-ready ticket is done, shut the Mac down with `osascript -e 'tell application "System Events" to shut down'`. `caffeinate -dimsu` keeps it awake until then.
 >
 > **Next:**
