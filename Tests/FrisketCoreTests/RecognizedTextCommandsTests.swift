@@ -66,11 +66,6 @@ private struct ByteRecognizer: TextRecognizer {
     }
 }
 
-private actor RecordingDiagnostics: DiagnosticSink {
-    private(set) var events: [DiagnosticEvent] = []
-    func record(_ event: DiagnosticEvent) async { events.append(event) }
-}
-
 @Suite struct RecognizedTextCommandsTests {
     @Test func copyRecognizedTextUsesTheCurrentRevisionAndReportsOnlyTheCount() async throws {
         let clipboard = RecordingTextClipboard()

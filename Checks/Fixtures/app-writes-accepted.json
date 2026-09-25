@@ -1,0 +1,11 @@
+{
+  "check": "app-writes",
+  "files": {
+    "Frisket/AppIdentity.swift": "let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]",
+    "Frisket/Recovery.swift": "NSWorkspace.shared.open(settingsURL); helper.standardInput = FileHandle.nullDevice; helper.standardOutput = FileHandle.nullDevice",
+    "Frisket/Adapters/CaptureLatencyLog.swift": "try FileHandle.standardOutput.write(contentsOf: Data(row.utf8))",
+    "Frisket/Notes.swift": "// try data.write(to: url)\nlet example = \"removeItem(at:)\"",
+    "Sources/FrisketCore/StorageAdapter/HistoryStore.swift": "try request.pngData.write(to: root)"
+  },
+  "expected": []
+}

@@ -1,0 +1,12 @@
+{
+  "check": "finalization",
+  "files": {
+    "Sources/FrisketCore/CaptureLifecycleCoordinator.swift": "let request = AuthorizedFinalization(revision: revision, pngData: image.pngData)",
+    "Sources/FrisketCore/StorageAdapter/HistoryStore.swift": "let request = AuthorizedFinalization (revision: revision, pngData: pixels)",
+    "Frisket/EditorWindow.swift": "commit(AuthorizedFinalization(revision: r, pngData: d))"
+  },
+  "expected": [
+    "Frisket/EditorWindow.swift: AuthorizedFinalization is built outside the coordinator",
+    "Sources/FrisketCore/StorageAdapter/HistoryStore.swift: AuthorizedFinalization is built outside the coordinator"
+  ]
+}

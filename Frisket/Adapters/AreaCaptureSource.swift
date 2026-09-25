@@ -36,7 +36,6 @@ extension AreaCaptureRequest {
     var spaceGeneration: UInt64 { get }
     func prefetchShareableContent() async throws
     func prepareSelection() async
-    func discardSelectionPreviews()
     func selectArea() async -> AreaSelection?
     func hideSelection()
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data
@@ -62,12 +61,10 @@ extension AreaCaptureRequest {
 
     public func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
         defer { platform.finishCapture() }
-        let previewGeneration = platform.spaceGeneration
         do { try await platform.prefetchShareableContent() }
         catch let failure as CaptureSourceFailure { return .failure(failure) }
         catch { return .failure(.unavailable) }
         await platform.prepareSelection()
-        if previewGeneration != platform.spaceGeneration { platform.discardSelectionPreviews() }
         let selection = await platform.selectArea()
         if selection != nil { latency?.selectionAccepted() }
         platform.hideSelection()

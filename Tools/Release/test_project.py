@@ -90,7 +90,7 @@ class BuildGraphTests(unittest.TestCase):
         scripts = [item.get("shellScript", "") for item in items.values()
                    if item.get("isa") == "PBXShellScriptBuildPhase"]
         self.assertFalse([s for s in scripts if "check_repository.py" in s])
-        self.assertIn("input-monitoring", (ROOT / "scripts" / "ci.sh").read_text())
+        self.assertIn("check_repository.py --root", (ROOT / "scripts" / "ci.sh").read_text())
 
     def test_one_package_resolved(self):
         workspace = PROJECT.parent / "project.xcworkspace" / "xcshareddata" / "swiftpm" / "Package.resolved"

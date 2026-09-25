@@ -1,6 +1,6 @@
 {
   "check": "app-sources",
-  "repositoryFiles": {
+  "files": {
     "Frisket.xcodeproj/project.pbxproj": "{ objects = { project = { isa = PBXProject; mainGroup = root; }; root = { isa = PBXGroup; children = (app); sourceTree = \"<group>\"; }; app = { isa = PBXFileSystemSynchronizedRootGroup; path = Frisket; sourceTree = SOURCE_ROOT; exceptions = (exceptions); }; exceptions = { isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (Info.plist, Frisket.entitlements); target = target; }; target = { isa = PBXNativeTarget; fileSystemSynchronizedGroups = (app); packageProductDependencies = (coreProduct); }; coreProduct = { isa = XCSwiftPackageProductDependency; productName = FrisketCore; }; }; rootObject = project; }",
     "Frisket/Adapters/Capture.swift": "struct Capture {}\n"
   },

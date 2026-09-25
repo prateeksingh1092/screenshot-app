@@ -39,8 +39,7 @@ disables SwiftPM's nested manifest sandbox because the agent sandbox rejects
 `sandbox_apply`; it does not disable the agent's filesystem restrictions.
 `--disable-keychain` avoids credential lookup, and `--disable-xctest` prevents
 SwiftPM from generating an XCTest runner. All authored tests import `Testing`.
-For a single test, append `--filter CaptureCommandsTests` or
-`--filter repositorySatisfiesStaticChecks` to the test command.
+For a single test, append `--filter CaptureCommandsTests` to the test command.
 
 **Installed CLT result (2026-09-22):** the core builds on x86_64 macOS 26.7,
 build 25G229, with Apple Swift 6.3.3 (swiftlang-6.3.3.1.3,
@@ -53,76 +52,33 @@ Ticket 06 also executes these Swift Testing tests with Xcode 26.5 (17F42),
 Swift 6.3.2, on the same x86_64 macOS build. There is no XCTest substitution.
 **arm64 not executed.**
 
-## Static-check interface
+## Repository checks (ticket 80)
 
-The test target invokes `Checks/check_repository.py` through `/usr/bin/python3`.
-The script uses only the standard library; it is tooling, not an app dependency.
-It returns zero on success and a diagnostic plus nonzero exit on failure.
-The same checks can run independently while the Swift Testing runner is blocked:
+`scripts/ci.sh` runs `Checks/check_repository.py` (standard library only; tooling, not
+an app dependency) once over `Sources/` and `Frisket/`, and once with `--self-test`
+over the fixtures in `Checks/Fixtures/`:
 
 ```sh
-for check in dependencies imports identity provenance diagnostics capture-memory input-monitoring app-sources; do
-  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /usr/bin/python3 \
-    Checks/check_repository.py --root . --check "$check" || exit
-done
-for fixture in Checks/Fixtures/*.json; do
-  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /usr/bin/python3 \
-    Checks/check_repository.py --fixture "$fixture" || exit
-done
+/usr/bin/python3 -B Checks/check_repository.py --self-test
+/usr/bin/python3 -B Checks/check_repository.py --root .            # every check
+/usr/bin/python3 -B Checks/check_repository.py --root . --check core-io
 ```
 
-- **Dependencies:** evaluate the real manifest with the selected toolchain (`DEVELOPER_DIR`) and `swift package
-  dump-package` (no resolution or fetch). Only the official HTTPS
-  `groue/GRDB.swift` source is allowed, with or without `.git`. Local, registry,
-  lookalike, binary, system, plugin, and macro dependency routes are rejected.
-  If `Package.resolved` exists, every pin must also be the approved source;
-  unsupported lockfile formats fail. Ticket 09 pins GRDB 7.11.1 exactly.
-- **App sources:** parse `Frisket.xcodeproj/project.pbxproj` with macOS `plutil`
-  and reject explicit Swift file references under `Frisket/`, resolving nested
-  project groups and source-root paths. This guards the synchronized-folder
-  workflow; the unsigned build verifies actual target membership.
-- **Imports:** all Swift files under `Sources/` are core. AppKit and SwiftUI
-  imports are forbidden, including attributed, scoped and conditional imports.
-  GRDB imports and qualified types are confined to
-  `Sources/FrisketCore/StorageAdapter/`. Comments and string examples are masked;
-  executable string interpolations are scanned, including raw strings.
-  This lexical check does not prove the absence of inferred/re-exported concrete
-  types; code review must preserve the adapter's UI-independent interface.
-- **Identity:** scan `Package.swift`, `Sources/`, `Frisket/` (the future app),
-  and `Resources/`, including file paths and embedded UTF-8/ASCII asset text.
-  Only leading copyright/licence comments and narrowly named licence/notice
-  files are exempt. A new product root must be added to the inventory. Research,
-  ADRs, tickets, third-party development skills, checker fixtures, and test
-  examples are engineering material, not app identity. This scope preserves
-  the required reference history. Compressed or encoded assets need review.
-- **Port attribution:** scan the same inventory plus `Tests/`. A retained
-  upstream licence header or `Frisket-Port:` marker requires a ledger entry.
-  Each entry must identify an existing file, HTTPS upstream URL, 40-character
-  revision, original path, and exact retained licence header. Missing, changed,
-  duplicate, or stale entries fail. Entirely unmarked copied code cannot be
-  identified mechanically; the port review must register it before acceptance.
+| Check | Invariant |
+|---|---|
+| `finalization` | (1) `AuthorizedFinalization` is built only by `CaptureLifecycleCoordinator` |
+| `app-writes` | (2) the app (`Frisket/`) has no filesystem write route; storage writes only through finalization |
+| `storage-pixels` | (3) `StorageAdapter/` never takes a `CaptureImage`, a pixel source or an original |
+| `core-io` | (4) the core imports only its allowlist (DA-1: Foundation, Synchronization, CoreGraphics, CoreText, ImageIO, Accelerate; the storage adapter also GRDB and Darwin) and, outside `StorageAdapter/`, names no file route |
+| `input-monitoring` | (5) no event taps or global event monitors |
+| `network` | (6) no network modules or APIs (story 74) |
+| `app-sources` | ticket 77: the app target compiles no adapter file and links `FrisketAdapters` |
 
-The inventory includes root `Package.swift`, `Sources/`, `Frisket/`,
-`Resources/` and `Tests/`. The retired trial has no special inventory or
-exceptions. The generated-cache fixture verifies that root `.build/` output is
-not attributed as source.
-
-Manifest evaluation uses `xcrun swift`, honoring the caller's `DEVELOPER_DIR`
-(and defaulting to pinned Xcode). Only the root Frisket manifest remains.
-
-`docs/ported-files.json` is an empty list. `adaptedSHA256` is still
-checked for any entry that declares it. A tampered-hash
-fixture fails even when the licence header is unchanged.
-When an approved ticket ports a file, retain its original header verbatim and
-record the retained licence preamble as `licenseHeader`, alongside `path`, `upstreamURL`, `revision`, and
-`originalPath`. Retain a full copyright/licence comment (including an SPDX
-identifier or licence grant). Add any necessary complete third-party notice
-separately. The fixture ledger entries are synthetic examples, not real ports.
-
-The fixture interface compares checker output with independent literal
-diagnostics in JSON. Each of the original four checks was first exercised with a failing
-fixture before its implementation. The Swift Testing target runs both the
-repository checks and these fixtures with the Xcode toolchain.
+Each fixture names its check, the files and the exact expected diagnostics; the
+self-test fails unless every check has a passing and a failing fixture. The
+checks are lexical: comments and string literals are masked, interpolations are
+scanned. They do not prove the absence of obfuscated or dynamically resolved APIs.
+`Checks/check_drift.py` separately fails on retired terms (`Checks/retired-terms.tsv`).
 
 Ticket 37 adds `performanceToolingSatisfiesOfflineChecks` to the Swift Testing
 suite. It runs the standard-library Python tests in `Tools/Performance/` without
@@ -204,33 +160,17 @@ Tests use synthetic byte fixtures, not platform image encoding. The receipt is
 recorded in the returned delivery outcome. Honoring pasteboard flags and the
 real change count is ticket 08's adapter responsibility.
 
-## Diagnostics and memory-only checks
+## Diagnostics
 
 `DiagnosticSink.record(DiagnosticEvent)` admits only closed event, operation,
-error-domain, and error-code enums. The fixed allowed event field is `operation`;
-there is no free-form field dictionary, identifier, image, string message, or
-underlying platform error. `LocalDiagnosticLog` is actor-isolated and in-memory,
-with a clock seam. It expires entries at seven days on both recording and querying;
-it does not schedule background work or persist logs. Any later local persistent
-adapter must maintain this schema and retention contract. The planted-canary
-command test checks exact events and serialized records while proving that the
-clipboard receives the synthetic pixel/text/path payload intact.
-
-Two additional lexical checks run with the existing checks and fixtures:
-
-- `diagnostics` rejects direct logging/assertion routes (including raw system
-  logging) and additions of non-allowlisted diagnostic payload fields. In this
-  core, all diagnostics use the closed event interface; no assertion message or
-  system-log string route is used.
-- `capture-memory` forbids platform imports and known filesystem capabilities
-  in the memory-only core and checks the image-only, write-only clipboard
-  declaration. A future `StorageAdapter/` is the sole disk-capable exception;
-  direct references from the lifecycle remain forbidden. Capture and Copy have
-  no app-owned root, file store, or filesystem capability in this ticket.
-
-These are conservative lexical guards, not a Swift semantic or capability
-proof. New indirect filesystem routes and future platform adapters still need
-review. No real root or clipboard is touched by the command tests.
+error-domain and error-code enums: no identifier, image, string message, path or
+underlying platform error. The app injects the adapters' `SystemDiagnosticLog`
+into the coordinator and History. It writes one `os.Logger` line per event
+(`notice`, or `error` when the event carries an error code), marked public because
+it holds only those enum values. The unified log keeps and expires the entries;
+Frisket writes no log file of its own (decision 25, ticket 80). Where no sink is
+injected, events are dropped. The planted-canary command test checks the exact
+events and that none of the synthetic pixel, text or path payload reaches them.
 
 ## Ticket 08 app integration
 

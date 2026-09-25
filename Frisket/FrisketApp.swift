@@ -64,13 +64,14 @@ import FrisketCore
         let dragAdapter = FilePromiseDragAdapter(writer: DragPromiseWriter())
         self.dragAdapter = dragAdapter
         let pasteboard = PasteboardAdapter(destination: GeneralPasteboardDestination())
-        let historyStore = HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits)
+        let diagnostics = SystemDiagnosticLog(subsystem: identity.bundleIdentifier)
+        let historyStore = HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits, diagnostics: diagnostics)
         commands = CaptureLifecycleCoordinator(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency, decodedByteCeiling: budgets.stillDecodedBytes),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency, decodedByteCeiling: budgets.stillDecodedBytes),
             windowSource: WindowCaptureSource(platform: windowPlatform, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                 bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }),
             clipboard: pasteboard, pendingByteLimit: budgets.pendingSessionEncodedBytes,
-            history: historyStore,
+            diagnostics: diagnostics, history: historyStore,
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
             drag: dragAdapter, thumbnailPolicy: thumbnailSettings.policy,
             flattener: CaptureRenderer(),

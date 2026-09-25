@@ -66,14 +66,14 @@ private func interruptedCommit(at root: URL, point: HistoryCommitPoint, id: Capt
         let ids = [CaptureID(), CaptureID()]
         let before = try await committedEntries(root, ids: ids)
         try FileManager.default.removeItem(at: root.appendingPathComponent(before[0].imageLocation))
-        let log = LocalDiagnosticLog()
+        let log = RecordingDiagnostics()
         let history = HistoryStore(root: root, diagnostics: log)
         let report = try await history.recover().get()
         #expect(report.removedMissingImages == 1)
         #expect(try await history.entries().get().map(\.captureID) == [ids[1]])
         #expect((try? await history.finalizedImage(ids[0]).get()) == nil)
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent(try #require(before[0].thumbnailLocation)).path))
-        #expect(await log.entries().map(\.event) == [
+        #expect(await log.events == [
             DiagnosticEvent(name: .historyImageMissing, operation: .launchRecovery,
                 error: DiagnosticError(domain: .history, code: .missingHistoryImage)),
             DiagnosticEvent(name: .historyRecovered, operation: .launchRecovery)
@@ -224,7 +224,7 @@ extension HistoryRecoveryTests {
         try Data([1, 2, 3]).write(to: root.appendingPathComponent("images/\(UUID().uuidString).partial"))
         try FileManager.default.createDirectory(at: root.appendingPathComponent("archives"), withIntermediateDirectories: false)
         try Data(repeating: 42, count: 117).write(to: root.appendingPathComponent("archives/recovery.sqlite"))
-        let log = LocalDiagnosticLog()
+        let log = RecordingDiagnostics()
         let history = HistoryStore(root: root, diagnostics: log)
         let report = try await history.recover().get()
         let after = try await history.entries().get()
@@ -376,7 +376,7 @@ extension HistoryRecoveryTests {
         process.waitUntilExit()
         try #require(process.terminationStatus == 0)
         let before = try recoverySnapshot(root)
-        let log = LocalDiagnosticLog()
+        let log = RecordingDiagnostics()
         let history = HistoryStore(root: root, diagnostics: log)
         let commands = recoveryCommands(history)
         #expect(await history.recover() == .failure(.unknownMigrations))
@@ -386,7 +386,7 @@ extension HistoryRecoveryTests {
         #expect(await commands.execute(.copy(revision)) == .copy(CopyOutcome(revision: revision,
             commit: .notCommitted(.unknownMigrations), delivery: .copied(ClipboardReceipt(changeCount: 1)))))
         #expect(try recoverySnapshot(root) == before)
-        #expect(await log.entries().map(\.event) == [DiagnosticEvent(name: .historyRecoveryFailed, operation: .launchRecovery,
+        #expect(await log.events == [DiagnosticEvent(name: .historyRecoveryFailed, operation: .launchRecovery,
             error: DiagnosticError(domain: .history, code: .unknownMigrations))])
     }
 }
@@ -397,7 +397,7 @@ extension HistoryRecoveryTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let id = CaptureID()
         try killAtCommitPoint(.rowCommitted, root: root, id: id)
-        let log = LocalDiagnosticLog()
+        let log = RecordingDiagnostics()
         // Crash-helper rows are stamped 1970. Keep them past the default 30-day
         // window so this launch-gate case is not also an age-eviction case.
         let history = HistoryStore.launch(root: root,
@@ -405,12 +405,12 @@ extension HistoryRecoveryTests {
         let commands = recoveryCommands(history)
         #expect(try await history.entries().get().map(\.captureID) == [id])
         #expect(try await history.entries().get().map(\.captureID) == [id])
-        #expect(await log.entries().map(\.event) == [DiagnosticEvent(name: .historyRecovered, operation: .launchRecovery)])
+        #expect(await log.events == [DiagnosticEvent(name: .historyRecovered, operation: .launchRecovery)])
         let revision = CaptureRevision(captureID: CaptureID(), number: 1)
         #expect(await commands.execute(.capture(revision.captureID, maximumBytes: 1024)) == .pending(revision))
         #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
         #expect(try await history.entries().get().map(\.captureID) == [id, revision.captureID])
-        #expect(await log.entries().count == 1)
+        #expect(await log.events.count == 1)
     }
 
     @Test func launchAndPendingCaptureCreateNothingInANewRoot() async throws {

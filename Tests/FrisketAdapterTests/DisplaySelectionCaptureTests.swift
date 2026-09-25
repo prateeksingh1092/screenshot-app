@@ -15,7 +15,6 @@ import Testing
 
     func prefetchShareableContent() { hidden = false }
     func prepareSelection() async {}
-    func discardSelectionPreviews() {}
     func selectArea() async -> AreaSelection? {
         var session = DisplaySelectionSession(displays: [retina, external], pointer: CGPoint(x: 20, y: 20))
         session.begin(at: CGPoint(x: -100, y: -100))
@@ -66,8 +65,6 @@ import Testing
     var prefetchPause: CapturePause?
     var previewsPrepared = false
     var selectionShown = false
-    var preview: Data?
-    var presentedPreview: Data?
     var request: AreaCaptureRequest?
     var hidden = false
     var finished = false
@@ -80,12 +77,9 @@ import Testing
     func prepareSelection() async {
         previewsPrepared = true
         if let previewPause { await previewPause.suspend() }
-        preview = Data([1, 2, 3])
     }
-    func discardSelectionPreviews() { preview = nil }
     func selectArea() async -> AreaSelection? {
         selectionShown = true
-        presentedPreview = preview
         return AreaSelection(displayID: 1, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
                       rect: CGRect(x: 10, y: 20, width: 10, height: 10), scale: 1, spaceGeneration: spaceGeneration)
     }
@@ -128,14 +122,13 @@ private actor DisplayFixtureClipboard: ImageClipboard {
         #expect(await capture.value == .pending(revision))
         #expect(platform.previewsPrepared)
         #expect(platform.selectionShown)
-        #expect(platform.presentedPreview == (spaceSwitch ? nil : Data([1, 2, 3])))
         #expect(platform.hidden)
         #expect(platform.finished)
         #expect(await clipboard.writes == 0)
     }
 
     @Test(arguments: [false, true])
-    func previewPreparationKeepsOnlyCurrentSpacePreviews(spaceSwitch: Bool) async {
+    func selectionPreparationCompletesAcrossASpaceSwitch(spaceSwitch: Bool) async {
         let platform = SpaceFixturePlatform()
         let pause = CapturePause()
         platform.previewPause = pause
@@ -149,7 +142,6 @@ private actor DisplayFixtureClipboard: ImageClipboard {
         if spaceSwitch { platform.spaceGeneration += 1 }
         pause.resume()
         #expect(await capture.value == .pending(revision))
-        #expect(platform.presentedPreview == (spaceSwitch ? nil : Data([1, 2, 3])))
         #expect(platform.request?.sourceRect == CGRect(x: 10, y: 70, width: 10, height: 10))
         #expect(platform.hidden)
         #expect(platform.finished)

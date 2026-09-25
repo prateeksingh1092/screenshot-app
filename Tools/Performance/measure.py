@@ -107,8 +107,6 @@ def idle(args):
 def latency(args):
     if args.tool == "frisket":
         raise ValueError("Frisket must use app-latency with app-logged monotonic timestamps")
-    if args.tool == "snapzy":
-        raise ValueError("Snapzy persists captures before its thumbnail. No-image-storage constraint blocks capture runs; see runbook.")
     if not args.no_image_storage_verified:
         raise ValueError("operator must verify a no-image-storage capture route before observing latency")
     record = {"schema": 1, "kind": "latency", "method": "external-window",
@@ -235,7 +233,7 @@ def main():
     commands = parser.add_subparsers(dest="mode", required=True)
     for name in ("idle", "latency", "dry-run", "preflight"):
         sub = commands.add_parser(name)
-        sub.add_argument("--tool", choices=("macos", "snapzy", "frisket"), required=True)
+        sub.add_argument("--tool", choices=("macos", "frisket"), required=True)
         if name != "preflight":
             sub.add_argument("--output", type=Path, required=True)
         if name in ("idle", "latency"):

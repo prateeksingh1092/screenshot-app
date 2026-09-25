@@ -1,0 +1,10 @@
+{
+  "check": "core-io",
+  "files": {
+    "Sources/FrisketCore/Renderer.swift": "import Accelerate\nimport CoreGraphics\nimport CoreText\nimport Foundation\nimport ImageIO\nimport Synchronization\nlet data = NSMutableData()\nlet destination = CGImageDestinationCreateWithData(data, \"public.png\" as CFString, 1, nil)\n",
+    "Sources/FrisketCore/Capture.swift": "import Foundation\n// import AppKit\n/* outer /* nested */ import SwiftUI */\nlet example = #\"import GRDB\"#\nlet text = \"data.write(to: URL(...))\"\n",
+    "Sources/FrisketCore/StorageAdapter/HistoryStore.swift": "import Darwin\nimport Foundation\nimport GRDB\nimport struct GRDB.Database\nimport ImageIO\nlet root: URL\ntry data.write(to: root)",
+    "Frisket/Editor.swift": "import AppKit\nimport SwiftUI\nlet url = URL(fileURLWithPath: path)"
+  },
+  "expected": []
+}

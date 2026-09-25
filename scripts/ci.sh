@@ -32,13 +32,9 @@ if [ "${1:-}" = "--defects" ]; then
   exit 0
 fi
 
-echo "== repository checks"
-for check in dependencies imports identity provenance diagnostics capture-memory input-monitoring app-sources network silgen modals; do
-  /usr/bin/python3 -B Checks/check_repository.py --root "$root" --check "$check" || {
-    echo "ci: repository check '$check' failed" >&2
-    exit 1
-  }
-done
+echo "== repository checks (Checks/check_repository.py: six invariants, core imports, app sources)"
+/usr/bin/python3 -B Checks/check_repository.py --self-test || { echo "ci: a repository-check fixture failed" >&2; exit 1; }
+/usr/bin/python3 -B Checks/check_repository.py --root "$root" || { echo "ci: a repository check failed" >&2; exit 1; }
 
 echo "== drift (retired terms, Checks/retired-terms.tsv)"
 /usr/bin/python3 -B Checks/check_drift.py --self-test >/dev/null

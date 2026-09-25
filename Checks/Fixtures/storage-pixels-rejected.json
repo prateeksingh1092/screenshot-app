@@ -1,0 +1,15 @@
+{
+  "check": "storage-pixels",
+  "files": {
+    "Sources/FrisketCore/StorageAdapter/Original.swift": "func persist(_ original: Data) { try original.write(to: root) }",
+    "Sources/FrisketCore/StorageAdapter/Source.swift": "init(source: any CapturePixelSource) {}",
+    "Sources/FrisketCore/StorageAdapter/Image.swift": "func keep(_ image: CaptureImage) {}",
+    "Sources/FrisketCore/StorageAdapter/Unredacted.swift": "let UnredactedBytes = Data()"
+  },
+  "expected": [
+    "Sources/FrisketCore/StorageAdapter/Image.swift: storage accepts source or original pixels",
+    "Sources/FrisketCore/StorageAdapter/Original.swift: storage accepts source or original pixels",
+    "Sources/FrisketCore/StorageAdapter/Source.swift: storage accepts source or original pixels",
+    "Sources/FrisketCore/StorageAdapter/Unredacted.swift: storage accepts source or original pixels"
+  ]
+}

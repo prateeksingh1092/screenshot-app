@@ -1,7 +1,6 @@
 import Foundation
 import FrisketCore
 import Testing
-import Synchronization
 
 private struct FixturePixelSource: CapturePixelSource {
     let bytes: Data
@@ -39,8 +38,6 @@ private actor RecordingClipboard: ImageClipboard {
         let image = try #require(images.first)
         #expect(images.count == 1)
         #expect(image.pngData == Data([0x89, 0x50, 0x4e, 0x47]))
-        #expect(image.currentHostOnly)
-        #expect(image.concealed)
     }
 }
 
@@ -260,7 +257,7 @@ extension CaptureCommandsTests {
         let text = "CANARY_TEXT_6E9871"
         let path = "/CANARY_HOME_19D2/capture-secret.png"
         let pixels = Data([0xde, 0xad, 0xbe, 0xef]) + Data((text + path).utf8)
-        let log = LocalDiagnosticLog()
+        let log = RecordingDiagnostics()
         let clipboard = RecoveringClipboard()
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: pixels), clipboard: clipboard,
                                             pendingByteLimit: 1024, diagnostics: log)
@@ -270,7 +267,7 @@ extension CaptureCommandsTests {
         _ = await commands.execute(.copy(revision))
         _ = await commands.execute(.retryCopy(revision))
         _ = await commands.execute(.copy(revision))
-        let events = await log.entries().map(\.event)
+        let events = await log.events
         #expect(events == [
             DiagnosticEvent(name: .capturePending, operation: .capture),
             DiagnosticEvent(name: .deliveryFailed, operation: .copy,
@@ -280,48 +277,18 @@ extension CaptureCommandsTests {
             DiagnosticEvent(name: .commandRejected, operation: .copy,
                             error: DiagnosticError(domain: .lifecycle, code: .alreadyDelivered))
         ])
-        let encoded = try JSONEncoder().encode(await log.entries())
-        let serialized = String(decoding: encoded, as: UTF8.self)
+        let serialized = String(reflecting: events)
         #expect(!serialized.contains(text))
         #expect(!serialized.contains("CANARY_HOME_19D2"))
         #expect(!serialized.contains(path))
         #expect(!serialized.contains(pixels.base64EncodedString()))
-        #expect(encoded.range(of: Data([0xde, 0xad, 0xbe, 0xef])) == nil)
         #expect(await clipboard.images.map(\.pngData) == [pixels, pixels])
-    }
-}
-
-private final class TestClock: Sendable {
-    private let date: Mutex<Date>
-    init(_ value: TimeInterval) { date = Mutex(Date(timeIntervalSince1970: value)) }
-    func now() -> Date { date.withLock { $0 } }
-    func set(_ value: TimeInterval) { date.withLock { $0 = Date(timeIntervalSince1970: value) } }
-}
-
-extension CaptureCommandsTests {
-    @Test func localDiagnosticsExpireAtSevenDaysOnReadAndOnWrite() async {
-        let clock = TestClock(1_000_000)
-        let log = LocalDiagnosticLog(clock: { clock.now() })
-        let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([18])),
-                                            clipboard: RecordingClipboard(), pendingByteLimit: 2, diagnostics: log)
-        let id = CaptureID()
-        _ = await commands.execute(.capture(id, maximumBytes: 1))
-        clock.set(1_604_799) // one second before the seven-day boundary
-        #expect(await log.entries().map(\.event.name) == [.capturePending])
-        clock.set(1_604_800)
-        #expect(await log.entries().isEmpty)
-        _ = await commands.execute(.discard(id))
-        clock.set(2_209_600)
-        _ = await commands.execute(.copy(CaptureRevision(captureID: id, number: 1)))
-        let entries = await log.entries()
-        #expect(entries.map(\.event.name) == [.commandRejected])
-        #expect(entries.first?.recordedAt == Date(timeIntervalSince1970: 2_209_600))
     }
 }
 
 extension CaptureCommandsTests {
     @Test func doneWithoutAFlattenerIsRefusedAndKeepsThePendingCaptureUnchanged() async throws {
-        let log = LocalDiagnosticLog()
+        let log = RecordingDiagnostics()
         let clipboard = RecordingClipboard()
         let commands = CaptureLifecycleCoordinator(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([23, 24])),
                                             clipboard: clipboard, pendingByteLimit: 16, diagnostics: log)
@@ -332,7 +299,7 @@ extension CaptureCommandsTests {
         #expect(await commands.execute(.done(revision, edits)) == .rejected(.editingUnavailable))
         #expect(await commands.image(for: revision)?.pngData == Data([23, 24]))
         #expect(await clipboard.images.isEmpty)
-        #expect(await log.entries().last?.event == DiagnosticEvent(name: .commandRejected, operation: .done,
+        #expect(await log.events.last == DiagnosticEvent(name: .commandRejected, operation: .done,
             error: DiagnosticError(domain: .lifecycle, code: .editingUnavailable)))
     }
 

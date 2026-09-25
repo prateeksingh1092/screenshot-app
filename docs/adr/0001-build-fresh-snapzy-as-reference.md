@@ -21,7 +21,7 @@ The scrolling stitcher that was briefly adapted from that project has been remov
 Decision 48 accepted a port after ticket 05 met the synthetic memory gate and
 the coordinator verified Vision outside the sandbox. That port was later
 removed. The stitcher that ships is Frisket-owned code, and
-`docs/ported-files.json` is empty. Real recorded sequence acceptance remains
+nothing is ported (the empty `docs/ported-files.json` ledger and its provenance check were deleted by ticket 80). Real recorded sequence acceptance remains
 pending authorized captures; see the stitcher documentation (`docs/stitcher.md`, deleted by ticket 87).
 The broader fresh-build decision remains in force.
 

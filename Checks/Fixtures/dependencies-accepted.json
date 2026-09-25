@@ -1,6 +1,0 @@
-{
-  "check": "dependencies",
-  "manifest": {"dependencies": [{"sourceControl": [{"identity": "grdb.swift", "location": {"remote": [{"urlString": "https://github.com/groue/GRDB.swift.git"}]}}]}]},
-  "resolved": {"version": 3, "pins": [{"identity": "grdb.swift", "kind": "remoteSourceControl", "location": "https://github.com/groue/GRDB.swift.git"}]},
-  "expected": []
-}

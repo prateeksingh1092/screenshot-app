@@ -1,9 +1,0 @@
-{
-  "check": "imports",
-  "files": {
-    "Sources/FrisketCore/Capture.swift": "import Foundation\n// import AppKit\n/* outer /* nested */ import SwiftUI */\nlet example = #\"import GRDB\"#\nlet multiline = \"\"\"\nimport AppKit\n\"\"\"\n",
-    "Sources/FrisketCore/StorageAdapter/History.swift": "import GRDB\nimport struct GRDB.Database\n",
-    "Frisket/Editor.swift": "import AppKit\nimport SwiftUI\n"
-  },
-  "expected": []
-}
