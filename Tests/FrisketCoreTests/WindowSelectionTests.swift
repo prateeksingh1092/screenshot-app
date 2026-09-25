@@ -22,8 +22,8 @@ import Testing
         switch kind {
         case "cursor": // As listed live: empty bundle ID, cursor level, pointer-sized.
             return window("", CGRect(x: 496, y: 296, width: 20, height: 26), layer: 2_147_483_630)
-        case "empty bundle ID":
-            return window("", around, layer: 0)
+        case "cursor-level window": // Excluded by layer alone, whatever its bundle ID or size.
+            return window("fixture.bundled", around, layer: 2_147_483_630)
         case "pop-up menu level":
             return window("fixture.menu", around, layer: 101)
         case "Dock":
@@ -33,7 +33,7 @@ import Testing
         }
     }
 
-    @Test(arguments: ["cursor", "empty bundle ID", "pop-up menu level", "Dock", "tiny helper"])
+    @Test(arguments: ["cursor", "cursor-level window", "pop-up menu level", "Dock", "tiny helper"])
     func d2WindowUnderThePointerIsPickedNotSystemChrome(_ kind: String) {
         let selection = WindowSelection(windows: [Self.intruder(kind), Self.pattern], ownProcessID: 42,
                                         ownBundleIdentifier: Self.ownBundle)
@@ -59,6 +59,17 @@ import Testing
             #expect(!failure.message.contains("smaller area"), "\(failure) reuses the area-capture advice")
             #expect(failure.message.contains("window"), "\(failure) does not say it is about the window")
         }
+    }
+
+    /// Ticket 89: an app without a bundle ID (an unbundled executable, some Java or Python apps) owns
+    /// normal windows. ScreenCaptureKit lists its owner with an empty bundle ID, like the cursor.
+    @Test func unbundledAppsWindowIsPicked() {
+        let unbundled = WindowCandidate(id: 12, ownerProcessID: 9001, bundleIdentifier: "",
+            frame: CGRect(x: 300, y: 200, width: 400, height: 300), layer: 0, isOnScreen: true, isMinimized: false)
+        let selection = WindowSelection(windows: [unbundled, Self.pattern], ownProcessID: 42,
+                                        ownBundleIdentifier: Self.ownBundle)
+        #expect(selection.window(at: Self.pointer)?.id == unbundled.id,
+                "Ticket 89: a window whose app has no bundle ID was not offered")
     }
 
     /// Each rejection rule's boundary: the last accepted level and size stay capturable.
@@ -99,6 +110,19 @@ import Testing
                                        layer: 2_147_483_630), Self.pattern.1])
         #expect(Self.selection(rows).window(at: Self.pointer)?.id == 10)
         #expect(Self.selection(rows).candidates.map(\.id) == [10])
+    }
+
+    /// Ticket 89, as listed live by `sckwins 5000`: the synthetic pattern window, run as an unbundled
+    /// executable, is `owner=pattern bundle=""` at layer 0, behind the cursor under the pointer.
+    @Test func unbundledAppsWindowIsOfferedAndTheCursorIsNot() {
+        let rows = WindowRows(
+            ordered: [Self.listed(4, pid: 380, layer: 2_147_483_630), Self.listed(10, pid: 501)],
+            shareable: [Self.shareable(4, pid: 380, bundle: "", frame: CGRect(x: 496, y: 296, width: 20, height: 26),
+                                       layer: 2_147_483_630),
+                        Self.shareable(10, pid: 501, bundle: "")])
+        let selection = Self.selection(rows, excluding: ["test.synthetic-vault"])
+        #expect(selection.candidates.map(\.id) == [10], "Ticket 89: the unbundled pattern window was not offered")
+        #expect(selection.window(at: Self.pointer)?.id == 10)
     }
 
     @Test func orderComesFromTheWindowListNotScreenCaptureKit() {

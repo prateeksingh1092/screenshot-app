@@ -234,6 +234,8 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Accessibility (part of D16):** a finalized Thumbnail is named "Capture kept in History", and its custom actions drop Edit and Delete.
     - **Drag:** `.drag` runs through the shared `deliver()`. Copy and Save commit before the adapter write; a drag commits only after the destination accepts the drop (DA-3). A drag has no retry gate: dragging again is the retry.
 
+68. **Window capture offers unbundled apps' windows (implementer, 2026-09-25, ticket 89; decisions 54 and 57):** `WindowSelection` no longer rejects a window because its owner's bundle ID is empty. This amends plan item O2 and the D2 rule from ticket 49. Apps without a bundle ID (unbundled executables, some Java or Python apps) own real windows; live, the pattern window was `owner=pattern bundle=""` and window capture offered nothing. The cursor is excluded by what it is: its level, 2147483630 (`kCGCursorWindowLevel`), is above the Dock-level ceiling, and it is smaller than 32 pt. The Capture exclusion list still matches bundle IDs, so it cannot exclude an unbundled window.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

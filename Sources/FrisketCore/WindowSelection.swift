@@ -100,9 +100,11 @@ public struct WindowSelection: Sendable {
     public init(windows: [WindowCandidate], ownProcessID: Int32, ownBundleIdentifier: String) {
         // The platform excludes desktop elements. Exclude Frisket by identity, and system
         // chrome by level, owner and size (D2): foreign floating windows below the Dock
-        // level remain valid candidates.
+        // level remain valid candidates. The cursor is excluded by its level (2147483630,
+        // `kCGCursorWindowLevel`) and its size, not by its owner's empty bundle ID: apps
+        // without a bundle ID own real windows too (ticket 89).
         candidates = windows.filter { window in
-            guard let bundle = window.bundleIdentifier, !bundle.isEmpty else { return false }
+            let bundle = window.bundleIdentifier
             return window.isOnScreen && !window.isMinimized
                 && window.ownerProcessID != ownProcessID
                 && bundle != ownBundleIdentifier && bundle != Self.dockBundleIdentifier
