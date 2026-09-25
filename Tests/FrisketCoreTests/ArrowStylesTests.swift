@@ -222,7 +222,7 @@ import Testing
                 let saved = try delivered(png, edits)
                 let shown = try previewed(preview, edits)
                 #expect(saved.bytes == shown.bytes, "\(style) at \(width) pt, \(scale)×")
-                // The redaction stays exactly black under the arrows' plates.
+                // The redaction stays the chosen colour at alpha 255 under the arrows' plates.
                 let x0 = Int(((30 - 2.5) * scale).rounded(.down)), y0 = Int(((30 - 1.25) * scale).rounded(.down))
                 #expect(saved.pixel(x: x0 + 1, y: y0 + 1) == SolidRedaction.fill)
             }
