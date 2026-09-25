@@ -33,6 +33,7 @@ import FrisketCore
         set { captures?.isTerminating = newValue }
     }
     private var requestingPermission = false
+    private let notices = NoticeCenter()
     private var recoveryPanel: PermissionRecoveryPanel?
     private let surfaces = LaunchSurfaces()
     private var permissionTimer: Timer?
@@ -49,7 +50,7 @@ import FrisketCore
         self.historySettings = historySettings
         self.thumbnailSettings = thumbnailSettings
         historySettings.onQuotaEviction = { [weak self] in
-            self?.notice("History size limit reached", "Older captures were removed from History to meet its size limit. Saved exports are unchanged. You can adjust the limit in Settings.")
+            self?.notices.show(.historyQuotaReached)
         }
         historySettings.onRevealHistory = { [weak self] in self?.revealHistoryFolder() }
         settingsWindow = ExportSettingsWindow(settings: exportSettings, history: historySettings, thumbnails: thumbnailSettings,
@@ -85,15 +86,19 @@ import FrisketCore
             self.historyWindow = historyWindow
             Task {
                 if let failure = await historyStore.availability() {
-                    self.notice("History is off", HistoryFailureNotice.text(failure))
+                    self.notices.show(.historyOff(HistoryFailureNotice.text(failure)))
                 }
             }
             let presentation = CaptureSurfaces(commands: commands, drag: dragAdapter, latency: latency,
-                notify: { [weak self] title, message in self?.notice(title, message) },
+                notify: { [weak self] notice in self?.notices.show(notice) },
                 refreshHistory: { [weak self] in
                     if let self { await self.refreshHistorySurfaces() }
                 })
             presentation.permissionRequired = { [weak self] state in self?.showPermissionRecovery(state) }
+            presentation.cancelSelection = { [weak self] in
+                self?.platform.hideSelection()
+                self?.windowPlatform?.hideSelection()
+            }
             presentation.onCaptureFinished = { [weak self] in self?.refreshPermissionIndicator() }
             presentation.canStart = { [weak self] in
                 guard let self else { return false }
@@ -151,7 +156,7 @@ import FrisketCore
                 try SystemScreenshotHotkeyStore.restore()
                 self?.shortcutSettings.canRestoreSystemScreenshots = false
             } catch {
-                self?.notice("Could not restore macOS shortcuts", "Turn them on in System Settings › Keyboard › Keyboard Shortcuts › Screenshots.")
+                self?.notices.show(.systemShortcutsNotRestored)
             }
             self?.startShortcuts()
         }
@@ -381,7 +386,7 @@ import FrisketCore
             }, privacy: { [weak self] in
                 let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
                 if !NSWorkspace.shared.open(url) {
-                    self?.notice("Open System Settings", "Open Privacy & Security → Screen & System Audio Recording and enable Frisket.")
+                    self?.notices.show(.openScreenRecordingSettings)
                 }
             }, reopen: { [weak self] in
                 guard let self else { return }
@@ -398,26 +403,27 @@ import FrisketCore
             preparedRelaunch = try InstalledAppRelaunch()
             return true
         } catch {
-            notice("Could not reopen Frisket", "Launch Frisket from ~/Applications/Frisket.app, then try Quit & Reopen again.")
+            notices.show(.cannotReopen)
             return false
         }
     }
 
+    /// Termination in one place (story 99, ticket 76). `QuitPlan` decides; Quit never refuses with a notice.
+    /// A capture flag left set by an interrupted selection used to hold Quit behind a modal; now Quit
+    /// closes the selection, waits a bounded time, and goes on.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard captures?.hasEditor != true else {
+        guard let captures else { return prepareAcceptedQuit() ? .terminateNow : .terminateCancel }
+        let steps = QuitPlan.steps(for: QuitState(editorOpen: captures.hasEditor, captureInFlight: captures.isCapturing,
+                                                  thumbnailCommandInFlight: captures.hasBusyThumbnail,
+                                                  thumbnailsShown: captures.hasThumbnail))
+        if steps == [.quit] { return prepareAcceptedQuit() ? .terminateNow : .terminateCancel }
+        if steps == [.offerEditorsToLeave] {
             reopenAfterQuit = false
-            captures?.offerEditorsToLeave()
+            captures.offerEditorsToLeave()
             return .terminateCancel
         }
-        guard captures?.isCapturing != true, !requestingPermission, captures?.hasBusyThumbnail != true else {
-            reopenAfterQuit = false
-            notice("Finish the current action", "Cancel selection with Escape or wait for Copy or Save, then quit again.")
-            return .terminateCancel
-        }
-        guard let captures, captures.hasThumbnail else { return prepareAcceptedQuit() ? .terminateNow : .terminateCancel }
-        captures.beginQuit()
         Task {
-            let finished = await captures.finishQuit()
+            let finished = await captures.quit(steps)
             if !finished {
                 reopenAfterQuit = false
                 sender.reply(toApplicationShouldTerminate: false)
@@ -437,13 +443,7 @@ import FrisketCore
         do {
             try preparedRelaunch?.openDuringTermination()
         } catch {
-            notice("Could not reopen Frisket", "Frisket is quitting. Launch it from ~/Applications/Frisket.app to reopen it.")
+            notices.show(.cannotReopenWhileQuitting)
         }
-    }
-    private func notice(_ title: String, _ message: String) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.runModal()
     }
 }

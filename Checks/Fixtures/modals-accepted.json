@@ -1,0 +1,11 @@
+{
+  "check": "modals",
+  "files": {
+    "Frisket/HistoryWindow.swift": "let alert = NSAlert()",
+    "Frisket/EditorWindow.swift": "let alert = NSAlert()",
+    "Frisket/ExportSettings.swift": "let alert = NSAlert()",
+    "Frisket/NoticeCenter.swift": "// Never an NSAlert here.\nlet text = \"NSAlert\"",
+    "Tests/Probe.swift": "let alert = NSAlert()"
+  },
+  "expected": []
+}

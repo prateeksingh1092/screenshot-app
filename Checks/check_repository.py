@@ -13,7 +13,7 @@ import unicodedata
 
 TEST_ROOTS = ("Tests/",)
 CHECKS = ["dependencies", "imports", "identity", "provenance", "diagnostics", "capture-memory",
-          "input-monitoring", "app-sources", "network", "silgen"]
+          "input-monitoring", "app-sources", "network", "silgen", "modals"]
 
 
 def dependency_issues(manifest, resolved=None):
@@ -279,6 +279,20 @@ def silgen_issues(files):
             issues.append(f"{path}: @_silgen_name(\"{name}\") binds a C function with the Swift calling convention")
     return issues
 
+# DA-5 (ticket 76): notices are non-modal. An alert may appear only for a destructive or
+# irreversible choice (FrisketCore's `Confirmation`): History Delete, closing an edited capture,
+# and an export folder that syncs copies off this Mac.
+CONFIRMATION_FILES = {"Frisket/HistoryWindow.swift", "Frisket/EditorWindow.swift", "Frisket/ExportSettings.swift"}
+
+
+def modal_issues(files):
+    issues = []
+    for path, text in product_swift(files):
+        if path not in CONFIRMATION_FILES and re.search(r'\bNSAlert\b', swift_code(text)):
+            issues.append(f"{path}: NSAlert is only for the destructive or irreversible choices (DA-5); show a Notice instead")
+    return issues
+
+
 def app_source_issues(root):
     # Parse the project rather than depending on Xcode's formatting or comments.
     project_path = root / "Frisket.xcodeproj" / "project.pbxproj"
@@ -404,6 +418,8 @@ def check_fixture(path):
         actual = provenance_issues(fixture["files"], fixture["entries"])
     elif fixture["check"] == "network":
         actual = network_issues(fixture["files"])
+    elif fixture["check"] == "modals":
+        actual = modal_issues(fixture["files"])
     elif fixture["check"] == "silgen":
         actual = silgen_issues(fixture["files"])
     else:
@@ -463,6 +479,8 @@ def repository_issues(root, check):
         return network_issues(files)
     if check == "silgen":
         return silgen_issues(files)
+    if check == "modals":
+        return modal_issues(files)
     if check == "imports":
         return import_issues(files)
     if check == "diagnostics":
