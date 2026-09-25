@@ -6,7 +6,7 @@
 
 **Phase:** 1
 
-**Status:** ready-for-agent
+**Status:** resolved in code (tested on `main` at `b6233e9`); live checks wait for an approved install
 
 - [x] The Loupe shows device pixels around the pointer, with the centre pixel marked, on Retina and 1× displays.
 - [x] It stays on the Origin display and moves aside near display edges so it never covers the pointer.
@@ -49,3 +49,7 @@ The Loupe is back (D26). There was no `knownDefect` test for D26, so the new tes
   - Whether the first sample is ever refused because the snapshot doesn't yet list Frisket.
   - Whether captures contain no Loupe.
 
+
+### 2026-09-25: coordinator, integrated
+
+Merged with 53 and 51. At `b6233e9`, `ci.sh` is green: 354 tests, 52 known issues. The live checks listed in the implementer report wait for an approved install.

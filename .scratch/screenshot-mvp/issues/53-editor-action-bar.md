@@ -6,7 +6,7 @@
 
 **Phase:** 1 (D5 → O8)
 
-**Status:** ready-for-agent
+**Status:** resolved in code (tested on `main` at `b6233e9`); live checks wait for an approved install
 
 - [x] At the default and minimum editor widths, Done, Copy, Save and the drag handle are visible and clickable.
 - [x] ⌘C, ⌘S, Return (Done) and Esc or ⌘W work through menu or responder actions, not button key equivalents.
@@ -31,3 +31,7 @@ Claude Opus 5.5 (1M context), Claude Code, high effort.
 - **Tests.** D5 had no `knownDefect` test because there is no package seam. The new `EditorActionBarTests` cover the bar fitting without overlaps at 560 and 760 points and Done being trailing. The new `EditorKeyTests` cover Return meaning Done, Return in the label field not meaning Done, and command keys being left to the menu. Both were red (no API) and are now green.
 - **Open (live):** criterion 5, and the key paths themselves: ⌘C, ⌘S, Return, Esc and ⌘W with focus on the canvas, a tool button and the label field. Also the bar's look at 560 points, and the accent tint on Done.
 
+
+### 2026-09-25: coordinator, integrated
+
+Merged with 53 and 51. At `b6233e9`, `ci.sh` is green: 354 tests, 52 known issues. The live checks listed in the implementer report wait for an approved install.
