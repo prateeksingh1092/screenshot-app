@@ -1,93 +1,24 @@
-# Ticket 08: first launch (Prateek)
+# 08: First launch and signed rebuilds
 
-**Not executed by the implementer.** Obtain Prateek's approval at the time for
-signed build/keychain access, installation, app launches, Screen Recording,
-screen capture and clipboard use. Use synthetic content only. Do not reset
-permissions or change the signing identity between runs.
+Set up as in [README.md](README.md). Ask Prateek before the signed build, the
+install and the launch. The harness checks the captured pixels (`area`); this
+file checks the grant and the first-launch path.
 
-1. Record date, `sw_vers`, `uname -m`, `git rev-parse HEAD`, Xcode version,
-   display names/scales/arrangement, and Screen Recording state. Record
-   **arm64 not executed** on this Intel Mac. Follow the exact signed-build,
-   install and signature-inspection steps in [app-build.md](../app-build.md).
-   Preserve the designated requirement and entitlement output for comparison.
+1. Install the signed build as in [app-build.md](../app-build.md). Keep the
+   designated requirement and entitlements output for step 4.
+2. Launch the installed app and run `.build/FrisketTestPattern --show`.
+3. Press ⌘⇧4. On a first run, Frisket shows its permission recovery panel, not
+   a Selection. Choose **Request Screen Recording** and allow it in System
+   Settings › Privacy & Security › Screen & System Audio Recording. If macOS
+   asks, use **Quit & Reopen**; it must reopen the installed path. Press ⌘⇧4
+   again and Return: a Thumbnail appears. A blank first attempt is not a pass.
+4. **Rebuild twice.** Quit Frisket. Rebuild with the same signed command,
+   replace the bundle at the same path, and compare the designated
+   requirement. Launch it and capture again. No new grant may be asked for.
+   Do it a second time. Record both requirements and both outcomes. A new
+   prompt is a failure to investigate, not a reason to reset TCC.
+5. Press Esc during a Selection with the pattern helper frontmost. The overlay
+   closes and Frisket does not become the active app.
 
-2. Build the synthetic helper (compilation alone does not launch it):
-
-   ```sh
-   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc \
-     -parse-as-library -target x86_64-apple-macos26.0 \
-     -module-cache-path "$PWD/.build/module-cache" \
-     Tools/FrisketTestPattern.swift -o .build/FrisketTestPattern
-   ```
-
-3. After launch approval, run:
-
-   ```sh
-   open /Users/16intelmac/Applications/Frisket.app
-   .build/FrisketTestPattern --show
-   ```
-
-   The helper covers its screen with synthetic content. It puts a 320×180-point
-   pattern at the exact center of that display: red/green above blue/white,
-   plus a black marker. It never captures or accesses the pasteboard. Leave
-   private content off the other display; move the pointer over the pattern.
-
-4. Press **⌘⇧4**. On a first run, choose **Request Screen Recording** in
-   Frisket's recovery panel, then approve Frisket's Screen Recording request
-   in System Settings → Privacy & Security → Screen & System Audio Recording.
-   No selection should appear before permission is granted. If macOS asks for
-   relaunch, use **Quit & Reopen** to reopen **the fixed installed path**.
-   Retry ⌘⇧4. Denial must show permission recovery,
-   never an image; do not interpret the first blank attempt as success.
-
-5. With permission granted, press ⌘⇧4 and **Return without moving the
-   selection**. Its default centered 320×180-point rectangle matches the
-   helper exactly. Confirm no dimmer/border/cursor appears in the thumbnail.
-   Separately drag an area, drag across the display edge (it must stay on the
-   original display), and cancel with Esc without activating Frisket. Delete
-   those extra captures explicitly. ⌘⇧3/4/5/6 belong to Frisket, not the macOS
-   screenshot tool. Do not take real-content screenshots to test them.
-
-6. Use Frisket's **Focus Latest Thumbnail** menu item. **Copy** must immediately
-   have keyboard focus and a visible outline, without first pressing Tab.
-   Tab to Delete Capture and Shift-Tab back to Copy; confirm Space copies.
-   On fresh captures, test C, and test choosing the menu item again after
-   tabbing to Delete: focus and the outline must return to Copy. With multiple
-   pending captures, the menu must target the latest thumbnail. With no pending
-   captures, it must do nothing. With VoiceOver, confirm “Copy capture” is announced.
-   Focus routing is in the SwiftUI window layer, outside the adapter test seam;
-   these keyboard, visible-focus and VoiceOver checks require a manual run.
-   The thumbnail must disappear only on successful Copy. In Preview choose
-   File → New from Clipboard, then save as PNG at
-   `$PWD/.build/pasted-pattern.png`. This is the operator's paste action, not
-   a Frisket read of the general pasteboard. Run:
-
-   ```sh
-   .build/FrisketTestPattern --verify "$PWD/.build/pasted-pattern.png" 2
-   ```
-
-   Use `1` on a 1× display. Expected: 640×360 pixels at 2×, 320×180 at 1×,
-   correct four quadrants and black marker, and a PASS message. Record FAIL
-   verbatim without saving any personal pixels. The verifier normalizes to
-   sRGB, samples away from edges and permits 3/255 color-management rounding.
-   **Fix-pass colour rerun:** rebuild and relaunch the helper with its explicit
-   sRGB window colour space, then repeat this pasted-PNG verification on the
-   built-in wide-gamut 2× display. The earlier colour failure remains open
-   until this manual rerun passes; retain the ±3 tolerance. If it still fails,
-   investigate the capture's colour conversion, comparing the direct captured
-   PNG with the pasted PNG before Preview export in an authorized diagnostic run.
-   Repeat the capture on the external 1× display if available. A denied grant,
-   pixel mismatch or inaccessible Copy is an open failure, not a passed check.
-
-7. Quit Frisket. Rebuild with the **same signed command**, replace the bundle
-   at the **same install path**, and verify signature/entitlements/requirement.
-   Launch that path and repeat steps 5–6. There must be no new grant required.
-   Repeat this complete rebuild/install/launch/capture cycle **a second time**.
-   Do not use `tccutil reset`, ad-hoc signing or another app copy. Record both
-   designated requirements and both grant outcomes; investigate any changed
-   requirement or new prompt rather than calling persistence verified.
-
-8. Bring the synthetic helper forward and press Esc to close it. Record
-   pass/fail for launch, permission, display/scale, pixels, VO/keyboard Copy,
-   own-app exclusion, cancellation, and rebuilds 1 and 2. Keep only synthetic
-   exported images in ignored `.build/`; ticket status stays with the coordinator.
+Record PASS, FAIL or not run for: first grant, rebuild 1, rebuild 2, Esc
+without activation.

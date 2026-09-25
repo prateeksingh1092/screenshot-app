@@ -1,31 +1,16 @@
-# Ticket 22: Capture exclusion list
+# 22: The Capture exclusion list
 
-Pending operator checklist. Not executed by the implementer. Use a dedicated
-synthetic-only desktop and a test-pattern application with a stable bundle ID.
-No personal content, password managers, clipboard use, or captures in the repo.
-Obtain the required authorization before launches or capture.
+Set up as in [README.md](README.md). The package tests check that area, full
+screen and window picking honour the list. This file checks the Settings list
+and a real app. The list matches bundle IDs, so use a pattern app that has one;
+an unbundled window can't be excluded (decision 69).
 
-Record date, tested commit, OS/build, architecture, signature/bundle ID, display
-layout/scales, permission state, Full Keyboard Access and VoiceOver state.
-Record arm64 as not executed until an Apple-silicon run exists.
-
-1. With fresh test preferences, open Settings and verify the Capture exclusion
-   list is empty. Add the synthetic test-pattern application through Add App.
-   Cancel the picker once; verify no change. Add the same app twice; verify one
-   entry. Verify name and bundle identifier are readable, with accessible Add
-   and Remove controls using the keyboard and VoiceOver.
-2. Put that app's synthetic window on screen over a contrasting synthetic
-   background. Capture an area intersecting it, then the synthetic-only full
-   display. Verify the app's marker pixels are absent from the magnifier preview
-   and final images, and Frisket's own windows are absent as well. Leave another
-   synthetic app unlisted and verify its marker remains visible.
-3. Relaunch the signed build and repeat to verify persistence. Close/reopen the
-   listed synthetic app and test again (filtering must not depend on an old PID).
-4. Remove the app in Settings, capture again, and verify its marker returns
-   while Frisket stays excluded. Remove all entries and confirm empty state.
-5. Inspect local diagnostics: no application names or bundle identifiers.
-6. When window capture is integrated, repeat using the same
-   listed synthetic app. An excluded window must never produce its pixels.
-
-Window capture commands do not exist in this ticket's base.
-Those runtime cases remain pending integration, as do all checks above.
+1. In Settings › Capture exclusion list, the list starts empty ("No apps
+   added."). Add an app; cancel the picker once and nothing changes. Add the
+   same app twice: one entry. Its name and bundle ID are readable. Add and
+   Remove work by keyboard and VoiceOver.
+2. Show that app's window over the pattern. An area capture across it and a
+   ⌘⇧5 pick both leave it out. An app not on the list still shows.
+3. Relaunch Frisket, and separately quit and reopen the listed app. It is still
+   left out.
+4. Remove it: it shows again. Frisket's own windows stay left out.

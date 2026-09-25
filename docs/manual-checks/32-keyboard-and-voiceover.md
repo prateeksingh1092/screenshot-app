@@ -1,26 +1,18 @@
-# Ticket 32: keyboard and VoiceOver thumbnails (Prateek)
+# 32: Thumbnails by keyboard and VoiceOver
 
-**Pending; not executed by the implementer.** Run only with the installed signed
-debug build (see [app-build.md](../app-build.md)) and only against Frisket's
-synthetic test pattern (decisions 50 and 51). Never capture any other window,
-the full screen, or real content. On this Mac, record **arm64 not executed**.
+Set up as in [README.md](README.md). The harness checks that ⌘⇧2 sends keys to
+the Thumbnail and that its picture is named (`focus-latest`,
+`thumbnail-picture`). This file checks the rest by keyboard and ear.
 
-1. Record the date, `sw_vers`, `uname -m`, the tested commit, the code signature,
-   display layout, and Screen Recording state. Resolve permission with
-   [ticket 08](08-first-launch.md) if needed. Show the pattern with
-   `.build/FrisketTestPattern --show`.
-
-2. Take two area captures (⌃⌥⌘4, Return). Press **Focus Latest Thumbnail**
-   (⌃⌥⌘T). The newest card must become key with a visible Copy outline.
-   Auto-dismiss must not fire while the stack is key. Arrow-up moves to the
-   older card; arrow-down returns to the newest.
-
-3. With Full Keyboard Access on, complete every action from the keyboard only:
-   C copies, S saves, E opens the editor (Escape leaves it), Delete deletes,
-   Escape dismisses to History. Tab still reaches the on-card buttons.
-
-4. With VoiceOver on, each new card is announced. The card itself exposes
-   Copy, Save, Edit, Delete, and Close as custom actions that work without
-   hovering. Act on both cards from the VoiceOver rotor or actions menu.
-
-5. After the last card leaves, auto-dismiss must resume for the next capture.
+1. Take two captures (⌘⇧4, Return). Press ⌘⇧2. The newest Thumbnail takes
+   focus with a visible outline on Copy. It doesn't time out while focused.
+   Up arrow moves to the older one; down arrow comes back.
+2. With Full Keyboard Access on and no pointer: C copies, S saves, E opens the
+   editor, t copies the text, ⌫ deletes, Esc keeps it in History. Tab reaches
+   every button on the Thumbnail.
+3. With VoiceOver on, each new Thumbnail is announced. Its actions (Copy
+   capture, Save capture, Edit capture, Copy recognized text, Delete, Close)
+   work from the actions menu without hovering. A kept Thumbnail is read as
+   "Capture kept in History" and has no Edit or Delete.
+4. Copy Text on the pattern: the text isn't shown in Notification Center.
+5. After the last Thumbnail leaves, the next capture times out as usual.

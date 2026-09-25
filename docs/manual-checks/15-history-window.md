@@ -1,29 +1,18 @@
-# Ticket 15: History window (Prateek)
+# 15: History window
 
-**Pending; not executed by the implementer.** Run only with the installed signed
-debug build and only against Frisket's synthetic test pattern (decisions 50 and
-51). Never capture any other window, the full screen, or real content.
+Set up as in [README.md](README.md). The harness checks History Copy, Save,
+Delete and where the window opens (`history-copy`, `history-save`,
+`history-delete`, `history-display`).
 
-1. Record date, `sw_vers`, `uname -m`, commit, signature, display layout, and
-   Screen Recording state. On this Mac, record **arm64 not executed**.
-
-2. Take two synthetic captures and dismiss both (Esc or timeout). Open
-   **History** from the Frisket menu and with Control-Command-Y. Newest first.
-   Each row shows a preview, pixel size, and time. No file names or paths.
-
-3. **Copy, Save, drag, Delete.** Copy the newest row (button or C). Save (S)
-   writes a PNG to the export folder; History still lists the item. Drag the
-   preview to Desktop; History still lists it. Delete (Delete) removes the row
-   immediately; it must not appear in Trash. Confirm the owned History file is
-   gone.
-
-4. **No re-edit.** There is no Edit action. Selecting a row must not open the
-   editor.
-
-5. **Exclusion.** With the History window open, capture the synthetic pattern
-   (⌃⌥⌘4, Return). The History window must not appear in the capture.
-
-6. **Keyboard and VoiceOver.** Tab and arrows move. C/S/Delete act on the
-   selected row. VoiceOver must speak the capture size and time, not a path.
-
-7. Record PASS, FAIL, or not executed. Runtime claims stay pending until this run.
+1. Take two captures and let them go to History. Press ⌘⇧1. Rows are newest
+   first. Each shows a picture, its pixel size and its time, and no file name
+   or path.
+2. **Drag.** Drag a row's picture to the Desktop. The row stays in History.
+3. **Restore.** Select a row and press Return (Restore to Thumbnail). A kept
+   Thumbnail appears on the pointer's display, with no Edit. Restore it again:
+   still one Thumbnail. Let it time out: History still has one row.
+4. **No re-edit.** No row opens the editor.
+5. **Not captured.** With the History window open, capture the pattern (⌘⇧4,
+   Return). The window is not in the capture.
+6. **Keyboard and VoiceOver.** Tab and the arrows move between rows. Each row
+   is read once, with its size and time, never a path.
