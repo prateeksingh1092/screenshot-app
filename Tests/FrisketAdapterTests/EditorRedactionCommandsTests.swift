@@ -1161,6 +1161,7 @@ private func peakPhysicalFootprint() throws -> Int64 {
     try #require(result == KERN_SUCCESS)
     try #require(info.ledger_phys_footprint_peak > 0)
     return info.ledger_phys_footprint_peak
+}
 
 /// A drop target that writes the promised file with the production `DragPromiseWriter`, or cancels.
 private actor PromiseFileDragHandoff: DragHandoff {
