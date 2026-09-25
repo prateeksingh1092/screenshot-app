@@ -221,3 +221,57 @@ extension DragHandoffTests {
         }
     }
 }
+
+/// What `FilePromiseDragAdapter` does when the user cancels a drag (Esc, or a drop nowhere):
+/// the session ends without an accepted operation or a promise destination, so the promise is
+/// never written and delivery fails.
+private actor CancellingDragHandoff: DragHandoff {
+    private(set) var sessions = 0
+    func deliver(_ operation: DragFileOperation, image: DragImage, events: any DragCopyEvents) async throws -> DragDelivery {
+        sessions += 1
+        await events.dragSessionEnded()
+        return .failed
+    }
+}
+
+private func filesUnder(_ root: URL) -> [String] {
+    let base = root.resolvingSymlinksInPath().path
+    guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return [] }
+    var files: [String] = []
+    while let item = items.nextObject() as? URL {
+        if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true { continue }
+        files.append(String(item.resolvingSymlinksInPath().path.dropFirst(base.count + 1)))
+    }
+    return files.sorted()
+}
+
+extension DragHandoffTests {
+    /// D7 (DA-3, story 88): only a drop a destination accepts finalizes a drag. A cancelled drag
+    /// leaves the capture pending, with nothing in History and nothing on disk.
+    @Test(arguments: DragCaptureKind.allCases)
+    private func d7CancelledDragLeavesTheCapturePendingWithNothingOnDisk(kind: DragCaptureKind) async throws {
+        try await knownDefect("D7") {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let handoff = CancellingDragHandoff()
+            let source = DragPixels()
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: source, fullScreenSource: source,
+                clipboard: DragClipboard(), pendingByteLimit: source.bytes.count, history: HistoryStore(root: root),
+                drag: handoff, dragStaging: DragStagingLifetime(directory: root.appendingPathComponent("staging/drag")))
+            let revision = CaptureRevision(captureID: CaptureID(), number: 1)
+            #expect(await commands.execute(kind.command(revision.captureID, maximumBytes: source.bytes.count)) == .pending(revision))
+
+            guard case let .drag(outcome) = await commands.execute(.drag(revision, .copy)) else {
+                Issue.record("a drag command returns a drag outcome")
+                return
+            }
+            #expect(await handoff.sessions == 1)
+            #expect(outcome.delivery == .failed)
+            let entries = try await commands.historyEntries().get()
+            #expect(entries.isEmpty, "D7: a cancelled drag committed the capture to History")
+            #expect(filesUnder(root).isEmpty, "D7: a cancelled drag left files on disk: \(filesUnder(root))")
+            #expect(await commands.image(for: revision)?.pngData == source.bytes, "D7: the capture is still pending")
+            #expect(await commands.thumbnails().map(\.revision) == [revision], "D7: its Thumbnail is still open")
+        }
+    }
+}

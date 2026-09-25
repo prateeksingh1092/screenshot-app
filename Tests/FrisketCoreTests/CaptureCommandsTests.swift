@@ -352,3 +352,152 @@ extension CaptureCommandsTests {
         #expect(await commands.image(for: CaptureRevision(captureID: second, number: 1)) == nil)
     }
 }
+
+/// Holds one adapter call open so a test can issue a second command while the first is in progress.
+private actor Gate {
+    private var entered = false
+    private var opened = false
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+    private var held: CheckedContinuation<Void, Never>?
+
+    func pass() async {
+        entered = true
+        for waiter in enteredWaiters { waiter.resume() }
+        enteredWaiters = []
+        guard !opened else { return }
+        await withCheckedContinuation { held = $0 }
+    }
+
+    func waitUntilEntered() async {
+        guard !entered else { return }
+        await withCheckedContinuation { enteredWaiters.append($0) }
+    }
+
+    func open() {
+        opened = true
+        held?.resume()
+        held = nil
+    }
+}
+
+/// In-memory History whose Delete waits at a gate.
+private actor GatedDeleteHistory: CaptureHistory {
+    nonisolated let deleteGate = Gate()
+    private var stored: [CaptureID: (revision: UInt64, pngData: Data)] = [:]
+
+    func recover() async -> Result<HistoryRecoveryReport, HistoryFailure> { .failure(.unavailable) }
+    func availability() async -> HistoryFailure? { nil }
+    func finalize(_ request: AuthorizedFinalization) async -> CommitOutcome {
+        stored[request.revision.captureID] = (request.revision.number, request.pngData)
+        return .committed
+    }
+    func entries() async -> Result<[HistoryEntry], HistoryFailure> { .success([]) }
+    func delete(_ id: CaptureID) async -> Result<Void, HistoryFailure> {
+        await deleteGate.pass()
+        stored[id] = nil
+        return .success(())
+    }
+    func finalizedImage(_ id: CaptureID) async -> Result<(revision: UInt64, pngData: Data), HistoryFailure> {
+        guard let image = stored[id] else { return .failure(.unavailable) }
+        return .success(image)
+    }
+}
+
+private actor GatedImageClipboard: ImageClipboard {
+    nonisolated let gate = Gate()
+    func write(_ image: ClipboardImage) async -> Result<ClipboardReceipt, ClipboardFailure> {
+        await gate.pass()
+        return .success(ClipboardReceipt(changeCount: 5))
+    }
+}
+
+private actor GatedTextRecognizer: TextRecognizer {
+    nonisolated let gate = Gate()
+    func recognize(_ image: CaptureImage) async -> String {
+        await gate.pass()
+        return "words"
+    }
+}
+
+private actor WrittenText: TextClipboard {
+    private(set) var texts: [String] = []
+    func writeText(_ text: String) async -> Result<ClipboardReceipt, ClipboardFailure> {
+        texts.append(text)
+        return .success(ClipboardReceipt(changeCount: 9))
+    }
+}
+
+private struct WordsRecognizer: TextRecognizer {
+    func recognize(_ image: CaptureImage) async -> String { "words" }
+}
+
+extension CaptureCommandsTests {
+    /// D25: Delete from History takes the in-progress guard like every other command, so nothing
+    /// can deliver a capture while it is being deleted.
+    @Test func d25DeleteFromHistoryTakesTheInProgressGuard() async throws {
+        try await knownDefect("D25") {
+            let history = GatedDeleteHistory()
+            let clipboard = RecordingClipboard()
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
+                                                clipboard: clipboard, pendingByteLimit: 16, history: history)
+            let id = CaptureID()
+            let revision = CaptureRevision(captureID: id, number: 1)
+            #expect(await commands.execute(.capture(id, maximumBytes: 2)) == .pending(revision))
+            #expect(await commands.execute(.dismiss(revision)) == .finalized(revision, .committed))
+
+            async let deleting = commands.execute(.deleteHistory(id))
+            await history.deleteGate.waitUntilEntered()
+            let copied = await commands.execute(.copy(revision))
+            #expect(copied == .rejected(.commandInProgress), "D25: History Copy ran while the same capture was being deleted")
+            let written = await clipboard.images.count
+            #expect(written == 0, "D25: pixels of a capture being deleted reached the clipboard")
+            await history.deleteGate.open()
+            #expect(await deleting == .historyDeleted(id))
+        }
+    }
+
+    /// D25: Copy Text respects the in-progress guard: it waits its turn behind a Copy of the same capture.
+    @Test func d25CopyTextIsRejectedWhileACopyOfTheSameCaptureIsInProgress() async throws {
+        try await knownDefect("D25") {
+            let clipboard = GatedImageClipboard()
+            let text = WrittenText()
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
+                                                clipboard: clipboard, pendingByteLimit: 16,
+                                                textRecognizer: WordsRecognizer(), textClipboard: text)
+            let id = CaptureID()
+            let revision = CaptureRevision(captureID: id, number: 1)
+            #expect(await commands.execute(.capture(id, maximumBytes: 2)) == .pending(revision))
+
+            async let copying = commands.execute(.copy(revision))
+            await clipboard.gate.waitUntilEntered()
+            let read = await commands.execute(.copyRecognizedText(revision))
+            #expect(read == .rejected(.commandInProgress), "D25: Copy Text ran while a Copy of the same capture was in progress")
+            let texts = await text.texts
+            #expect(texts.isEmpty, "D25: Copy Text wrote the clipboard during another command")
+            await clipboard.gate.open()
+            #expect(await copying == .copy(CopyOutcome(revision: revision, commit: .notCommitted(.historyUnavailable),
+                                                        delivery: .copied(ClipboardReceipt(changeCount: 5)))))
+        }
+    }
+
+    /// D25: Copy Text takes the in-progress guard, so a Copy of the same capture waits for it.
+    @Test func d25CopyIsRejectedWhileCopyTextOfTheSameCaptureIsInProgress() async throws {
+        try await knownDefect("D25") {
+            let clipboard = RecordingClipboard()
+            let recognizer = GatedTextRecognizer()
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: FixturePixelSource(bytes: Data([1, 2])),
+                                                clipboard: clipboard, pendingByteLimit: 16,
+                                                textRecognizer: recognizer, textClipboard: WrittenText())
+            let id = CaptureID()
+            let revision = CaptureRevision(captureID: id, number: 1)
+            #expect(await commands.execute(.capture(id, maximumBytes: 2)) == .pending(revision))
+
+            async let reading = commands.execute(.copyRecognizedText(revision))
+            await recognizer.gate.waitUntilEntered()
+            let copied = await commands.execute(.copy(revision))
+            #expect(copied == .rejected(.commandInProgress), "D25: Copy ran while Copy Text of the same capture was in progress")
+            await recognizer.gate.open()
+            _ = await reading
+        }
+    }
+}

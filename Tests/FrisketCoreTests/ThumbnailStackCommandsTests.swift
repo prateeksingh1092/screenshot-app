@@ -1,5 +1,7 @@
+import CoreGraphics
 import Foundation
 import FrisketCore
+import ImageIO
 import Synchronization
 import Testing
 
@@ -390,5 +392,63 @@ extension ThumbnailStackCommandsTests {
         #expect(try await fixture.historyIDs().isEmpty)
         #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("history.sqlite").path))
         #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("images").path))
+    }
+}
+
+/// A synthetic noise PNG, too large for a small History limit. No screen content.
+private func noisePNG(width: Int, height: Int) throws -> Data {
+    var state: UInt64 = 0x9E37_79B9_7F4A_7C15
+    var bytes = [UInt8](repeating: 255, count: width * height * 4)
+    for index in stride(from: 0, to: bytes.count, by: 4) {
+        state ^= state << 13; state ^= state >> 7; state ^= state << 17
+        bytes[index] = UInt8(truncatingIfNeeded: state)
+        bytes[index + 1] = UInt8(truncatingIfNeeded: state >> 8)
+        bytes[index + 2] = UInt8(truncatingIfNeeded: state >> 16)
+    }
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                         space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+    let image = try #require(context.makeImage())
+    let data = NSMutableData()
+    let destination = try #require(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    try #require(CGImageDestinationFinalize(destination))
+    return data as Data
+}
+
+/// The first capture is too large for History's size limit; later ones are the small stack PNG.
+private actor OversizedFirstPixels: CapturePixelSource {
+    private let oversized: Data
+    private var captures = 0
+    init(oversized: Data) { self.oversized = oversized }
+    func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
+        captures += 1
+        return .success(CaptureImage(pngData: captures == 1 ? oversized : StackPixels.bytes))
+    }
+}
+
+extension ThumbnailStackCommandsTests {
+    /// D25: quit finalizes every Thumbnail it can and reports the rest, instead of stopping at the
+    /// first capture History refuses and silently leaving later captures unfinalized.
+    @Test func d25QuitFinalizesEveryCaptureItCanAndReportsTheRest() async throws {
+        try await knownDefect("D25") {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let oversizedPNG = try noisePNG(width: 700, height: 700)
+            #expect(oversizedPNG.count > 1_000_000)
+            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: OversizedFirstPixels(oversized: oversizedPNG),
+                clipboard: StackClipboard(), pendingByteLimit: 8_000_000,
+                history: HistoryStore(root: root, limits: HistoryLimits(maximumBytes: 1_000_000)))
+            let oversized = CaptureRevision(captureID: CaptureID(), number: 1)
+            let small = CaptureRevision(captureID: CaptureID(), number: 1)
+            #expect(await commands.execute(.capture(oversized.captureID, maximumBytes: 4_000_000)) == .pending(oversized))
+            #expect(await commands.execute(.capture(small.captureID, maximumBytes: 4_000_000)) == .pending(small))
+
+            let outcomes = await commands.handleSystemEvent(.quit)
+            #expect(outcomes == [.finalized(oversized, .notCommitted(.captureExceedsHistoryLimit)), .finalized(small, .committed)],
+                    "D25: quit stopped at the first capture History refused")
+            let committed = try await commands.historyEntries().get().map(\.captureID)
+            #expect(committed == [small.captureID], "D25: a capture History could accept was left unfinalized at quit")
+        }
     }
 }
