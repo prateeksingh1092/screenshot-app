@@ -6,7 +6,7 @@
 
 **Phase:** 1
 
-**Status:** ready-for-agent
+**Status:** resolved (tested on `main`; see Comments)
 
 - [x] The D19 test passes without the known-defect mark.
 - [x] Running recovery twice in a row leaves History consistent.
