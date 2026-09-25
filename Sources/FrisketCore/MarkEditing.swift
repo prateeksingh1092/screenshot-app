@@ -382,11 +382,29 @@ extension DocumentEdits {
     /// mark changed.
     @discardableResult public func release(_ grab: Grab, fromX: Double, fromY: Double, toX: Double, toY: Double,
                                            slop: Double = 0) -> Bool {
-        guard hypot(toX - fromX, toY - fromY) > slop else { return false }
-        if let handle = grab.handle {
-            return change(grab.mark, .resize(handle, x: toX + origin.x, y: toY + origin.y), verb: "Resize")
+        guard let (change, verb) = dragChange(grab, fromX: fromX, fromY: fromY, toX: toX, toY: toY, slop: slop) else {
+            return false
         }
-        return change(grab.mark, .move(dx: toX - fromX, dy: toY - fromY), verb: "Move")
+        return self.change(grab.mark, change, verb: verb)
+    }
+
+    /// The edits `release` would commit if the drag ended at `(toX, toY)`, or nil when it would
+    /// change nothing (ticket 97). It commits nothing and registers no undo step: the canvas renders
+    /// it on every drag event, and the drag stays one undo step, made on mouse-up (decision 77).
+    public func provisional(_ grab: Grab, fromX: Double, fromY: Double, toX: Double, toY: Double,
+                            slop: Double = 0) -> DocumentEdits? {
+        guard let (change, _) = dragChange(grab, fromX: fromX, fromY: fromY, toX: toX, toY: toY, slop: slop) else {
+            return nil
+        }
+        return edits.applying(change, to: grab.mark)
+    }
+
+    /// A handle resizes to the pointer; the body moves by the drag. Shorter than `slop` is a click.
+    private func dragChange(_ grab: Grab, fromX: Double, fromY: Double, toX: Double, toY: Double,
+                            slop: Double) -> (MarkChange, String)? {
+        guard hypot(toX - fromX, toY - fromY) > slop else { return nil }
+        if let handle = grab.handle { return (.resize(handle, x: toX + origin.x, y: toY + origin.y), "Resize") }
+        return (.move(dx: toX - fromX, dy: toY - fromY), "Move")
     }
 
     /// Tab and Shift-Tab: the next or previous mark in paint order. Returns false after the last
@@ -478,10 +496,16 @@ extension DocumentEdits {
 
     /// The selected mark's outline and handles, in canvas points, for drawing.
     public var selectionOutline: (box: MarkBox, handles: [(handle: MarkHandle, x: Double, y: Double)])? {
-        guard let mark = selection, let box = edits.bounds(of: mark) else { return nil }
-        let o = origin
+        selectionOutline(in: edits)
+    }
+
+    /// The selected mark's outline and handles as `shown` has them, such as a drag's provisional
+    /// edits (ticket 97), in canvas points.
+    public func selectionOutline(in shown: DocumentEdits) -> (box: MarkBox, handles: [(handle: MarkHandle, x: Double, y: Double)])? {
+        guard let mark = selection, let box = shown.bounds(of: mark) else { return nil }
+        let o = (x: shown.crop?.x ?? 0, y: shown.crop?.y ?? 0)
         return (MarkBox(x: box.x - o.x, y: box.y - o.y, width: box.width, height: box.height),
-                edits.handles(of: mark).map { ($0.handle, $0.x - o.x, $0.y - o.y) })
+                shown.handles(of: mark).map { ($0.handle, $0.x - o.x, $0.y - o.y) })
     }
 
     /// Every mark with its VoiceOver label and box in canvas points, in Tab order.
