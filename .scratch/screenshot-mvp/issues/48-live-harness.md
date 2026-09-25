@@ -11,7 +11,7 @@
 
 **Phase:** 0
 
-**Status:** in-progress (merged; the first unattended live run waits until Prateek is away)
+**Status:** resolved 2026-09-25 (clean full run on the built-in display; on the external display the fixed rows passed one by one)
 
 - [x] The harness tools build from the repository with one command, and `ci.sh` compiles them without running them.
 - [x] The driver refuses to send keys unless Frisket or the pattern window is frontmost, and refuses points outside every display.
