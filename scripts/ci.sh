@@ -1,7 +1,7 @@
 #!/bin/sh
 # Local CI (decision 57, DA-7): exits non-zero when the tree must not merge.
 #
-#   scripts/ci.sh            repository checks, package tests, unsigned app build
+#   scripts/ci.sh            repository checks, package tests, unsigned app build, harness compile
 #   scripts/ci.sh --defects  run the known-defect tests unwrapped and list the red ones
 #
 # The pre-push hook in .githooks runs the first form.
@@ -50,5 +50,8 @@ xcodebuild -quiet -project Frisket.xcodeproj -scheme Frisket \
   -clonedSourcePackagesDirPath "$root/.build/SourcePackages" \
   -onlyUsePackageVersionsFromResolvedFile -disableAutomaticPackageResolution \
   CODE_SIGNING_ALLOWED=NO build
+
+echo "== live harness (compile only)"
+"$root/Tools/LiveHarness/build.sh"
 
 echo "ci: green"
