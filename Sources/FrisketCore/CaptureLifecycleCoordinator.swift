@@ -338,6 +338,7 @@ actor CaptureLifecycleCoordinator {
                 images[id] = image
                 revisions[id] = 1
                 stack.insert(CaptureRevision(captureID: id, number: 1), at: clock())
+                if let display = image.displayID { stack.assignDisplay(id, displayID: display) }
                 return .pending(CaptureRevision(captureID: id, number: 1))
             case let .failure(.permissionRequired(state)):
                 return .permissionRequired(state)

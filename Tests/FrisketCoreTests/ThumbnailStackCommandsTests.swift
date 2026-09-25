@@ -452,3 +452,25 @@ extension ThumbnailStackCommandsTests {
         #expect(committed == [small.captureID], "D25: a capture History could accept was left unfinalized at quit")
     }
 }
+
+private struct DisplayPixels: CapturePixelSource {
+    let displayID: UInt32?
+    func capture(maximumBytes: Int) async -> Result<CaptureImage, CaptureSourceFailure> {
+        .success(CaptureImage(pngData: StackPixels.bytes, displayID: displayID))
+    }
+}
+
+extension ThumbnailStackCommandsTests {
+    /// Ticket 75: the capture itself names its display; no side channel reports it afterwards.
+    @Test(arguments: [UInt32(2), nil])
+    func thumbnailAppearsOnTheDisplayTheCaptureCameFrom(display: UInt32?) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: DisplayPixels(displayID: display),
+            clipboard: StackClipboard(), pendingByteLimit: 1024, history: HistoryStore(root: root))
+        let id = CaptureID()
+        try #require(await commands.execute(.capture(id, maximumBytes: 128)) == .pending(CaptureRevision(captureID: id, number: 1)))
+        #expect(await commands.thumbnails().map(\.displayID) == [display])
+        #expect(await commands.image(for: CaptureRevision(captureID: id, number: 1))?.displayID == display)
+    }
+}

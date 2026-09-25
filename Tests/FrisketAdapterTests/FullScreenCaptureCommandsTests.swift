@@ -4,13 +4,13 @@ import FrisketCore
 import Testing
 
 @MainActor private final class FixtureDisplayPlatform: FullScreenCapturePlatform {
-    let display: FullScreenDisplay
+    let display: SelectionDisplay
     var request: AreaCaptureRequest?
     init(frame: CGRect, scale: CGFloat) {
-        display = FullScreenDisplay(displayID: 42, frame: frame, scale: scale)
+        display = SelectionDisplay(id: 42, frame: frame, scale: scale)
     }
     func prefetchShareableContent() {}
-    func displayUnderPointer() -> FullScreenDisplay? { display }
+    func displayUnderPointer() -> SelectionDisplay? { display }
     func finishCapture() {}
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
         self.request = request
@@ -72,6 +72,7 @@ private actor FixtureClipboard: ImageClipboard {
         #expect(await commands.execute(.captureFullScreen(id, maximumBytes: 16_000_000)) == .pending(revision))
         let request = try #require(platform.request)
         #expect(request.displayID == 42)
+        #expect(await commands.thumbnails().map(\.displayID) == [42], "Ticket 75: the Thumbnail goes to the captured display")
         #expect(request.sourceRect == CGRect(x: 0, y: 0, width: 800, height: 600))
         #expect(request.pixelWidth == width)
         #expect(request.pixelHeight == height)

@@ -65,7 +65,7 @@ import FrisketCore
         commands = CaptureCommandLayer(permission: permission, source: AreaCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency, decodedByteCeiling: budgets.stillDecodedBytes),
             fullScreenSource: FullScreenCaptureSource(platform: platform, bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }, latency: latency, decodedByteCeiling: budgets.stillDecodedBytes),
             windowSource: WindowCaptureSource(platform: windowPlatform, ownProcessID: ProcessInfo.processInfo.processIdentifier,
-                bundleIdentifier: identity.bundleIdentifier),
+                bundleIdentifier: identity.bundleIdentifier, exclusions: { [exclusions] in exclusions.bundleIdentifiers }),
             clipboard: pasteboard, pendingByteLimit: budgets.pendingSessionEncodedBytes,
             history: HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits),
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
@@ -88,8 +88,6 @@ import FrisketCore
                 }
             }
             let presentation = CaptureSurfaces(commands: commands, drag: dragAdapter, latency: latency,
-                areaDisplayID: { [weak platform] in platform?.captureDisplayID },
-                windowDisplayID: { [weak windowPlatform] in windowPlatform?.captureDisplayID },
                 notify: { [weak self] title, message in self?.notice(title, message) },
                 refreshHistory: { [weak self] in
                     if let self { await self.refreshHistorySurfaces() }

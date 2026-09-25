@@ -213,6 +213,13 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
 63. **Saved shortcuts outlive removed actions (coordinator, 2026-09-25, ticket 87):** `ShortcutAction.savedBindings(from:)` skips actions it no longer knows, such as `captureScrolling`. Without this, the saved `globalShortcuts.v1` preference would stop decoding and silently reset every shortcut the user had customised. Two tests cover it.
     - **Drift check:** `Checks/check_drift.py` runs in `ci.sh` and fails when a term retired by a decision (listed in `Checks/retired-terms.tsv`) appears in a live file.
 
+64. **One Region request; window listings joined in the core (coordinator's delegate, 2026-09-25, ticket 75; decisions 57 and 60):**
+    - **Region request:** the core's `RegionRequest.area`/`.fullScreen` turn a Selection or a whole display into the display ID, the display-local top-left source rectangle snapped to pixels, and the output size. The adapters no longer compute it.
+    - **Displays and flips:** `CaptureDisplays` is the one place that finds a display by pointer (D14 rule), by ID or by largest overlap with a window, and the one place that flips between AppKit and top-left global coordinates.
+    - **Display ID:** `CaptureImage` carries `displayID`, and the coordinator assigns the Thumbnail's display from it. The `captureDisplayID` side channels on both platforms are removed.
+    - **Window listings:** `WindowSelection(rows:excluding:…)` joins the window-server list with ScreenCaptureKit's shareable windows and filters them, including the Capture exclusion list, so window mode's exclusion is package-tested.
+    - **Not done here:** the area platform's step-by-step protocol (prefetch, prepare, select, hide, capture, finish) stays; collapsing it to `select`/`capture` would move the ordering tests behind AppKit. Ticket 77 (adapters as a product) may revisit it.
+
 
 ## Evaluation update: Xcode question resolved narrowly
 

@@ -14,8 +14,19 @@ private func window(_ id: UInt32, x: Double = -800, y: Double = -200,
         layer: layer, isOnScreen: onScreen, isMinimized: minimized)
 }
 
+/// Both listings as the live platform fetches them: the same windows, in front-to-back order in the
+/// window list and in reverse (arbitrary) order in ScreenCaptureKit.
+private func rows(_ windows: [WindowCandidate]) -> WindowRows {
+    WindowRows(
+        ordered: windows.map { WindowListRow(id: $0.id, ownerProcessID: $0.ownerProcessID, layer: $0.layer,
+                                             isOnScreen: $0.isOnScreen && !$0.isMinimized) },
+        shareable: windows.reversed().map { ShareableWindowRow(id: $0.id, ownerProcessID: $0.ownerProcessID,
+            bundleIdentifier: $0.bundleIdentifier, frame: $0.frame, layer: $0.layer, isOnScreen: $0.isOnScreen) })
+}
+
 @MainActor private final class FixtureWindowPlatform: WindowCapturePlatform {
     var windows = [window(7), window(8)] // Front to back; IDs do not encode order.
+    var connectedDisplays: [SelectionDisplay] = []
     var pointer: CGPoint? = CGPoint(x: -500, y: -50)
     var captured: [UInt32] = []
     var selectionVisible = false
@@ -33,7 +44,8 @@ private func window(_ id: UInt32, x: Double = -800, y: Double = -200,
         await withCheckedContinuation { preparationStarted = $0 }
     }
     func releasePreparation() { preparationRelease?.resume(); preparationRelease = nil }
-    func prepareWindows() async throws -> [WindowCandidate] {
+    func displays() -> [SelectionDisplay] { connectedDisplays }
+    func prepareWindows() async throws -> WindowRows {
         prepared = true
         if suspendPreparation {
             await withCheckedContinuation {
@@ -43,7 +55,7 @@ private func window(_ id: UInt32, x: Double = -800, y: Double = -200,
             }
         }
         if let prepareFailure { throw prepareFailure }
-        return windows
+        return rows(windows)
     }
     func selectWindow(from selection: WindowSelection) async -> UInt32? {
         selections += 1
@@ -346,5 +358,37 @@ extension WindowCaptureCommandsTests {
         #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .captureFailed(.window(cause)))
         platform.captureFailure = nil
         #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(CaptureRevision(captureID: id, number: 1)))
+    }
+}
+
+extension WindowCaptureCommandsTests {
+    /// Ticket 75: `WindowSelection(rows:)` applies the Capture exclusion list in window mode too,
+    /// so an excluded app's window is never offered, even in front under the pointer.
+    @Test func excludedAppsWindowIsNeverOffered() async {
+        let platform = FixtureWindowPlatform()
+        platform.windows = [window(7, bundle: "test.synthetic-vault"), window(8)]
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+            windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle,
+                                              exclusions: { ["test.synthetic-vault"] }),
+            clipboard: WindowClipboard(), pendingByteLimit: 1024)
+        let id = CaptureID()
+        #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(CaptureRevision(captureID: id, number: 1)))
+        #expect(platform.offered == [8])
+        #expect(platform.captured == [8])
+    }
+
+    /// Ticket 75: the capture names the display holding most of the window; no side channel reports it.
+    @Test func windowThumbnailGoesToTheDisplayHoldingMostOfTheWindow() async {
+        let platform = FixtureWindowPlatform() // Window 7: top-left (-800, -200), 600 x 400.
+        platform.connectedDisplays = [
+            SelectionDisplay(id: 1, frame: CGRect(x: 0, y: 0, width: 1440, height: 900), scale: 2),
+            SelectionDisplay(id: 2, frame: CGRect(x: -1920, y: -180, width: 1920, height: 1080), scale: 1)
+        ]
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: UnavailablePixels(),
+            windowSource: WindowCaptureSource(platform: platform, ownProcessID: 42, bundleIdentifier: ownBundle),
+            clipboard: WindowClipboard(), pendingByteLimit: 1024)
+        let id = CaptureID()
+        #expect(await commands.execute(.captureWindow(id, maximumBytes: 1024)) == .pending(CaptureRevision(captureID: id, number: 1)))
+        #expect(await commands.thumbnails().map(\.displayID) == [2])
     }
 }

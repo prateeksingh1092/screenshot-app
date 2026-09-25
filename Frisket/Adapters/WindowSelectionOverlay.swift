@@ -12,7 +12,7 @@ import FrisketCore
     private var selection: WindowSelection?
     private var highlighted: WindowCandidate?
     private var completion: CheckedContinuation<UInt32?, Never>?
-    private var primaryTop: CGFloat = 0
+    private var displays = CaptureDisplays([])
 
     override init() {
         super.init()
@@ -23,12 +23,13 @@ import FrisketCore
     }
 
     func select(from selection: WindowSelection) async -> UInt32? {
-        guard completion == nil, !selection.candidates.isEmpty,
-              let primary = NSScreen.screens.first else { return nil }
+        let displays = CaptureDisplays(NSScreen.screens.compactMap(\.selectionDisplay))
+        guard completion == nil, !selection.candidates.isEmpty, !displays.displays.isEmpty else { return nil }
         self.selection = selection
-        primaryTop = primary.frame.maxY
+        self.displays = displays
         let pointer = NSEvent.mouseLocation
-        highlighted = selection.window(at: CGPoint(x: pointer.x, y: primaryTop - pointer.y))
+        let pointerDisplay = displays.display(at: pointer)   // D14: top row included
+        highlighted = selection.window(at: displays.flipped(pointer))
         return await withCheckedContinuation { continuation in
             completion = continuation
             var keyPanel: WindowSelectionPanel?
@@ -47,7 +48,7 @@ import FrisketCore
                 panel.isRestorable = false
                 panel.animationBehavior = .none
                 panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-                let view = WindowSelectionView(screenFrame: screen.frame, primaryTop: primaryTop,
+                let view = WindowSelectionView(screenFrame: screen.frame, displays: displays,
                     scale: screen.backingScaleFactor,
                     hover: { [weak self] point in self?.hover(at: point) },
                     accept: { [weak self] in self?.accept() },
@@ -56,7 +57,7 @@ import FrisketCore
                 panel.contentView = view
                 panels.append(panel)
                 panel.orderFrontRegardless()
-                if NSMouseInRect(pointer, screen.frame, false) { keyPanel = panel }   // D14: top row included
+                if let pointerDisplay, screen.selectionDisplay?.id == pointerDisplay.id { keyPanel = panel }
             }
             redraw()
             if let panel = keyPanel ?? panels.first {
@@ -108,7 +109,7 @@ import FrisketCore
 
 @MainActor private final class WindowSelectionView: NSView {
     private let screenFrame: CGRect
-    private let primaryTop: CGFloat
+    private let displays: CaptureDisplays
     private let scale: CGFloat
     private let hover: (CGPoint) -> Void
     private let accept: () -> Void
@@ -118,10 +119,10 @@ import FrisketCore
     override var acceptsFirstResponder: Bool { true }
     override var needsPanelToBecomeKey: Bool { true }
 
-    init(screenFrame: CGRect, primaryTop: CGFloat, scale: CGFloat, hover: @escaping (CGPoint) -> Void,
+    init(screenFrame: CGRect, displays: CaptureDisplays, scale: CGFloat, hover: @escaping (CGPoint) -> Void,
          accept: @escaping () -> Void, cycle: @escaping (Int) -> Void, cancel: @escaping () -> Void) {
         self.screenFrame = screenFrame
-        self.primaryTop = primaryTop
+        self.displays = displays
         self.scale = scale
         self.hover = hover
         self.accept = accept
@@ -146,9 +147,7 @@ import FrisketCore
         NSColor.black.withAlphaComponent(0.40).setFill()
         bounds.fill()
         if let highlight {
-            let rect = CGRect(x: highlight.minX - screenFrame.minX,
-                y: primaryTop - highlight.maxY - screenFrame.minY,
-                width: highlight.width, height: highlight.height)
+            let rect = displays.flipped(highlight).offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY)
             NSColor.clear.setFill()
             rect.fill(using: .copy)
             drawCutMarks(rect, scale: scale)
@@ -158,7 +157,7 @@ import FrisketCore
     }
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        hover(CGPoint(x: point.x + screenFrame.minX, y: primaryTop - point.y - screenFrame.minY))
+        hover(displays.flipped(CGPoint(x: point.x + screenFrame.minX, y: point.y + screenFrame.minY)))
     }
     override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
     override func mouseDown(with event: NSEvent) { mouseMoved(with: event); accept() }

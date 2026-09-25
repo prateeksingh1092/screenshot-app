@@ -49,8 +49,8 @@ import Testing
                       scale: display.scale, spaceGeneration: real.spaceGeneration)
     }
     func hideSelection() {}
-    func displayUnderPointer() -> FullScreenDisplay? {
-        FullScreenDisplay(displayID: display.id, frame: display.frame, scale: display.scale)
+    func displayUnderPointer() -> SelectionDisplay? {
+        SelectionDisplay(id: display.id, frame: display.frame, scale: display.scale)
     }
     func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
         try await real.capture(request, maximumBytes: maximumBytes)
