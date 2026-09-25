@@ -1,3 +1,8 @@
+> **2026-09-25 13:44, final state:** `main` at `118d09f` (ci green, 424 tests); signed build `118d09f` installed. Full live matrix **29/29 on both displays** (runs `20260925-133157`, `-133746`).
+> - Since the locked-screen note: ticket 94's six rows calibrated (harness faults: Undo name read from Edit menu, pop-up values, toolbar item labels); D31 found and fixed (ticket 96, decision 90: marks readable by VoiceOver).
+> - Environmental hazards seen: displays sleep and the Mac locks while Prateek is away (hold `caffeinate -d -i -u` during runs); FindMyMacMessenger once took the front mid-row (rerun passed).
+> - **Only ticket 83 remains:** Prateek's acceptance test, now look-and-feel only (15 min per part).
+>
 > **2026-09-25 13:06: blocked on a locked screen.** `main` is at `99ed2d6`, `ci.sh` green (422 tests). Signed build `99ed2d6` is installed; the previous build is in `.build/Frisket-previous-*`.
 > - **Merged since the 23/23 run:** 94 (six new live rows: `history-restore`, `editor-undo-names`, `editor-mark-keyboard`, `editor-curved-arrow`, `editor-label-typed`, `editor-style-bar`), 95 (review fixes, decision 89) and decision 88 (Box labels stay opaque, Prateek).
 > - **Not yet run live:** the six new rows. Their first attempt hit the lock screen: `loginwindow` was frontmost and `drive` refused every event. The displays also sleep within seconds while Prateek is away. Hold `caffeinate -d -i -u -t 2400` in the background during runs.
