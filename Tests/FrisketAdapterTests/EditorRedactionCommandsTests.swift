@@ -136,12 +136,18 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
     let outputWidth: Int
     let outputHeight: Int
     let covered: [(columns: ClosedRange<Int>, rows: ClosedRange<Int>)]
-    var testDescription: String { "crop \(Int(scale))x" }
+    var testDescription: String { "crop \(Int(scale))x at \(crop.x),\(crop.y)" }
 
     static let all = [
         CropCanary(scale: 1, source: CanaryCase.all[0], crop: (10, 8, 18, 14),
                    outputWidth: 18, outputHeight: 14, covered: [(0...4, 0...1), (10...17, 7...12)]),
         CropCanary(scale: 2, source: CanaryCase.all[1], crop: (10, 8, 18, 14),
+                   outputWidth: 36, outputHeight: 28, covered: [(0...8, 0...3), (20...35, 14...24)]),
+        // D18: fractional crops snap outward to base pixels 10..<29 × 8..<22 (1×) and 20..<56 × 16..<44 (2×).
+        // Each redaction must still cover exactly its canary pixels, shifted by that whole-pixel origin.
+        CropCanary(scale: 1, source: CanaryCase.all[0], crop: (10.5, 8.25, 17.75, 13.5),
+                   outputWidth: 19, outputHeight: 14, covered: [(0...4, 0...1), (10...18, 7...12)]),
+        CropCanary(scale: 2, source: CanaryCase.all[1], crop: (10.25, 8.25, 17.75, 13.5),
                    outputWidth: 36, outputHeight: 28, covered: [(0...8, 0...3), (20...35, 14...24)])
     ]
 
@@ -151,18 +157,22 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
                         sourceLocation: SourceLocation = #_sourceLocation) {
         #expect(output.width == outputWidth && output.height == outputHeight, sourceLocation: sourceLocation)
         guard output.width == outputWidth, output.height == outputHeight else { return }
-        var coveredMismatches = 0, canaries = 0
+        var coveredMismatches = 0, canaries = 0, uncoveredMismatches = 0
         for y in 0..<outputHeight {
             for x in 0..<outputWidth {
                 let pixel = output.pixels[y * outputWidth + x]
                 if source.canaries.contains(pixel) { canaries += 1 }
                 if covered.contains(where: { $0.columns.contains(x) && $0.rows.contains(y) }) {
                     coveredMismatches += pixel == opaqueBlack ? 0 : 1
+                } else {
+                    uncoveredMismatches += pixel == background ? 0 : 1
                 }
             }
         }
         #expect(coveredMismatches == 0, sourceLocation: sourceLocation)
-        #expect(canaries == 0, sourceLocation: sourceLocation)
+        #expect(canaries == 0, "D18: an original pixel under a Solid redaction shows", sourceLocation: sourceLocation)
+        #expect(uncoveredMismatches == 0, "D18: the redaction moved onto content it does not cover",
+                sourceLocation: sourceLocation)
     }
 }
 

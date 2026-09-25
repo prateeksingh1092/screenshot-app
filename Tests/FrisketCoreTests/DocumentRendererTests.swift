@@ -112,7 +112,7 @@ private func picture(_ rows: [String]) throws -> Bitmap {
     /// rows 0..<2, the canary `a` pixels, so in the cropped output it must cover columns 1..<3.
     /// The renderer shifts it by the crop's fractional 0.25 instead, covering columns 0..<2 and
     /// leaving base column 3 visible beside it.
-    @Test func d18FractionalCropKeepsTheRedactionOnTheContentItCovers() async throws {
+    @Test func d18FractionalCropKeepsTheRedactionOnTheContentItCovers() throws {
         let base = try picture([
             "..aa..",
             "..aa..",
@@ -125,11 +125,9 @@ private func picture(_ rows: [String]) throws -> Bitmap {
             ".##.",
             "...."
         ])
-        try await knownDefect("D18") {
-            #expect(!rendered.contains(palette["a"]!),
-                    "D18: an original pixel under the Solid redaction shows at the crop edge")
-            #expect(rendered == expected, "D18: the redaction moved off the content it covers after a fractional crop")
-        }
+        #expect(!rendered.contains(palette["a"]!),
+                "D18: an original pixel under the Solid redaction shows at the crop edge")
+        #expect(rendered == expected, "D18: the redaction moved off the content it covers after a fractional crop")
     }
 
     /// D18 at 2×: this test used to lock a redaction shifted by the crop's fractional edge.
@@ -137,7 +135,7 @@ private func picture(_ rows: [String]) throws -> Bitmap {
     /// covers base pixels 2.5..<4 × 1..<2, so columns 2..<4 of row 1 (the canary `a` pixels),
     /// which are cropped columns 1..<3 of cropped row 1. The renderer subtracts the unsnapped
     /// crop origin and also blacks out cropped row 0, content the user never selected.
-    @Test func d18TwoTimesCropKeepsTheRedactionOnItsContent() async throws {
+    @Test func d18TwoTimesCropKeepsTheRedactionOnItsContent() throws {
         let base = try picture([
             "........",
             "..aa....",
@@ -151,9 +149,27 @@ private func picture(_ rows: [String]) throws -> Bitmap {
             "....."
         ])
         #expect(!rendered.contains(palette["a"]!), "the canary stays concealed either way")
-        try await knownDefect("D18") {
-            #expect(rendered == expected, "D18: the redaction moved off the content it covers after a fractional 2× crop")
+        #expect(rendered == expected, "D18: the redaction moved off the content it covers after a fractional 2× crop")
+    }
+
+    /// D18: a crop only removes pixels. At any fractional crop origin and scale, rendering with the
+    /// crop equals rendering without it and then keeping the crop's snapped whole-pixel window.
+    @Test(arguments: [1.0, 2.0], [0.25, 0.5, 0.75])
+    func fractionalCropEqualsCroppingTheUncroppedRender(scale: Double, fraction: Double) throws {
+        let side = Int(12 * scale)
+        let pixels = (0..<(side * side)).map { index in
+            RGBAPixel(red: UInt8(index % 251), green: UInt8(index / side), blue: 0x60, alpha: 0xff)
         }
+        let base = try #require(Bitmap(width: side, height: side, pixels: pixels))
+        let redactions = [(2.1, 1.6, 1.3, 2.2), (5 + fraction, 4 - fraction, 2.5, 1.75), (8.4, 7.9, 3, 3)]
+        let crop = (1 + fraction, 1 + fraction / 2, 8.5, 7.25)
+        let whole = try render(base, scale: scale, redactions)
+        let cropped = try render(base, scale: scale, crop: crop, redactions)
+        let minX = Int((crop.0 * scale).rounded(.down)), minY = Int((crop.1 * scale).rounded(.down))
+        let maxX = Int(((crop.0 + crop.2) * scale).rounded(.up)), maxY = Int(((crop.1 + crop.3) * scale).rounded(.up))
+        let window = (minY..<maxY).flatMap { y in (minX..<maxX).map { x in whole.pixel(x: x, y: y)! } }
+        #expect(cropped == Bitmap(width: maxX - minX, height: maxY - minY, pixels: window),
+                "D18: a fractional crop moved a redaction relative to the content it covers")
     }
 
     @Test func renderEqualsAnIndependentCropThenRedactSnapshot() throws {
