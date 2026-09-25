@@ -11,7 +11,7 @@
 
 **Phase:** 0
 
-**Status:** ready-for-agent
+**Status:** in-progress (merged; the first unattended live run waits until Prateek is away)
 
 - [x] The harness tools build from the repository with one command, and `ci.sh` compiles them without running them.
 - [x] The driver refuses to send keys unless Frisket or the pattern window is frontmost, and refuses points outside every display.
@@ -54,3 +54,7 @@ Claude Opus 5.5, Claude Code, medium effort. Branch `ticket/48-live-harness`. No
   - Evidence is cropped to the pattern window. Evidence and the report go to `.build/live-harness/runs/<time>/`, which git ignores, as it does `*.png`.
 - **Open:** the unattended run needs Prateek away. The first live run will calibrate the steps that depend on UI geometry (README "Calibration").
 - **CI:** `scripts/ci.sh` is green in the worktree: 292 tests in 45 suites and 8 known issues; the unsigned build and the harness compile succeeded.
+
+### 2026-09-24: coordinator, merged
+
+Merged into `main`; at `ce152d4`, `ci.sh` compiles the harness. Still open: the first unattended run and calibrating the rows from its logs.

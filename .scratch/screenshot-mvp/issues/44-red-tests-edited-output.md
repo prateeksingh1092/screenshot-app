@@ -6,7 +6,7 @@
 
 **Phase:** 0
 
-**Status:** ready-for-agent
+**Status:** resolved (tested on `main` at `ce152d4`)
 
 - [x] D1: for generated documents with every annotation and effect kind, at several strip heights and image heights from 8 to 2,000 px, the strip output equals the whole-image render.
 - [x] D1: the decoded saved output of an edited capture equals the whole-image render, through the save path the app uses.
@@ -47,3 +47,7 @@ Every test below is wrapped in `knownDefect`. Unwrapped (`FRISKET_SHOW_DEFECTS=1
 - 60 drops both D18 wrappers.
 - 66 drops D6 and the label/arrow part of D23, and 68 drops the rest of D23.
 - 67 drops D21.
+
+### 2026-09-24: coordinator, resolved
+
+Merged into `main`. At `ce152d4`, `scripts/ci.sh` is green (320 tests in 52 suites, 101 known issues), and `ci.sh --defects` lists this ticket's tests as red. x86_64 only.

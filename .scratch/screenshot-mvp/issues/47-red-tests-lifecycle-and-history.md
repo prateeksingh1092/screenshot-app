@@ -6,7 +6,7 @@
 
 **Phase:** 0
 
-**Status:** ready-for-agent
+**Status:** resolved (tested on `main` at `ce152d4`)
 
 - [x] D7: a drag session that ends without a promise write leaves no file on disk and no History row. It uses the real drag lifetime, not the fake that always fires both events.
 - [x] D8: Copy Text with an empty recognition result leaves the clipboard's change count and contents unchanged.
@@ -55,3 +55,7 @@ Claude Opus 5.5, Claude Code, medium effort. Branch `ticket/47-red-tests-lifecyc
 **Other notes.**
 - **Flake:** `HistoryRecoveryTests.tierOneRecoversEveryInterruptedCommitTwice(.recordRenamed)` failed once with `.rootLocked` at load average 15, with other worktrees building. It passed 5/5 alone and on the `ci.sh` rerun. It predates this ticket.
 - **Compiler quirk:** inside a `knownDefect` closure, `#expect(try await …, "comment")` doesn't compile ("errors thrown from here are not handled"), and `await` inside a comment interpolation is rejected. Hoist the value into a `let` first.
+
+### 2026-09-24: coordinator, resolved
+
+Merged into `main`. At `ce152d4`, `scripts/ci.sh` is green (320 tests in 52 suites, 101 known issues), and `ci.sh --defects` lists this ticket's tests as red. x86_64 only.

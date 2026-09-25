@@ -6,7 +6,7 @@
 
 **Phase:** 0
 
-**Status:** ready-for-agent
+**Status:** resolved (tested on `main` at `ce152d4`)
 
 - [x] D2, through `WindowSelection`: with a cursor-like window above a normal window, the normal window is picked.
 - [ ] D2: when no window can be picked, the failure names that cause, not "smaller area".
@@ -57,3 +57,7 @@ Claude Opus 5.5, Claude Code, medium effort. Branch `ticket/45-red-tests-choosin
 - `scripts/ci.sh` in the worktree: `ci: green`, 298 tests in 47 suites, with the unsigned app build.
 - `scripts/ci.sh --defects` lists d14, d22, `d2WindowCaptureTakesTheWindowUnderTheCursorNotTheCursor` and `d2WindowUnderThePointerIsPickedNotSystemChrome` as red.
 - The first `ci.sh` run hit an intermittent, unrelated failure: `HistoryRecoveryTests.tierOneRecoversEveryInterruptedCommitTwice(.imageRenamed)` threw `.rootLocked`. It passed alone and on the next full run. It looks like the interrupted store's `flock` is not yet released when recovery reopens the root; it may show up under load.
+
+### 2026-09-24: coordinator, resolved
+
+Merged into `main`. At `ce152d4`, `scripts/ci.sh` is green (320 tests in 52 suites, 101 known issues), and `ci.sh --defects` lists this ticket's tests as red. x86_64 only.

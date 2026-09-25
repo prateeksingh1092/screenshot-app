@@ -6,7 +6,7 @@
 
 **Phase:** 0
 
-**Status:** ready-for-agent
+**Status:** resolved (tested on `main` at `ce152d4`)
 
 - [x] A round-trip test through `ingest` covers steady and mid-step scrolls, uniform bands and repeating content. Each result equals the page exactly.
 - [x] A flick on periodic content either equals the page or is reported as ambiguous. A result that is silently short or wrong fails.
@@ -59,3 +59,7 @@ Claude Opus 5.5, Claude Code, medium effort. Branch `ticket/46-red-tests-scrolli
 **Left open.**
 - D20's second half is not covered at this seam: the coordinator refuses a whole capture whose final PNG exceeds 128 MB (`CaptureLifecycleCoordinator`).
 - After the D20 fix, the O(n²) preview rebuild will dominate this test's run time, until ticket 72 makes the preview incremental.
+
+### 2026-09-24: coordinator, resolved
+
+Merged into `main`. At `ce152d4`, `scripts/ci.sh` is green (320 tests in 52 suites, 101 known issues), and `ci.sh --defects` lists this ticket's tests as red. x86_64 only.
