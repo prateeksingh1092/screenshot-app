@@ -336,14 +336,16 @@ extension ThumbnailStackCommandsTests {
         #expect(try await fixture.historyIDs() == [first.captureID, second.captureID])
     }
 
-    @Test func quitStopsWhenACommitFailsAndLeavesLaterCardsPending() async throws {
+    /// D25: quit tries every Thumbnail; each one History refuses stays pending and is reported.
+    @Test func quitTriesEveryCardWhenHistoryIsBlockedAndLeavesThemPending() async throws {
         let fixture = StackFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let first = try await fixture.capture()
         let second = try await fixture.capture()
         try Data("blocked history root".utf8).write(to: fixture.root)
         #expect(await fixture.commands.handleSystemEvent(.quit) == [
-            .finalized(first, .notCommitted(.historyUnavailable))
+            .finalized(first, .notCommitted(.historyUnavailable)),
+            .finalized(second, .notCommitted(.historyUnavailable))
         ])
         try FileManager.default.removeItem(at: fixture.root)
         #expect(await fixture.commands.thumbnails().map(\.revision) == [second, first])
@@ -431,24 +433,22 @@ extension ThumbnailStackCommandsTests {
     /// D25: quit finalizes every Thumbnail it can and reports the rest, instead of stopping at the
     /// first capture History refuses and silently leaving later captures unfinalized.
     @Test func d25QuitFinalizesEveryCaptureItCanAndReportsTheRest() async throws {
-        try await knownDefect("D25") {
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
-            defer { try? FileManager.default.removeItem(at: root) }
-            let oversizedPNG = try noisePNG(width: 700, height: 700)
-            #expect(oversizedPNG.count > 1_000_000)
-            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: OversizedFirstPixels(oversized: oversizedPNG),
-                clipboard: StackClipboard(), pendingByteLimit: 8_000_000,
-                history: HistoryStore(root: root, limits: HistoryLimits(maximumBytes: 1_000_000)))
-            let oversized = CaptureRevision(captureID: CaptureID(), number: 1)
-            let small = CaptureRevision(captureID: CaptureID(), number: 1)
-            #expect(await commands.execute(.capture(oversized.captureID, maximumBytes: 4_000_000)) == .pending(oversized))
-            #expect(await commands.execute(.capture(small.captureID, maximumBytes: 4_000_000)) == .pending(small))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let oversizedPNG = try noisePNG(width: 700, height: 700)
+        #expect(oversizedPNG.count > 1_000_000)
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: OversizedFirstPixels(oversized: oversizedPNG),
+            clipboard: StackClipboard(), pendingByteLimit: 8_000_000,
+            history: HistoryStore(root: root, limits: HistoryLimits(maximumBytes: 1_000_000)))
+        let oversized = CaptureRevision(captureID: CaptureID(), number: 1)
+        let small = CaptureRevision(captureID: CaptureID(), number: 1)
+        #expect(await commands.execute(.capture(oversized.captureID, maximumBytes: 4_000_000)) == .pending(oversized))
+        #expect(await commands.execute(.capture(small.captureID, maximumBytes: 4_000_000)) == .pending(small))
 
-            let outcomes = await commands.handleSystemEvent(.quit)
-            #expect(outcomes == [.finalized(oversized, .notCommitted(.captureExceedsHistoryLimit)), .finalized(small, .committed)],
-                    "D25: quit stopped at the first capture History refused")
-            let committed = try await commands.historyEntries().get().map(\.captureID)
-            #expect(committed == [small.captureID], "D25: a capture History could accept was left unfinalized at quit")
-        }
+        let outcomes = await commands.handleSystemEvent(.quit)
+        #expect(outcomes == [.finalized(oversized, .notCommitted(.captureExceedsHistoryLimit)), .finalized(small, .committed)],
+                "D25: quit stopped at the first capture History refused")
+        let committed = try await commands.historyEntries().get().map(\.captureID)
+        #expect(committed == [small.captureID], "D25: a capture History could accept was left unfinalized at quit")
     }
 }

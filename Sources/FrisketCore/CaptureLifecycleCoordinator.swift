@@ -21,6 +21,9 @@ actor CaptureLifecycleCoordinator {
     private var finalized: Set<CaptureID> = []
     private var deliveryCommits: [CaptureID: CommitOutcome] = [:]
     private var inProgress: Set<CaptureID> = []
+    /// Captures whose Copy Text is running. Every command waits except Done: the stale-revision
+    /// check already drops a Copy Text result that Done overtook (D25).
+    private var recognizing: Set<CaptureID> = []
     private var discarded: Set<CaptureID> = []
     private enum DeliveryKind { case copy, save }
     private var failedDeliveries: [CaptureID: Set<DeliveryKind>] = [:]
@@ -163,10 +166,9 @@ actor CaptureLifecycleCoordinator {
         switch event {
         case .quit:
             var outcomes: [CaptureCommandOutcome] = []
+            // D25: try every Thumbnail; one that History refuses stays pending and is reported.
             for revision in stack.arrivalOrder() {
-                let outcome = await execute(.dismiss(revision))
-                outcomes.append(outcome)
-                guard case .finalized(_, .committed) = outcome else { break }
+                outcomes.append(await execute(.dismiss(revision)))
             }
             return outcomes
         case .screenLocked:
@@ -196,7 +198,7 @@ actor CaptureLifecycleCoordinator {
         switch command {
         case let .dismiss(revision):
             let id = revision.captureID
-            guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+            guard !isBusy(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
             guard images[id] != nil || finalized.contains(id) else { return .rejected(.unknownCapture) }
             guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
@@ -226,7 +228,7 @@ actor CaptureLifecycleCoordinator {
             return .finalized(revision, outcome)
         case let .done(revision, edits):
             let id = revision.captureID
-            guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+            guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }   // not isBusy: Done may run during Copy Text, whose result the stale check drops
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
             guard images[id] != nil || finalized.contains(id) || delivered.contains(id) else { return .rejected(.unknownCapture) }
             guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
@@ -276,7 +278,7 @@ actor CaptureLifecycleCoordinator {
             inProgress.remove(id)
             return .edited(next, commit, clipboardFailure: clipboardFailure)
         case let .discard(id):
-            guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+            guard !isBusy(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
             guard !finalized.contains(id) else { return .rejected(.alreadyFinalized) }
             guard images[id] != nil else {
@@ -292,10 +294,13 @@ actor CaptureLifecycleCoordinator {
             unfinishedRedactions.remove(id)
             return .discarded(id)
         case let .deleteHistory(id):
-            guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+            guard !isBusy(id) else { return .rejected(.commandInProgress) }
             // A pending capture has no History row. A finalized one may still have its Thumbnail open.
             guard images[id] == nil || finalized.contains(id) else { return .rejected(.alreadyFinalized) }
-            switch await history?.delete(id) {
+            inProgress.insert(id)   // D25: nothing else may use this capture while it is deleted
+            let deleted = await history?.delete(id)
+            inProgress.remove(id)
+            switch deleted {
             case .success:
                 closeFinalizedThumbnail(id)   // D10: Delete closes the capture's open Thumbnail
                 return .historyDeleted(id)
@@ -304,7 +309,7 @@ actor CaptureLifecycleCoordinator {
         case let .captureScrolling(id, maximumBytes):
             return await runScrollingCapture(id: id, maximumBytes: maximumBytes)
         case let .capture(id, maximumBytes), let .captureFullScreen(id, maximumBytes), let .captureWindow(id, maximumBytes):
-            guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+            guard !isBusy(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
             guard images[id] == nil, !delivered.contains(id), !finalized.contains(id) else { return .rejected(.duplicateCapture) }
             guard maximumBytes > 0 else { return .rejected(.invalidByteAllowance) }
@@ -374,7 +379,7 @@ actor CaptureLifecycleCoordinator {
                 })
         case let .exitThumbnail(revision, exit):
             let id = revision.captureID
-            if images[id] != nil, !inProgress.contains(id) {
+            if images[id] != nil, !isBusy(id) {
                 guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
                 guard !unfinishedRedactions.contains(id) else { return .rejected(.editingUnavailable) }
                 if exit == .timeout || exit == .overflow {
@@ -392,7 +397,7 @@ actor CaptureLifecycleCoordinator {
         case let .drag(revision, operation):
             guard operation == .copy else { return .rejected(.dragOperationRefused) }
             let id = revision.captureID
-            guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+            guard !isBusy(id) else { return .rejected(.commandInProgress) }
             guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
             let pending = images[id]
             let pngData: Data
@@ -466,7 +471,7 @@ actor CaptureLifecycleCoordinator {
         outcome: (CommitOutcome, Result<Receipt, Failure>) -> CaptureCommandOutcome
     ) async -> CaptureCommandOutcome {
         let id = revision.captureID
-        guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+        guard !isBusy(id) else { return .rejected(.commandInProgress) }
         guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
         let pending = images[id]
         let pngData: Data
@@ -540,7 +545,7 @@ actor CaptureLifecycleCoordinator {
     }
 
     private func runScrollingCapture(id: CaptureID, maximumBytes: Int) async -> CaptureCommandOutcome {
-        guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
+        guard !isBusy(id) else { return .rejected(.commandInProgress) }
         guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
         guard images[id] == nil, !delivered.contains(id), !finalized.contains(id) else { return .rejected(.duplicateCapture) }
         guard maximumBytes > 0 else { return .rejected(.invalidByteAllowance) }
@@ -624,6 +629,7 @@ actor CaptureLifecycleCoordinator {
     private func copyRecognizedText(_ revision: CaptureRevision) async -> CaptureCommandOutcome {
         let id = revision.captureID
         guard let textRecognizer, let textClipboard else { return .rejected(.recognitionUnavailable) }
+        guard !isBusy(id) else { return .rejected(.commandInProgress) }
         guard !discarded.contains(id) else { return .rejected(.discardedCapture) }
         guard revision.number == currentRevision(id) else { return .rejected(.staleRevision) }
         let image: CaptureImage
@@ -634,6 +640,8 @@ actor CaptureLifecycleCoordinator {
         } else {
             return .rejected(delivered.contains(id) ? .alreadyDelivered : .unknownCapture)
         }
+        recognizing.insert(id)
+        defer { recognizing.remove(id) }
         let text = await textRecognizer.recognize(image)
         guard revision.number == currentRevision(id), images[id] != nil || finalized.contains(id) else {
             return .rejected(.staleRevision)
@@ -649,6 +657,8 @@ actor CaptureLifecycleCoordinator {
                                                          delivery: .failed(error)))
         }
     }
+
+    private func isBusy(_ id: CaptureID) -> Bool { inProgress.contains(id) || recognizing.contains(id) }
 
     /// Releases a finalized capture's open Thumbnail and the pixels it holds, as a Thumbnail exit does.
     private func closeFinalizedThumbnail(_ id: CaptureID) {
