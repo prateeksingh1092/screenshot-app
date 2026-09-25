@@ -36,12 +36,13 @@ public struct DisplaySelectionSession: Sendable {
         }
     }
 
-    /// Half-open edges give a shared edge exactly one owner; mirrored displays
-    /// use the lowest ID for deterministic ownership independent of enumeration.
+    /// AppKit's `NSMouseInRect` rule for unflipped screens: x in [minX, maxX), y in (minY, maxY].
+    /// The pointer's y runs from minY + 1 on the bottom row to maxY on the top row, so every pixel,
+    /// including the top row, has exactly one owner (D14). Mirrored displays use the lowest ID.
     public func display(at point: CGPoint) -> SelectionDisplay? {
         displays.first {
             point.x >= $0.frame.minX && point.x < $0.frame.maxX
-                && point.y >= $0.frame.minY && point.y < $0.frame.maxY
+                && point.y > $0.frame.minY && point.y <= $0.frame.maxY
         }
     }
 

@@ -41,6 +41,7 @@ import FrisketCore
                 panel.hasShadow = false
                 panel.hidesOnDeactivate = false
                 panel.becomesKeyOnlyIfNeeded = false
+                panel.ignoresMouseEvents = false   // D4: clicks in the clear Selection hole stay in Frisket
                 panel.acceptsMouseMovedEvents = true
                 panel.isReleasedWhenClosed = false
                 panel.isRestorable = false
@@ -55,7 +56,7 @@ import FrisketCore
                 panel.contentView = view
                 panels.append(panel)
                 panel.orderFrontRegardless()
-                if screen.frame.contains(pointer) { keyPanel = panel }
+                if NSMouseInRect(pointer, screen.frame, false) { keyPanel = panel }   // D14: top row included
             }
             redraw()
             if let panel = keyPanel ?? panels.first {
