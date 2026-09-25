@@ -6,6 +6,11 @@ import ImageIO
 /// PNG bytes to and from the renderer's premultiplied sRGB RGBA8 bitmap, entirely in memory.
 /// No decoded-image cache is kept.
 struct PNGBitmapCodec: BitmapCodec {
+    /// Edited outputs up to this many rows tall are rendered in one pass by `DocumentRenderer.render`,
+    /// the function the editor preview uses, so what is delivered matches what the user saw (D1).
+    /// Only taller outputs keep the strip path. Interim (decision 58); ticket 65 removes the strip path.
+    static let wholeRenderMaxHeight = 32_768
+
     func decode(_ pngData: Data) -> Bitmap? {
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(pngData as CFData, options),
@@ -36,6 +41,12 @@ struct PNGBitmapCodec: BitmapCodec {
     }
 
     func encode(_ pngData: Data, edits: DocumentEdits) -> Data? {
+        guard let full = pixelSize(pngData) else { return nil }
+        if DocumentRenderer.outputSize(width: full.width, height: full.height, edits: edits).height
+            <= Self.wholeRenderMaxHeight {
+            guard let base = decodeInStrips(pngData) else { return nil }
+            return encodeWhole(EditorDocument(base: base, edits: edits))
+        }
         let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
         guard let source = CGImageSourceCreateWithData(pngData as CFData, options),
               CGImageSourceGetType(source) as String? == "public.png",
@@ -53,12 +64,44 @@ struct PNGBitmapCodec: BitmapCodec {
 
     func encode(_ document: EditorDocument) -> Data? {
         let size = DocumentRenderer.outputSize(document)
+        if size.height <= Self.wholeRenderMaxHeight { return encodeWhole(document) }
         guard let encoder = StripPNGEncoder(width: size.width, height: size.height) else { return nil }
         var ok = true
         DocumentRenderer.forEachStrip(document) { strip in
             if ok { ok = encoder.append(strip) }
         }
         return ok ? encoder.finish() : nil
+    }
+
+    /// Same pixels as `decode`, copied a strip at a time from one cached decode. `decode` draws the
+    /// whole image at once, and ImageIO's buffers then triple the peak (2.05 GB at 5,120 × 32,768).
+    /// The cached image is released on return, before the render allocates its output.
+    private func decodeInStrips(_ pngData: Data) -> Bitmap? {
+        let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(pngData as CFData, options),
+              CGImageSourceGetType(source) as String? == "public.png",
+              let image = CGImageSourceCreateImageAtIndex(source, 0, options) else { return nil }
+        let width = image.width, height = image.height
+        guard width > 0, height > 0, width <= Int.max / 4 / height else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(width * height * 4)
+        var row = 0
+        while row < height {
+            let count = min(DocumentRenderer.stripHeight, height - row)
+            guard let strip = rows(from: image, crop: nil, scale: 1, startRow: row, rowCount: count) else { return nil }
+            bytes.append(contentsOf: strip.bytes)
+            row += count
+        }
+        return Bitmap(width: width, height: height, bytes: bytes)
+    }
+
+    /// The editor preview's render of the whole document, written through the same PNG encoder
+    /// as the strip path.
+    private func encodeWhole(_ document: EditorDocument) -> Data? {
+        let rendered = DocumentRenderer.render(document)
+        guard let encoder = StripPNGEncoder(width: rendered.width, height: rendered.height),
+              encoder.append(rendered) else { return nil }
+        return encoder.finish()
     }
 
     func pixelSize(_ pngData: Data) -> (width: Int, height: Int)? {

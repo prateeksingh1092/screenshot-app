@@ -1031,13 +1031,11 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
         let firstDifference = (0..<height).first { y in
             saved.pixels[(y * width)..<((y + 1) * width)] != preview.pixels[(y * width)..<((y + 1) * width)]
         }
-        try await knownDefect("D1") {
-            #expect(firstDifference == nil, "D1: the delivered image differs from the editor preview from row \(firstDifference ?? -1)")
-            #expect(inkRows(saved, 440..<461) == inkRows(preview, 440..<461),
-                    "D1: the arrow at row 450 has \(inkRows(saved, 440..<461)) ink pixels delivered, \(inkRows(preview, 440..<461)) in the preview")
-            #expect(inkRows(saved, 256..<300) == inkRows(preview, 256..<300),
-                    "D1: the label drawn at row 30 repeats in rows 256–300 of the delivered image (\(inkRows(saved, 256..<300)) ink pixels)")
-        }
+        #expect(firstDifference == nil, "D1: the delivered image differs from the editor preview from row \(firstDifference ?? -1)")
+        #expect(inkRows(saved, 440..<461) == inkRows(preview, 440..<461),
+                "D1: the arrow at row 450 has \(inkRows(saved, 440..<461)) ink pixels delivered, \(inkRows(preview, 440..<461)) in the preview")
+        #expect(inkRows(saved, 256..<300) == inkRows(preview, 256..<300),
+                "D1: the label drawn at row 30 repeats in rows 256–300 of the delivered image (\(inkRows(saved, 256..<300)) ink pixels)")
     }
 
     /// D21: the strip encoder writes premultiplied bytes into a straight-alpha PNG, so every
@@ -1064,4 +1062,103 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
             #expect(drift <= 1, "D21: a half-transparent pixel \(before) is delivered as \(after) after Done")
         }
     }
+}
+
+/// Ticket 52 (decision 58): the save path renders every output up to 32,768 px tall in one pass
+/// with `DocumentRenderer.render`, the editor preview's function.
+extension EditedOutputParityTests {
+    private static func pattern(width: Int, height: Int) -> [UInt8] {
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                bytes += [UInt8((x * 3 + y) % 200), UInt8((y * 5) % 200), UInt8((x + y * 7) % 200), 0xff]
+            }
+        }
+        return bytes
+    }
+
+    @Test(arguments: [
+        (width: 400, height: 500, scale: 2.0, crop: true),
+        (width: 24, height: PNGBitmapCodec.wholeRenderMaxHeight, scale: 1.0, crop: false)
+    ])
+    func savedEditEqualsTheWholeImageRenderUpTo32768RowsTall(fixture: (width: Int, height: Int, scale: Double, crop: Bool)) throws {
+        let codec = PNGBitmapCodec()
+        let png = try encodeSRGB(Self.pattern(width: fixture.width, height: fixture.height),
+                                 width: fixture.width, height: fixture.height)
+        let points = (width: Double(fixture.width) / fixture.scale, height: Double(fixture.height) / fixture.scale)
+        let low = points.height - 20
+        let label = try #require(DocumentAnnotation(.text(x: 2, y: 3, characters: "HI")))
+        let arrow = try #require(DocumentAnnotation(.arrow(x0: 2, y0: low, x1: points.width - 2, y1: low)))
+        let redaction = try #require(SolidRedaction(x: 1, y: points.height / 2, width: 8, height: 6))
+        let blur = try #require(DocumentEffect(.blur(x: 1, y: low - 40, width: min(60, points.width - 2), height: 30)))
+        let crop = fixture.crop ? DocumentCrop(x: 5.5, y: 2.25, width: points.width - 20, height: points.height - 4) : nil
+        let edits = try #require(DocumentEdits(scale: fixture.scale, crop: crop, redactions: [redaction],
+                                               annotations: [label, arrow], effects: [blur]))
+        let base = try #require(codec.decode(png))
+        let expected = DocumentRenderer.render(EditorDocument(base: base, edits: edits))
+        let savedPNG = try #require(codec.encode(png, edits: edits))
+        let saved = try #require(codec.decode(savedPNG))
+        #expect(saved.width == expected.width && saved.height == expected.height)
+        #expect(saved == expected, "the save path delivers the whole-image render at \(fixture.width)×\(fixture.height)")
+        let documentPNG = try #require(codec.encode(EditorDocument(base: base, edits: edits)))
+        let document = try #require(codec.decode(documentPNG))
+        #expect(document == expected, "encoding an EditorDocument delivers the whole-image render")
+    }
+
+    /// Peak memory of an edited 5,120 × 32,768 save through the production codec (ticket 52).
+    /// The fixture PNG is written strip by strip, so the recorded peak is the save's.
+    /// Run: `FRISKET_EDITOR_MEMORY_RUN=1 scripts/test-core.sh -c release --filter editedSaveOf5120x32768`.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["FRISKET_EDITOR_MEMORY_RUN"] == "1"))
+    func editedSaveOf5120x32768MeasuresPeakMemory() throws {
+        let started = ContinuousClock.now
+        let width = 5120, height = PNGBitmapCodec.wholeRenderMaxHeight
+        let encoder = try #require(StripPNGEncoder(width: width, height: height))
+        var row = 0
+        while row < height {
+            let count = min(256, height - row)
+            var bytes = [UInt8](repeating: 255, count: width * count * 4)
+            for y in 0..<count {
+                for x in 0..<width {
+                    var value = UInt64((row + y) / 8) &* 0x9e3779b97f4a7c15 ^ UInt64(x / 16)
+                    value = (value ^ (value >> 30)) &* 0xbf58476d1ce4e5b9
+                    value ^= value >> 31
+                    let i = (y * width + x) * 4
+                    bytes[i] = UInt8(truncatingIfNeeded: value)
+                    bytes[i + 1] = UInt8(truncatingIfNeeded: value >> 8)
+                    bytes[i + 2] = UInt8(truncatingIfNeeded: value >> 16)
+                }
+            }
+            let strip = try #require(Bitmap(width: width, height: count, bytes: bytes))
+            #expect(encoder.append(strip))
+            row += count
+        }
+        let png = try #require(encoder.finish())
+        let beforeSave = try peakPhysicalFootprint()
+        let label = try #require(DocumentAnnotation(.text(x: 40, y: 30, characters: "HI")))
+        let arrow = try #require(DocumentAnnotation(.arrow(x0: 40, y0: 32_000, x1: 4_000, y1: 32_000)))
+        let redaction = try #require(SolidRedaction(x: 0, y: 1000, width: 64, height: 64))
+        let blur = try #require(DocumentEffect(.blur(x: 200, y: 16_000, width: 400, height: 300)))
+        let magnify = try #require(DocumentEffect(.magnify(x: 1_000, y: 20_000, width: 300, height: 200)))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], annotations: [label, arrow],
+                                               effects: [blur, magnify]))
+        let saved = try #require(PNGBitmapCodec().encode(png, edits: edits))
+        let peak = try peakPhysicalFootprint()
+        print("EDITED_SAVE_MEMORY_RUN dimensions=\(width)x\(height) source_png_bytes=\(png.count) saved_png_bytes=\(saved.count) peak_before_save_bytes=\(beforeSave) peak_phys_footprint_bytes=\(peak) elapsed=\(started.duration(to: .now))")
+        #expect(saved.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]))
+        #expect(peak < 2_000_000_000)
+    }
+}
+
+private func peakPhysicalFootprint() throws -> Int64 {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+    let result = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+        }
+    }
+    try #require(result == KERN_SUCCESS)
+    try #require(info.ledger_phys_footprint_peak > 0)
+    return info.ledger_phys_footprint_peak
 }
