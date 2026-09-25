@@ -512,17 +512,11 @@ import FrisketCore
         for id in newestFirst {
             if let panel = panels[id] { stacks[panel.displayID, default: []].append(panel) }
         }
-        let margin: CGFloat = 20, gap: CGFloat = 8
         for (displayID, stack) in stacks {
-            guard let screen = NSScreen.screens.first(where: { self.displayID(of: $0) == displayID }),
-                  let height = stack.first?.size.height else { continue }
-            let frame = screen.visibleFrame
-            let room = max(0, frame.height - 2 * margin - height)
-            let step = stack.count > 1 ? min(height + gap, room / CGFloat(stack.count - 1)) : 0
-            for (slot, panel) in stack.enumerated() {
-                panel.place(at: CGPoint(x: frame.maxX - margin - panel.size.width,
-                                        y: frame.minY + margin + CGFloat(slot) * step))
-            }
+            guard let screen = NSScreen.screens.first(where: { self.displayID(of: $0) == displayID }) else { continue }
+            // Fixed-size Thumbnails (D9): the core computes non-overlapping slots.
+            let origins = ThumbnailStackLayout.origins(count: stack.count, in: screen.visibleFrame)
+            for (panel, origin) in zip(stack, origins) { panel.place(at: origin) }
         }
     }
 
