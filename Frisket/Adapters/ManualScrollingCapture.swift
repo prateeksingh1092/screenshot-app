@@ -41,6 +41,15 @@ import FrisketCore
     /// The panel and adapter tests use the same cancellation action.
     func cancel() { choice = .cancel }
 
+    /// A Selection was made and frames are being sampled.
+    var isRunning: Bool { request != nil && choice == nil }
+
+    /// ⌘⇧6 pressed again during a scrolling capture means Done (DA-9).
+    func finish() {
+        guard isRunning else { return }
+        choice = .done
+    }
+
     func nextFrame() async -> ScrollingFrameEvent {
         if let choice { return choice }
         if !prepared {
@@ -185,9 +194,9 @@ import FrisketCore
         guard let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame
         panel.setFrameOrigin(NSPoint(x: visible.maxX - panel.frame.width - 16, y: visible.maxY - panel.frame.height - 16))
+        // DA-9 (D11): never take key, so Page Down, Space and arrows keep scrolling the page.
+        // A click on the panel still makes it key, and then Esc and Return reach it.
         panel.orderFrontRegardless()
-        panel.makeKey()
-        panel.makeFirstResponder(content)
     }
 
     func close() { panel.close() }
