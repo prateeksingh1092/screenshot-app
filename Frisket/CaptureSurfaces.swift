@@ -458,6 +458,12 @@ import FrisketCore
         }
     }
 
+    /// History deleted this capture, and the core already released its Thumbnail (D10).
+    func historyDeleted(_ id: CaptureID) {
+        guard panels[id] != nil else { return }
+        remove(id)
+    }
+
     private func remove(_ id: CaptureID) {
         panels.removeValue(forKey: id)?.close()
         screens.removeValue(forKey: id)

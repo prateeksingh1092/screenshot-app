@@ -434,7 +434,7 @@ row_history_delete() {
   before=$(history_images)
   drv axpress frisket "Delete"; nap 1
   if "$H/drive" axfind frisket "Cancel" >>"$log" 2>&1; then
-    asked=1; drv axpress frisket "Delete Capture" || drv axpress frisket "Delete"; nap 1.2
+    asked=1; key 36; nap 1.2   # Return: the alert's default button, Delete
   fi
   after=$(history_images)
   "$H/drive" axfind frisket "Delete failed" >>"$log" 2>&1 && note "saw: Delete failed"

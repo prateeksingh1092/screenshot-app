@@ -502,39 +502,37 @@ extension HistoryCommandsTests {
     /// which retrying can never fix.
     @Test(arguments: FinalizedWithOpenThumbnail.allCases)
     private func d10DeletingAHistoryItemClosesItsOpenThumbnailAndDeletes(state: FinalizedWithOpenThumbnail) async throws {
-        try await knownDefect("D10") {
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
-            defer { try? FileManager.default.removeItem(at: root) }
-            let clipboard: any ImageClipboard = state == .afterFailedCopy ? RetryHistoryClipboard() : HistoryClipboard()
-            let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), clipboard: clipboard,
-                pendingByteLimit: 1024, history: HistoryStore(root: root), codec: RenderedPNGCodec())
-            let id = CaptureID()
-            let original = CaptureRevision(captureID: id, number: 1)
-            #expect(await commands.execute(.capture(id, maximumBytes: 1024)) == .pending(original))
-            let open: CaptureRevision
-            switch state {
-            case .afterDone:
-                let edits = try #require(DocumentEdits(scale: 1))
-                open = CaptureRevision(captureID: id, number: 2)
-                #expect(await commands.execute(.done(original, edits)) == .edited(open, .committed))
-            case .afterFailedCopy:
-                open = original
-                #expect(await commands.execute(.copy(original)) == .copy(CopyOutcome(revision: original,
-                    commit: .committed, delivery: .failed(.unavailable))))
-            }
-            let before = try await commands.historyEntries().get()
-            #expect(before.map(\.captureID) == [id])
-            #expect(await commands.thumbnails().map(\.revision) == [open])
-
-            let deleted = await commands.execute(.deleteHistory(id))
-            #expect(deleted == .historyDeleted(id), "D10: History Delete was refused while the Thumbnail is open")
-            let after = try await commands.historyEntries().get()
-            #expect(after.isEmpty, "D10: the History item survived Delete")
-            let thumbnails = await commands.thumbnails().map(\.revision)
-            #expect(thumbnails.isEmpty, "D10: the capture's Thumbnail stayed open after Delete")
-            let held = await commands.image(for: open)
-            #expect(held == nil, "D10: the deleted capture's pixels are still held")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".noindex")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let clipboard: any ImageClipboard = state == .afterFailedCopy ? RetryHistoryClipboard() : HistoryClipboard()
+        let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: HistoryPixels(), clipboard: clipboard,
+            pendingByteLimit: 1024, history: HistoryStore(root: root), codec: RenderedPNGCodec())
+        let id = CaptureID()
+        let original = CaptureRevision(captureID: id, number: 1)
+        #expect(await commands.execute(.capture(id, maximumBytes: 1024)) == .pending(original))
+        let open: CaptureRevision
+        switch state {
+        case .afterDone:
+            let edits = try #require(DocumentEdits(scale: 1))
+            open = CaptureRevision(captureID: id, number: 2)
+            #expect(await commands.execute(.done(original, edits)) == .edited(open, .committed))
+        case .afterFailedCopy:
+            open = original
+            #expect(await commands.execute(.copy(original)) == .copy(CopyOutcome(revision: original,
+                commit: .committed, delivery: .failed(.unavailable))))
         }
+        let before = try await commands.historyEntries().get()
+        #expect(before.map(\.captureID) == [id])
+        #expect(await commands.thumbnails().map(\.revision) == [open])
+
+        let deleted = await commands.execute(.deleteHistory(id))
+        #expect(deleted == .historyDeleted(id), "D10: History Delete was refused while the Thumbnail is open")
+        let after = try await commands.historyEntries().get()
+        #expect(after.isEmpty, "D10: the History item survived Delete")
+        let thumbnails = await commands.thumbnails().map(\.revision)
+        #expect(thumbnails.isEmpty, "D10: the capture's Thumbnail stayed open after Delete")
+        let held = await commands.image(for: open)
+        #expect(held == nil, "D10: the deleted capture's pixels are still held")
     }
 }
 

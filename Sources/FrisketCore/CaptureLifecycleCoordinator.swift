@@ -293,9 +293,12 @@ actor CaptureLifecycleCoordinator {
             return .discarded(id)
         case let .deleteHistory(id):
             guard !inProgress.contains(id) else { return .rejected(.commandInProgress) }
-            guard images[id] == nil else { return .rejected(.alreadyFinalized) }
+            // A pending capture has no History row. A finalized one may still have its Thumbnail open.
+            guard images[id] == nil || finalized.contains(id) else { return .rejected(.alreadyFinalized) }
             switch await history?.delete(id) {
-            case .success: return .historyDeleted(id)
+            case .success:
+                closeFinalizedThumbnail(id)   // D10: Delete closes the capture's open Thumbnail
+                return .historyDeleted(id)
             case .failure, nil: return .rejected(.unknownCapture)
             }
         case let .captureScrolling(id, maximumBytes):
@@ -645,6 +648,17 @@ actor CaptureLifecycleCoordinator {
             return .recognizedText(RecognizedTextOutcome(revision: revision, characterCount: text.count,
                                                          delivery: .failed(error)))
         }
+    }
+
+    /// Releases a finalized capture's open Thumbnail and the pixels it holds, as a Thumbnail exit does.
+    private func closeFinalizedThumbnail(_ id: CaptureID) {
+        guard let image = images.removeValue(forKey: id) else { return }
+        pendingBytes -= image.pngData.count
+        stack.remove(id)
+        failedDeliveries.removeValue(forKey: id)
+        automaticExitSuppressed.remove(id)
+        copyReceipts.removeValue(forKey: id)
+        unfinishedRedactions.remove(id)
     }
 
     private func imageCountFailure(sessionHadImage: Bool) -> CaptureCommandOutcome {
