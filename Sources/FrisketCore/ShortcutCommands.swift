@@ -117,6 +117,11 @@ public enum SystemScreenshotHotkeys {
         return resolved
     }
 
+    /// The saved shortcut is the default, whether or not macOS lets it register. Settings disables Default then.
+    public func isAtDefault(_ action: ShortcutAction) -> Bool {
+        Self.resolved(saved: system.load())[action] == action.defaultBinding
+    }
+
     public func remap(_ action: ShortcutAction, to binding: ShortcutBinding) throws {
         try validate(binding, for: action)
         do { try system.replace(action, with: binding) }

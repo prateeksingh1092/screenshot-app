@@ -164,4 +164,14 @@ import Testing
         selection.update(to: CGPoint(x: -950, y: 550))
         #expect(selection.rect == CGRect(x: -800, y: 100, width: 700, height: 300))
     }
+
+    /// Ticket 101: the badge's one quiet word, which the area overlay also announces to VoiceOver.
+    @Test func theBadgeNamesOneModifierAtATime() {
+        #expect(SelectionGeometry.Modifiers().badgeWord == nil)
+        #expect(SelectionGeometry.Modifiers.space.badgeWord == "move")
+        #expect(SelectionGeometry.Modifiers.option.badgeWord == "from centre")
+        #expect(SelectionGeometry.Modifiers.shift.badgeWord == "locked")
+        #expect(SelectionGeometry.Modifiers([.space, .option, .shift]).badgeWord == "move")
+        #expect(SelectionGeometry.Modifiers([.option, .shift]).badgeWord == "from centre")
+    }
 }

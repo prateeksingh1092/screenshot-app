@@ -153,6 +153,7 @@ import FrisketCore
         menu.addItem(.separator())
         installMainMenu()
         add("About Frisket", action: #selector(showAbout), to: menu)
+        add("What Frisket Stores…", action: #selector(showOnboarding), to: menu)
         add("Quit Frisket", action: #selector(quit), to: menu)
         item.menu = menu
         statusItem = item
@@ -335,6 +336,14 @@ import FrisketCore
     @objc private func copyLatest() { captures?.copyLatest() }
     @objc private func deleteLatest() { captures?.deleteLatest() }
     @objc private func showAbout() { surfaces.presentAbout() }
+    /// Reopens onboarding on request (ticket 101). Continue hands off to permission recovery as on first launch.
+    @objc private func showOnboarding() {
+        surfaces.presentOnboardingIfNeeded(
+            systemAlertPending: { [weak self] in self?.requestingPermission ?? false },
+            permission: { [weak self] in self?.permission.capturePermission() ?? .notAsked },
+            recover: { [weak self] state in self?.showPermissionRecovery(state) },
+            requested: true)
+    }
     @objc private func quit() { NSApp.terminate(nil) }
 
     @objc private func screensChanged() { captures?.screensChanged() }

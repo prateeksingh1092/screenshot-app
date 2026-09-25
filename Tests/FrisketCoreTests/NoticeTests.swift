@@ -110,6 +110,18 @@ import Testing
         #expect(Notice.after(.done(Self.revision, edits), .edited(Self.revision, .committed, clipboardFailure: .changed)) == .earlierCopyNotReplaced)
     }
 
+    /// Ticket 101: a window capture that fails without a named cause says so, instead of suggesting a smaller area.
+    @Test func aFailedWindowCaptureNeverSuggestsASmallerArea() {
+        for failure in [CaptureSourceFailure.unavailable, .emptyImage] {
+            let notice = Notice.after(.captureWindow(Self.id, maximumBytes: 1), .captureFailed(failure))
+            #expect(notice == .windowCaptureUnavailable)
+            #expect(notice?.title == WindowCaptureFailure.systemRefused.title)
+            #expect(notice?.announcement.contains("smaller area") == false)
+        }
+        // Area capture keeps its own wording.
+        #expect(Notice.after(.capture(Self.id, maximumBytes: 1), .captureFailed(.emptyImage)) == .captureUnavailable)
+    }
+
     /// The only modal choices: delete, close with edits (which Quit reaches through each unanswered editor),
     /// and an export folder that sends copies off this Mac.
     @Test func onlyDestructiveOrIrreversibleChoicesAreModal() {

@@ -10,6 +10,14 @@ public struct SelectionGeometry: Sendable {
         public static let option = Self(rawValue: 1 << 0)
         public static let shift = Self(rawValue: 1 << 1)
         public static let space = Self(rawValue: 1 << 2)
+
+        /// The one quiet word the size badge shows, and VoiceOver hears, while a modifier changes the gesture.
+        public var badgeWord: String? {
+            if contains(.space) { return "move" }
+            if contains(.option) { return "from centre" }
+            if contains(.shift) { return "locked" }
+            return nil
+        }
     }
 
     public private(set) var rect: CGRect

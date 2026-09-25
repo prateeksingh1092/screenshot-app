@@ -156,6 +156,7 @@ private struct ShortcutRow: View {
                 Button(recording ? "Press shortcut" : "Change") { recording = true }
                     .accessibilityLabel(recording ? "Press the new \(action.title) shortcut" : "Change \(action.title) shortcut")
                 Button("Default") { settings.apply(action, binding: action.defaultBinding) }
+                    .disabled(settings.commands.isAtDefault(action))   // ticket 101
                     .accessibilityLabel("Restore default \(action.title) shortcut")
             }
             if let message = settings.messages[action] {

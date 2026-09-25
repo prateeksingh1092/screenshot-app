@@ -61,6 +61,16 @@ private let repository = URL(fileURLWithPath: #filePath)
                                     dismissedForLaunch: false) == .onboarding)
     }
 
+    /// Ticket 101: the menu can reopen onboarding after it was completed or put off, but never over a system alert.
+    @Test func theMenuReopensOnboardingAfterItWasCompleted() {
+        let done = OnboardingCompletion(isComplete: true)
+        #expect(FirstLaunch.surface(onboarding: done, systemAlertPending: false) == .ready)
+        #expect(FirstLaunch.surface(onboarding: done, systemAlertPending: false, requested: true) == .onboarding)
+        #expect(FirstLaunch.surface(onboarding: OnboardingCompletion(isComplete: false), systemAlertPending: false,
+                                    dismissedForLaunch: true, requested: true) == .onboarding)
+        #expect(FirstLaunch.surface(onboarding: done, systemAlertPending: true, requested: true) == .hiddenWhileSystemAlertPending)
+    }
+
     @Test func aboutShowsTheBundleVersionAndThirdPartyNotices() throws {
         let notices = try String(contentsOf: repository.appendingPathComponent("THIRD-PARTY-NOTICES.md"), encoding: .utf8)
         let about = AboutContent(shortVersion: "0.1.0", build: "8", notices: notices)

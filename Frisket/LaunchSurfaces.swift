@@ -13,11 +13,13 @@ import FrisketCore
         self.preference = preference
     }
 
+    /// `requested` is the menu's "What Frisket Stores…" item: it shows onboarding again after it was completed (ticket 101).
     func presentOnboardingIfNeeded(systemAlertPending: @escaping () -> Bool, permission: @escaping () -> CapturePermissionState,
-                                   recover: @escaping (CapturePermissionState) -> Void) {
+                                   recover: @escaping (CapturePermissionState) -> Void, requested: Bool = false) {
+        if requested, focusOnboardingIfVisible() { return }
         let completion = OnboardingCompletion(isComplete: preference.isComplete)
         guard FirstLaunch.surface(onboarding: completion, systemAlertPending: systemAlertPending(),
-                                  dismissedForLaunch: onboardingDismissedForLaunch) == .onboarding else { return }
+                                  dismissedForLaunch: onboardingDismissedForLaunch, requested: requested) == .onboarding else { return }
         let panel = OnboardingPanel(content: .current, acknowledge: { [weak self] in
             guard let self else { return }
             self.preference.markComplete()

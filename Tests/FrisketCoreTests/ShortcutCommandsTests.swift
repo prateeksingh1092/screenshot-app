@@ -69,6 +69,20 @@ import Testing
     #expect(commands.active[.captureFullScreen] == ShortcutBinding(keyCode: 20, modifiers: 768))
 }
 
+/// Ticket 101: Settings disables Default on a row already at its default, including one macOS still owns.
+@MainActor @Test func aRowIsAtItsDefaultUntilTheUserChangesIt() throws {
+    let system = ShortcutSystemStandIn()
+    system.enabled = [ShortcutBinding(keyCode: 21, modifiers: 768)]
+    let commands = ShortcutCommands(system: system)
+    commands.start()
+    #expect(ShortcutAction.allCases.allSatisfy(commands.isAtDefault))
+    try commands.remap(.showHistory, to: ShortcutBinding(keyCode: 4, modifiers: 6400))
+    #expect(!commands.isAtDefault(.showHistory))
+    #expect(commands.isAtDefault(.captureArea))
+    try commands.remap(.showHistory, to: ShortcutAction.showHistory.defaultBinding)
+    #expect(commands.isAtDefault(.showHistory))
+}
+
 @MainActor private final class ShortcutSystemStandIn: ShortcutSystem {
     var queryFails = false
     var registrationFails = false
