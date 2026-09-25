@@ -23,3 +23,18 @@ Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82â
 ### 2026-09-24: coordinator, note from ticket 47
 
 Four existing tests in `DragHandoffTests` lock in committing at drag start and staging on disk. Change them with the fix (found by ticket 47).
+
+### 2026-09-24: coordinator, design for the implementer (DA-3)
+
+The coordinator read the current code and chose this design (decision 57, DA-3):
+
+1. **Commit only on an accepted drop.** In the coordinator's `.drag` command, don't finalize before the handoff. Call `drag.deliver(.copy, â€¦)` first. When it returns `.copied`, finalize through the existing commit caching (`deliveryCommits`, `finalized`, `recoveryRequired`) and mark the capture delivered, as today. When it returns `.failed` (cancelled, or the write failed), commit nothing: the capture stays pending, its Thumbnail stays open, and `automaticExitSuppressed` is set as today. Drags from History (`fromHistory`) are already committed and don't change.
+2. **Nothing on disk before authorization.** Delete disk staging. `FilePromiseDragAdapter` already writes the promise file from memory through its `writeCopy` closure, and it returns `.copied` only when that write succeeded and the session ended. Replace `DragCopyStaging`, `DragStagingLifetime.stage` and `DragCopyEventBridge` with a small in-memory `DragCopyEvents` object.
+3. **Shrink the core writer.** Keep only the in-core promise writer, because the app may not write files (repository check `capture-memory`). Rename `DragStagingLifetime` to `DragPromiseWriter` in `StorageAdapter`, with just `writePromiseCopy(_:to:)`. Remove the `dragStaging:` parameter from `CaptureCommandLayer` and the coordinator, and update every call site.
+4. **Commit points.** Remove `HistoryCommitPoint.dragStaged` and `.dragPromiseWritten`. Update every test that lists commit points; the crash tiers must still cover every remaining point.
+5. **Leftovers.** The launch sweep must remove a leftover `staging/drag/` (it already empties `staging/`; add a test with a leftover drag PNG).
+6. **Tests:**
+   - Unwrap `d7CancelledDragLeavesTheCapturePendingWithNothingOnDisk`.
+   - Rewrite the four `DragHandoffTests` that lock in commit-at-drag-start and staging, and the `EditorRedactionCommandsTests` drag cases.
+   - Add a test that a completed drop commits exactly one History row, and writes the same bytes Copy delivers for that revision.
+7. **Live row:** flip `drag-cancel` in `Tools/LiveHarness/matrix.tsv` to `pass`.
