@@ -716,6 +716,15 @@ row_thumbnail_close() {
   [ "$(history_images)" -eq $(( images + 1 )) ]
 }
 
+# The editor remembers its last-used styles (decision 93); every row starts from the defaults.
+reset_editor_styles() {
+  local k
+  for k in editorRedactionColour editorInkColour editorArrowStyle editorArrowWidth editorLineWidth \
+           editorShapeWidth editorLabelSize editorLabelStyle; do
+    defaults delete "$bundle" "$k" >/dev/null 2>&1 || true
+  done
+}
+
 # ---------------------------------------------------------------- run
 case $display_choice in
   all) displays="builtin external" ;;
@@ -730,6 +739,7 @@ for display in $displays; do
   fi
   while IFS=$'\t' read -r id defects expect check; do
     [ -z "$only_row" ] || [ "$id" = "$only_row" ] || continue
+    reset_editor_styles
     ev="$run/$display"; mkdir -p "$ev"; log="$ev/$id.log"
     echo "# $id on $display (${DW}×${DH} pt, scale ${DS}): $check" >"$log"
     fn="row_$(echo "$id" | tr - _)"
