@@ -236,6 +236,39 @@ import Testing
         #expect(throws: RenderFailure.unreadableCapture) { try CaptureRenderer().flatten(Data([1, 2, 3]), edits: edits) }
     }
 
+    /// D1 at the production seam: on the live repro (400 × 500, an arrow at row 450, a label near
+    /// the bottom) and on taller outputs, the delivered image equals the preview exactly. Every
+    /// arrow and label appears once, where it was drawn: its ink is present in its own rows only.
+    @Test(arguments: [(400, 500), (48, 257), (64, 2000)])
+    func d1DeliveredAnnotationsEqualThePreviewAndAppearWhereDrawn(width: Int, height: Int) throws {
+        let png = try Self.encode(Self.pattern(width: width, height: height), width: width, height: height)
+        let w = Double(width), h = Double(height)
+        let arrow = try #require(DocumentAnnotation(.arrow(x0: w * 0.1, y0: h * 0.9, x1: w * 0.8, y1: h * 0.9 - 3)))
+        let label = try #require(DocumentAnnotation(.text(x: 2, y: h - 30, characters: "v2.1 $4.99 -10%")))
+        let outline = try #require(DocumentAnnotation(.rectangle(x: 3, y: h * 0.4, width: w / 2, height: h / 3)))
+        let redaction = try #require(SolidRedaction(x: 1, y: h * 0.45, width: w / 3, height: h / 4))
+        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], annotations: [outline, arrow, label]))
+        let decoded = try Self.decode(png)
+        let base = try #require(Bitmap(width: decoded.width, height: decoded.height, bytes: decoded.bytes))
+        let preview = DocumentRenderer.render(EditorDocument(base: base, edits: edits))
+        let output = try Self.decode(try CaptureRenderer().flatten(png, edits: edits))
+        #expect(output.bytes == preview.bytes, "D1: delivered annotations differ from the preview")
+        let ink = DocumentAnnotation.stroke
+        var inkRows = Set<Int>()
+        for y in 0..<height {
+            for x in 0..<width {
+                let i = (y * width + x) * 4
+                if output.bytes[i] == ink.red && output.bytes[i + 1] == ink.green && output.bytes[i + 2] == ink.blue {
+                    inkRows.insert(y)
+                }
+            }
+        }
+        let arrowRow = Int(h * 0.9)
+        #expect(inkRows.contains(arrowRow - 1) || inkRows.contains(arrowRow), "D1: the arrow at row \(arrowRow) is missing")
+        #expect(inkRows.contains { $0 > height - 30 && $0 < height - 8 }, "D1: the label is missing")
+        #expect(!inkRows.contains { $0 < Int(h * 0.4) - 2 }, "D1: ink appears above every mark (a repeated label?)")
+    }
+
     /// Delivered image = editor preview: at full size the flattened output equals the preview's render.
     @Test func flattenedOutputEqualsThePreviewRenderAtFullSize() throws {
         let width = 120, height = 90, scale = 2.0

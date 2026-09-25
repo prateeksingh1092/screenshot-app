@@ -7,16 +7,11 @@ import Foundation
 /// edges), shifted by the crop's whole-pixel origin, clipped to the cropped image, and copied
 /// as opaque fill with no blending or antialiasing. Every mark therefore covers the same
 /// content it would cover without the crop (D18). Sampling effects read that redacted composite; redactions are stamped
-/// again afterwards. Stroke annotations draw last.
+/// again afterwards. Annotations draw last, natively (`AnnotationPainter`): a white plate, the redactions once more, then ink.
 public enum DocumentRenderer {
     public static let stripHeight = 256
     /// One output pixel of white around annotation ink. It is a constant, never a sample of the capture.
     public static let plate = RGBAPixel(red: 255, green: 255, blue: 255, alpha: 255)
-
-    /// Document points to output pixels. No floor of 1: a fractional editor-proxy scale may round to 0.
-    public static func outputCount(points: Int, scale: Double) -> Int {
-        Int((Double(points) * scale).rounded())
-    }
 
     public static func render(_ document: EditorDocument) -> Bitmap {
         var output = croppedBase(document.base, crop: document.edits.crop, scale: document.edits.scale)
@@ -74,7 +69,7 @@ public enum DocumentRenderer {
     private static func renderWindow(edits: DocumentEdits, origin: (x: Int, y: Int), startRow: Int, rowCount: Int,
                                      full: (width: Int, height: Int),
                                      copyRows: (Int, Int) -> Bitmap?) -> Bitmap {
-        let halo = (edits.effects.isEmpty && edits.annotations.isEmpty) ? 0 : 1
+        let halo = edits.effects.isEmpty ? 0 : 1
         let paddedStart = max(0, startRow - halo)
         let paddedEnd = min(full.height, startRow + rowCount + halo)
         var window = copyRows(paddedStart, paddedEnd - paddedStart)
@@ -116,15 +111,15 @@ public enum DocumentRenderer {
         }
         fillRedactions(edits.redactions, on: &output, scale: scale, originX: originX, originY: originY,
                        rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
-        let covered = edits.redactions.compactMap { redaction in
-            snapped(x: redaction.x, y: redaction.y, width: redaction.width, height: redaction.height,
-                    scale: scale, originX: originX, originY: originY, rowShift: rowShift,
-                    fullWidth: fullWidth, fullHeight: fullHeight, in: output)
-        }
-        for annotation in edits.annotations {
-            draw(annotation, on: &output, scale: scale, originX: originX, originY: originY,
-                 rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight, covered: covered)
-        }
+        // Plates first, then the redactions again so no plate pixel lands on a redacted pixel,
+        // then ink above everything (annotations draw above Solid redactions).
+        guard !edits.annotations.isEmpty else { return }
+        AnnotationPainter.draw(edits.annotations, layer: .plate, on: &output, scale: scale, origin: origin,
+                               rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
+        fillRedactions(edits.redactions, on: &output, scale: scale, originX: originX, originY: originY,
+                       rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
+        AnnotationPainter.draw(edits.annotations, layer: .ink, on: &output, scale: scale, origin: origin,
+                               rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
     }
 
     private static func fillRedactions(_ redactions: [SolidRedaction], on output: inout Bitmap, scale: Double,
@@ -273,132 +268,6 @@ public enum DocumentRenderer {
         let minY = max(0, rawMinY - rowShift)
         let maxY = min(output.height, rawMaxY - rowShift)
         return minX < maxX && minY < maxY ? (minX, minY, maxX, maxY) : nil
-    }
-
-    private static func write(_ pixel: RGBAPixel, x: Int, y: Int, on output: inout Bitmap) {
-        let index = (y * output.width + x) * 4
-        output.bytes.withUnsafeMutableBytes { raw in
-            guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            pixels[index] = pixel.red
-            pixels[index + 1] = pixel.green
-            pixels[index + 2] = pixel.blue
-            pixels[index + 3] = pixel.alpha
-        }
-    }
-
-    private static func draw(_ annotation: DocumentAnnotation, on output: inout Bitmap, scale: Double,
-                             originX: Int, originY: Int, rowShift: Int, fullWidth: Int, fullHeight: Int,
-                             covered: [(minX: Int, minY: Int, maxX: Int, maxY: Int)]) {
-        func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullWidth))) }
-        func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullHeight))) - rowShift }
-        let pen = max(2, Int((2 * scale).rounded()))
-        var ink = Set<Int>()
-        func plot(_ x: Int, _ y: Int) {
-            let half = pen / 2
-            for dy in 0..<pen {
-                for dx in 0..<pen {
-                    let px = x - half + dx
-                    let py = y - half + dy
-                    guard (0..<output.width).contains(px), (0..<output.height).contains(py) else { continue }
-                    ink.insert(py * output.width + px)
-                }
-            }
-        }
-        switch annotation.kind {
-        case let .rectangle(x, y, width, height):
-            let minX = column((x * scale).rounded(.down) - Double(originX))
-            let minY = row((y * scale).rounded(.down) - Double(originY))
-            let maxX = column(((x + width) * scale).rounded(.up) - Double(originX))
-            let maxY = row(((y + height) * scale).rounded(.up) - Double(originY))
-            guard minX < maxX, minY < maxY else { return }
-            for x in minX..<maxX {
-                plot(x, minY)
-                plot(x, maxY - 1)
-            }
-            for y in minY..<maxY {
-                plot(minX, y)
-                plot(maxX - 1, y)
-            }
-        case let .arrow(x0, y0, x1, y1):
-            let startX = Int((x0 * scale).rounded()) - originX
-            let startY = Int((y0 * scale).rounded()) - originY
-            let endX = Int((x1 * scale).rounded()) - originX
-            let endY = Int((y1 * scale).rounded()) - originY
-            plotLine(from: (startX, startY), to: (endX, endY), plot: plot)
-            plotArrowHead(from: (startX, startY), to: (endX, endY), scale: scale, plot: plot)
-        case let .text(x, y, characters):
-            let originColumn = Int((x * scale).rounded(.down) - Double(originX))
-            let originRow = Int((y * scale).rounded(.down) - Double(originY))
-            let cell = max(2, Int((2 * scale).rounded()))
-            var cursor = 0
-            for character in AnnotationFont.glyphs(in: characters) {
-                for glyphRow in 0..<AnnotationFont.height {
-                    guard let bits = AnnotationFont.row(character, glyphRow) else { continue }
-                    for (glyphColumn, bit) in bits.enumerated() where bit == "#" {
-                        for dy in 0..<cell {
-                            for dx in 0..<cell {
-                                plot(originColumn + cursor * cell + glyphColumn * cell + dx,
-                                     originRow + glyphRow * cell + dy)
-                            }
-                        }
-                    }
-                }
-                cursor += AnnotationFont.advance
-            }
-        }
-        func redacted(_ x: Int, _ y: Int) -> Bool {
-            covered.contains { x >= $0.minX && x < $0.maxX && y >= $0.minY && y < $0.maxY }
-        }
-        var ring = Set<Int>()
-        for index in ink {
-            let x = index % output.width
-            let y = index / output.width
-            for oy in -1...1 {
-                for ox in -1...1 where ox != 0 || oy != 0 {
-                    let nx = x + ox
-                    let ny = y + oy
-                    guard (0..<output.width).contains(nx), (0..<output.height).contains(ny) else { continue }
-                    let neighbour = ny * output.width + nx
-                    if ink.contains(neighbour) || redacted(nx, ny) { continue }
-                    ring.insert(neighbour)
-                }
-            }
-        }
-        for index in ring {
-            write(plate, x: index % output.width, y: index / output.width, on: &output)
-        }
-        for index in ink {
-            write(DocumentAnnotation.stroke, x: index % output.width, y: index / output.width, on: &output)
-        }
-    }
-
-    private static func plotLine(from start: (Int, Int), to end: (Int, Int), plot: (Int, Int) -> Void) {
-        var x = start.0, y = start.1
-        let dx = abs(end.0 - start.0), dy = -abs(end.1 - start.1)
-        let stepX = start.0 < end.0 ? 1 : -1, stepY = start.1 < end.1 ? 1 : -1
-        var error = dx + dy
-        while true {
-            plot(x, y)
-            if x == end.0 && y == end.1 { break }
-            let doubled = 2 * error
-            if doubled >= dy { error += dy; x += stepX }
-            if doubled <= dx { error += dx; y += stepY }
-        }
-    }
-
-    private static func plotArrowHead(from start: (Int, Int), to end: (Int, Int), scale: Double,
-                                      plot: (Int, Int) -> Void) {
-        let vx = Double(end.0 - start.0), vy = Double(end.1 - start.1)
-        let length = (vx * vx + vy * vy).squareRoot()
-        guard length > 0 else { return }
-        let size = max(8, 10 * scale)
-        let ux = vx / length, uy = vy / length
-        let backX = Double(end.0) - ux * size, backY = Double(end.1) - uy * size
-        let tip = (end.0, end.1)
-        let wingA = (Int((backX - uy * size).rounded()), Int((backY + ux * size).rounded()))
-        let wingB = (Int((backX + uy * size).rounded()), Int((backY - ux * size).rounded()))
-        plotLine(from: tip, to: wingA, plot: plot)
-        plotLine(from: tip, to: wingB, plot: plot)
     }
 
     private static func cropBounds(_ base: Bitmap, crop: DocumentCrop?, scale: Double) -> (width: Int, height: Int) {

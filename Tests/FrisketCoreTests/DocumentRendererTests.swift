@@ -215,16 +215,50 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         #expect(rendered.pixel(x: 0, y: 0) == palette["."])
     }
 
-    @Test func textUsesTheClosedBitmapFont() throws {
-        let base = try blank(24, 20)
-        let annotation = try #require(DocumentAnnotation(.text(x: 0, y: 0, characters: "A")))
+    @Test func labelIsDrawnInThePinnedFontAboveAWhitePlate() throws {
+        let base = try blank(40, 28)
+        let annotation = try #require(DocumentAnnotation(.text(x: 4, y: 2, characters: "H")))
         let rendered = try render(base, annotations: [annotation])
-        // The top bar of A stays ink. The counter is the 1 px white plate, not the capture.
-        #expect(rendered.pixel(x: 2, y: 0) == DocumentAnnotation.stroke)
-        #expect(rendered.pixel(x: 4, y: 4) == DocumentRenderer.plate)
-        #expect(DocumentRenderer.outputCount(points: 18, scale: 2) == 36)
-        #expect(DocumentRenderer.outputCount(points: 18, scale: 2.0 * 182.0 / 5120.0) == 1)
-        #expect(DocumentRenderer.outputCount(points: 1, scale: 2.0 * 182.0 / 5120.0) == 0)
+        // 18 pt HelveticaNeue-Bold: the H's stems are solid ink, ringed by the white plate.
+        #expect(rendered.contains(DocumentAnnotation.stroke))
+        #expect(rendered.contains(DocumentRenderer.plate))
+        let ink = try #require(rendered.bounds(of: DocumentAnnotation.stroke))
+        #expect(ink.minX >= 4 && ink.maxX <= 20 && ink.minY >= 2 && ink.maxY <= 22,
+                "an 18 pt capital sits inside its em box below the label's top-left: \(ink)")
+        #expect(rendered.pixel(x: 39, y: 27) == palette["."])
+        // The label scales with the document: at 2× its ink is about twice as tall.
+        let doubled = try render(try blank(80, 56), scale: 2, annotations: [annotation])
+        let tall = try #require(doubled.bounds(of: DocumentAnnotation.stroke))
+        #expect(abs((tall.maxY - tall.minY) - 2 * (ink.maxY - ink.minY)) <= 2)
+    }
+
+    /// Annotation golden, with a stated tolerance of 2 per channel. A snapped rectangle's 2 px stroke
+    /// and 1 px plate fall on whole pixels, so antialiasing adds nothing here; '~' cells (pixels an
+    /// edge covers in part) would be free, and this golden has none. '*' ink, 'p' plate, '.' capture.
+    @Test func rectangleOutlineMatchesItsGoldenWithinTwoPerChannel() throws {
+        let golden = [
+            "pppppppppp",
+            "p********p",
+            "p********p",
+            "p**pppp**p",
+            "p**p..p**p",
+            "p**p..p**p",
+            "p**pppp**p",
+            "p********p",
+            "p********p",
+            "pppppppppp"
+        ]
+        let colours: [Character: RGBAPixel?] = ["*": DocumentAnnotation.stroke, "p": DocumentRenderer.plate, ".": palette["."]]
+        let annotation = try #require(DocumentAnnotation(.rectangle(x: 1, y: 1, width: 8, height: 8)))
+        let rendered = try render(try blank(10, 10), annotations: [annotation])
+        for (y, row) in golden.enumerated() {
+            for (x, cell) in row.enumerated() where cell != "~" {
+                let got = try #require(rendered.pixel(x: x, y: y)), want = try #require(colours[cell] ?? nil)
+                let close = [(got.red, want.red), (got.green, want.green), (got.blue, want.blue), (got.alpha, want.alpha)]
+                    .allSatisfy { abs(Int($0.0) - Int($0.1)) <= 2 }
+                #expect(close, "golden (\(x), \(y)) is '\(cell)', rendered \(got)")
+            }
+        }
     }
 
     @Test func annotationsDrawAboveRedactionsWithoutClearingNeighbourFill() throws {
@@ -239,7 +273,8 @@ private func picture(_ rows: [String]) throws -> Bitmap {
     @Test func annotationGeometryIsRejectedWhenItCannotBeAStroke() {
         #expect(DocumentAnnotation(.rectangle(x: 0, y: 0, width: 0, height: 1)) == nil)
         #expect(DocumentAnnotation(.arrow(x0: 1, y0: 1, x1: 1, y1: 1)) == nil)
-        #expect(DocumentAnnotation(.text(x: 0, y: 0, characters: "!@#")) == nil)
+        #expect(DocumentAnnotation(.text(x: 0, y: 0, characters: " \t ")) == nil)
+        #expect(DocumentAnnotation(.text(x: 0, y: 0, characters: "!@#")) != nil)
     }
 
     @Test func magnifyDoublesPixelsFromTheSnappedOrigin() throws {
@@ -337,7 +372,29 @@ private func render(_ base: Bitmap, scale: Double = 1, crop: (Double, Double, Do
     return DocumentRenderer.render(EditorDocument(base: base, edits: edits))
 }
 
+/// Per-channel tolerance for antialiased annotation pixels in the strip walk (ticket 66).
+/// CoreGraphics places a long, near-vertical stroke a fraction of a pixel differently in a short
+/// strip context than in the whole image (measured: at most 23 per channel, on the stroke's edge
+/// pixels). The delivered image and the editor preview both render the whole image, so they stay
+/// byte-equal (`d1DeliveredAnnotationsEqualThePreviewAndAppearWhereDrawn`). A missing or repeated
+/// mark differs by far more than this. Solid redaction goldens stay exact.
+private let annotationTolerance = 32
+
 private extension Bitmap {
+    /// The first row where a pixel differs by more than `tolerance` in any channel.
+    func firstDifferingRow(from other: Bitmap, tolerance: Int) -> Int? {
+        guard width == other.width, height == other.height else { return 0 }
+        for y in 0..<height {
+            for x in 0..<width {
+                let a = pixel(x: x, y: y)!, b = other.pixel(x: x, y: y)!
+                if a == b { continue }
+                let channels = [(a.red, b.red), (a.green, b.green), (a.blue, b.blue), (a.alpha, b.alpha)]
+                if channels.contains(where: { abs(Int($0.0) - Int($0.1)) > tolerance }) { return y }
+            }
+        }
+        return nil
+    }
+
     func contains(_ colour: RGBAPixel) -> Bool {
         (0..<height).contains { y in (0..<width).contains { x in pixel(x: x, y: y) == colour } }
     }
@@ -378,7 +435,7 @@ private struct SeededGenerator: RandomNumberGenerator {
 
 /// A 48-px-wide patterned capture with at least one of every edit kind: Solid redaction,
 /// rectangle, arrow, label, Blur and Magnify. Positions are anywhere in the image.
-private func generatedDocument(seed: UInt64, height: Int) throws -> EditorDocument {
+private func generatedDocument(seed: UInt64, height: Int, effects withEffects: Bool = true) throws -> EditorDocument {
     var random = SeededGenerator(seed: seed)
     let width = 48
     var pixels: [RGBAPixel] = []
@@ -416,15 +473,32 @@ private func generatedDocument(seed: UInt64, height: Int) throws -> EditorDocume
         try #require(DocumentEffect(.blur(x: blurred.x, y: blurred.y, width: blurred.width, height: blurred.height))),
         try #require(DocumentEffect(.magnify(x: magnified.x, y: magnified.y, width: magnified.width, height: magnified.height)))
     ]
-    let edits = try #require(DocumentEdits(scale: 1, redactions: redactions, annotations: annotations, effects: effects))
+    let edits = try #require(DocumentEdits(scale: 1, redactions: redactions, annotations: annotations,
+                                           effects: withEffects ? effects : []))
     return EditorDocument(base: base, edits: edits)
 }
 
 /// Known defects in edited output (ticket 44). Each stays red until its fix removes the wrapper.
 @Suite struct EditedOutputDefectTests {
-    /// D1: the save path renders strip by strip (`forEachStrip`, 256 rows in production), while the
-    /// editor preview renders the whole image. Arrows and labels ignore the strip's row offset, and
-    /// Blur and Magnify read only a 1-row halo, so marks vanish or repeat at strip boundaries.
+    /// D1: strips must equal the whole-image render. Annotations are drawn by CoreGraphics and
+    /// CoreText translated by the strip's row offset (ticket 66), so a mark that crosses a strip
+    /// boundary is drawn once, where it was placed, to within the stated `annotationTolerance`.
+    @Test(arguments: [7, 64, DocumentRenderer.stripHeight])
+    func d1StripOutputEqualsTheWholeImageRenderForRedactionsAndAnnotations(stripHeight: Int) throws {
+        for (index, height) in [8, 13, 255, 256, 257, 600, 1024, 1500, 2000].enumerated() {
+            let seed = UInt64(index + 1)
+            let document = try generatedDocument(seed: seed, height: height, effects: false)
+            var strips: [Bitmap] = []
+            DocumentRenderer.forEachStrip(document, stripHeight: stripHeight) { strips.append($0) }
+            let joined = try #require(DocumentRenderer.concatenate(strips))
+            let whole = DocumentRenderer.render(document)
+            let row = joined.firstDifferingRow(from: whole, tolerance: annotationTolerance)
+            #expect(row == nil, "D1: strip height \(stripHeight), image height \(height), seed \(seed): strips differ from the whole render from row \(row ?? -1)")
+        }
+    }
+
+    /// D1, effects: Blur and Magnify read only a 1-row halo, so they differ at strip boundaries.
+    /// Ticket 67 draws them natively (the production save path has no strips since ticket 65).
     @Test(arguments: [7, 64, DocumentRenderer.stripHeight])
     func d1StripOutputEqualsTheWholeImageRenderForEveryEditKind(stripHeight: Int) async throws {
         let heights = [8, 13, 255, 256, 257, 600, 1024, 1500, 2000]
@@ -451,7 +525,7 @@ private func generatedDocument(seed: UInt64, height: Int) throws -> EditorDocume
     /// base here is uniform, so any downsampling filter gives the same proxy. The saved output is the
     /// whole-image render at full size (what the save path gives once D1 is fixed). A mark in the
     /// preview may cover the whole preview pixels its saved pixels touch, and no more; strokes and
-    /// glyph cells floored at 2 px (and arrow heads at 8 px) are larger than that.
+    /// label text at 18 pt (and arrow heads at 8 px) are larger than that.
     @Test(arguments: [1.0, 2.0])
     func d23DownscaledPreviewDrawsMarksNoLargerThanTheSavedOutput(scale: Double) async throws {
         let full = (width: 64, height: Int(4096 * scale))
@@ -488,9 +562,9 @@ private func generatedDocument(seed: UInt64, height: Int) throws -> EditorDocume
         }
     }
 
-    /// D6: the 5×7 label font keeps only A–Z, 0–9 and space, and uppercases everything.
+    /// D6: the old 5×7 label font kept only A–Z, 0–9 and space, and uppercased everything.
     /// Each typed character must add ink to the label, and lowercase must differ from uppercase.
-    @Test func d6LabelKeepsEveryTypedCharacter() async throws {
+    @Test func d6LabelKeepsEveryTypedCharacter() throws {
         let typed = "v2.1 $4.99 -10%"
         let base = try blank(220, 24)
         func label(_ characters: String) throws -> Bitmap? {
@@ -504,12 +578,10 @@ private func generatedDocument(seed: UInt64, height: Int) throws -> EditorDocume
             steps.append((character, try label(prefix), try label(prefix + String(character))))
         }
         let lower = try label("v"), upper = try label("V")
-        try await knownDefect("D6") {
-            for step in steps {
-                #expect(step.after != nil && step.after != step.before,
-                        "D6: typing '\(step.character)' in \"\(typed)\" adds nothing to the label")
-            }
-            #expect(lower != upper, "D6: lowercase v is drawn as uppercase V")
+        for step in steps {
+            #expect(step.after != nil && step.after != step.before,
+                    "D6: typing '\(step.character)' in \"\(typed)\" adds nothing to the label")
         }
+        #expect(lower != upper, "D6: lowercase v is drawn as uppercase V")
     }
 }
