@@ -1,3 +1,8 @@
+> **2026-09-25 17:08:** signed build `4969168` is installed. On `9a8d791` the full matrix passed 31/31 on both displays after one harness fix: the Thumbnail's × is also "Close", so Undo and Close are now checked inside the editor window. On `4969168` the 8 editor rows pass on both displays.
+> - **Decision 99:** choosing a drawing tool drops the selection. Found in the editor screenshots (`.build/visual-now/`, beside `.scratch/visual-pass/cleanshot-editor/`).
+> - **New harness guard:** it refuses to run when the running Frisket predates the installed bundle. A cancelled quit had left the old build running.
+> - **Open for Prateek:** the default line width is 2 pt, which looks thin next to CleanShot's default arrow. White and Yellow ink keep the white halo. Then ticket 83.
+>
 > **2026-09-25 evening, design-audit round:** `main` is at `7592ebd`, with `ci.sh` green (446 tests). The installed build is still `118d09f`.
 > - **Audit:** the design research in `.scratch/visual-pass/` was checked against the code. Prateek then chose decisions 91 (Thumbnail × on hover), 92 (six ink colours now) and 93 (remember styles).
 > - **Merged:** 98 (decision 94), 97 (decision 95, live drag feedback), 101 (decision 96), 99 (decision 97) and 100 (decision 98, which also adds the label corner handle and the reopened onboarding's Close).
