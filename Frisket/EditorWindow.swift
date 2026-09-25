@@ -344,6 +344,9 @@ enum EditorAction {
     /// The Solid redaction palette (ticket 88): one swatch per colour, for the tool and a selected redaction.
     private var swatchButtons: [NSButton] = []
     private let swatchStack = NSStackView()
+    /// The style bar (ticket 92): the style controls that apply to the selected mark or the active
+    /// tool, in the content area so none of them falls into the toolbar's overflow menu.
+    private let styleBar = NSStackView()
     private let hintField = NSTextField(labelWithString: "")
     private let tools: [any EditorTool]
     /// Solid Redaction; the Select tool is first in the toolbar.
@@ -468,6 +471,17 @@ enum EditorAction {
         swatchStack.setAccessibilityElement(true)
         swatchStack.setAccessibilityRole(.group)
         swatchStack.setAccessibilityLabel("Redaction colour")
+        for control in [swatchStack, stylePopUp, widthPopUp, labelSizePopUp, labelStylePopUp] {
+            styleBar.addArrangedSubview(control)
+        }
+        styleBar.orientation = .horizontal
+        styleBar.alignment = .centerY
+        styleBar.spacing = 12
+        styleBar.detachesHiddenViews = true
+        styleBar.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        styleBar.setAccessibilityElement(true)
+        styleBar.setAccessibilityRole(.group)
+        styleBar.setAccessibilityLabel("Style")
         hintField.textColor = .secondaryLabelColor
         hintField.font = .systemFont(ofSize: 12)
         hintField.lineBreakMode = .byWordWrapping
@@ -517,25 +531,30 @@ enum EditorAction {
         let chromeAbove = probe.height - 400
         let hintHeight: CGFloat = 44
         let barHeight = EditorWindowLayout.actionBarHeight
+        let styleHeight = EditorWindowLayout.styleBarHeight
         var size = EditorWindowLayout.contentSize(document: documentSize, visible: visible.size,
-            chrome: EditorWindowLayout.Chrome(toolbarHeight: hintHeight + barHeight, titlebarHeight: chromeAbove))
+            chrome: EditorWindowLayout.Chrome(toolbarHeight: styleHeight + hintHeight + barHeight, titlebarHeight: chromeAbove))
         size.width = max(size.width, min(EditorWindowLayout.defaultContentWidth, visible.width))
         window.contentMinSize = CGSize(width: min(EditorWindowLayout.minimumContentWidth, visible.width),
-                                       height: min(hintHeight + barHeight + 80, size.height))
+                                       height: min(styleHeight + hintHeight + barHeight + 80, size.height))
         window.maxSize = visible.size
         let content = NSView(frame: CGRect(origin: .zero, size: size))
         let bar = EditorActionBar(dragHandle: dragWell, copy: copyButton, save: saveButton, done: doneButton)
         bar.frame = CGRect(x: 0, y: 0, width: size.width, height: barHeight)
         bar.autoresizingMask = [.width, .maxYMargin]
-        canvas.frame = CGRect(x: 0, y: barHeight, width: size.width, height: max(1, size.height - hintHeight - barHeight))
+        canvas.frame = CGRect(x: 0, y: barHeight, width: size.width,
+                              height: max(1, size.height - styleHeight - hintHeight - barHeight))
         canvas.autoresizingMask = [.width, .height]
         canvas.onPress = { [weak self] point, tolerance in self?.press(at: point, tolerance: tolerance) ?? false }
         canvas.onRelease = { [weak self] start, end, tolerance in self?.release(from: start, to: end, tolerance: tolerance) }
         canvas.onMarkKey = { [weak self] key in self?.markKey(key) ?? false }
         canvas.onResize = { [weak self] in self?.placeLabelView() }
-        hintField.frame = CGRect(x: 12, y: size.height - hintHeight + 6, width: size.width - 24, height: hintHeight - 10)
+        styleBar.frame = CGRect(x: 0, y: size.height - styleHeight, width: size.width, height: styleHeight)
+        styleBar.autoresizingMask = [.width, .minYMargin]
+        hintField.frame = CGRect(x: 12, y: size.height - styleHeight - hintHeight + 6, width: size.width - 24, height: hintHeight - 10)
         hintField.autoresizingMask = [.width, .minYMargin]
         content.addSubview(canvas)
+        content.addSubview(styleBar)
         content.addSubview(hintField)
         content.addSubview(bar)
         window.contentView = content
@@ -618,6 +637,14 @@ enum EditorAction {
             return
         }
         placeLabelView()
+        // The style bar shows the selected mark's controls, or the active tool's (ticket 92).
+        let shown = Set(StyleBar.controls(tool: tools[activeTool].kind,
+                                          selection: labelSession == nil ? marks.selection : nil, in: edits))
+        swatchStack.isHidden = !shown.contains(.redactionColour)
+        stylePopUp.isHidden = !shown.contains(.arrowStyle)
+        widthPopUp.isHidden = !shown.contains(.lineWidth)
+        labelSizePopUp.isHidden = !shown.contains(.labelSize)
+        labelStylePopUp.isHidden = !shown.contains(.labelStyle)
         let labelFormat = labelSession?.format ?? marks.selectionLabel ?? (tools[activeTool] is TextTool ? textTool.format : nil)
         labelSizePopUp.isEnabled = !finishing && labelFormat != nil
         labelStylePopUp.isEnabled = !finishing && labelFormat != nil
@@ -698,9 +725,9 @@ enum EditorAction {
             canvas.setAccessibilityLabel("Capture canvas. Click a mark to select it. Tab steps through marks.")
         case is SolidRedactionTool:
             canvas.guide = .conceal
-            let colour = redactionTool.colourName.lowercased()
-            hintField.stringValue = "Drag a box. It is painted solid \(colour) and stays hidden under blur."
-            canvas.setAccessibilityLabel("Capture canvas. Drag to hide pixels with a solid \(colour) redaction.")
+            let colour = redactionTool.colourName
+            hintField.stringValue = "Drag a box. It is painted solid \(colour.lowercased()) and stays hidden under blur."
+            canvas.setAccessibilityLabel("Capture canvas. Drag to hide pixels with a Solid redaction in \(colour).")
         case is CropTool:
             canvas.guide = .crop
             hintField.stringValue = "Drag the area to keep. Everything outside it is removed."
@@ -1063,19 +1090,13 @@ extension EditorWindow: NSToolbarDelegate {
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolButtons.enumerated().map { NSToolbarItem.Identifier("tool-\($0.offset)") }
-            + [.init("redaction-colour"), .init("label-size"), .init("label-style"), .init("style"), .init("width"), .flexibleSpace,
-               .init("undo"), .init("close")]
+            + [.flexibleSpace, .init("undo"), .init("close")]
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         let item = NSToolbarItem(itemIdentifier: identifier)
         switch identifier.rawValue {
-        case "label-size": item.view = labelSizePopUp; item.label = "Label Size"
-        case "label-style": item.view = labelStylePopUp; item.label = "Label Style"
-        case "width": item.view = widthPopUp; item.label = "Line Width"
-        case "redaction-colour": item.view = swatchStack; item.label = "Redaction Colour"
-        case "style": item.view = stylePopUp; item.label = "Arrow Style"
         case "undo": item.view = undoButton; item.label = "Undo"
         case "close": item.view = closeButton; item.label = "Close"
         default:

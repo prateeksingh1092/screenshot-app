@@ -14,6 +14,8 @@ enum EditorToolRole: Equatable {
     var keyEquivalent: String { get }
     var symbolName: String { get }
     var role: EditorToolRole { get }
+    /// Which style controls the style bar shows for this tool (ticket 92).
+    var kind: EditorToolKind { get }
     /// Applies a drag from `start` to `end`; returns false when the drag changes nothing.
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool
 }
@@ -29,6 +31,7 @@ enum EditorToolRole: Equatable {
     let accessibilityLabel = "Select tool. Click a mark to move, resize, restyle or delete it."
     let keyEquivalent = "v"
     let symbolName = "cursorarrow"
+    let kind = EditorToolKind.select
     let role = EditorToolRole.select
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool { false }
@@ -39,6 +42,7 @@ enum EditorToolRole: Equatable {
     let accessibilityLabel = "Solid redaction. Hides pixels with an opaque colour, black by default."
     let keyEquivalent = "r"
     let symbolName = "square.fill"
+    let kind = EditorToolKind.solidRedaction
     let role = EditorToolRole.conceal
     /// The fill for new redactions: a palette colour, black until the user picks another (decision 61).
     var colour = SolidRedaction.fill
@@ -60,6 +64,7 @@ enum EditorToolRole: Equatable {
     let accessibilityLabel = "Crop tool"
     let keyEquivalent = "c"
     let symbolName = "crop"
+    let kind = EditorToolKind.crop
     let role = EditorToolRole.frame
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
@@ -78,6 +83,7 @@ enum EditorToolRole: Equatable {
     let accessibilityLabel = "Rectangle shape tool. Drawing does not hide pixels."
     let keyEquivalent = "s"
     let symbolName = "rectangle"
+    let kind = EditorToolKind.shape
     let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
@@ -99,6 +105,7 @@ enum EditorToolRole: Equatable {
     var accessibilityLabel: String { "Arrow tool. Drawing does not hide pixels." }
     var keyEquivalent: String { "a" }
     var symbolName: String { "arrow.up.right" }
+    var kind: EditorToolKind { .arrow }
     let role = EditorToolRole.draw
 
     init(style: ArrowStyle = .standard) {
@@ -125,6 +132,7 @@ enum EditorToolRole: Equatable {
     override var accessibilityLabel: String { "Line tool. Drawing does not hide pixels." }
     override var keyEquivalent: String { "l" }
     override var symbolName: String { "line.diagonal" }
+    override var kind: EditorToolKind { .line }
 }
 
 /// Labels typed on the image (ticket 86): a click starts a label there, typed on the canvas. Its
@@ -134,6 +142,7 @@ enum EditorToolRole: Equatable {
     let accessibilityLabel = "Text label tool. Click and type on the image. Labels do not hide pixels."
     let keyEquivalent = "t"
     let symbolName = "textformat"
+    let kind = EditorToolKind.text
     let role = EditorToolRole.draw
     var format = LabelFormat.standard
 
@@ -146,6 +155,7 @@ enum EditorToolRole: Equatable {
     let accessibilityLabel = "Blur. Softens pixels and does not hide them. Use Solid Redaction to conceal."
     let keyEquivalent = "b"
     let symbolName = "circle.lefthalf.filled"
+    let kind = EditorToolKind.blur
     let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {
@@ -163,6 +173,7 @@ enum EditorToolRole: Equatable {
     let accessibilityLabel = "Magnify. Doubles pixels and does not hide them. Use Solid Redaction to conceal."
     let keyEquivalent = "m"
     let symbolName = "plus.magnifyingglass"
+    let kind = EditorToolKind.magnify
     let role = EditorToolRole.draw
 
     func applyDrag(from start: CGPoint, to end: CGPoint, to edits: inout DocumentEdits) -> Bool {

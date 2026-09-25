@@ -46,6 +46,9 @@ _Avoid_: zoom
 **Mark**:
 Anything drawn on a capture in the editor that stays an object after drawing: an annotation, a Solid redaction, a Blur or a Magnify box. A mark can be selected, moved, resized, deleted and restyled. A crop is not a mark.
 
+**Style bar**:
+The row under the editor's toolbar that shows only the style controls for the selected mark, or else for the active tool: the Solid redaction colour, the arrow style, the line width, and the label size and style.
+
 **OCR**:
 Extraction of text from a capture so that the text can be copied or otherwise used.
 
