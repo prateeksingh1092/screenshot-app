@@ -15,7 +15,7 @@ The stitcher doc describes the result.
 
 **Effort:** xhigh. Before starting, stop and ask Prateek to switch Claude Code to xhigh (decision 58).
 
-**Status:** ready-for-agent
+**Status:** withdrawn 2026-09-25 (decision 60: scrolling capture removed)
 
 - [ ] The round-trip tests pass for steady and mid-step scrolls, uniform bands and repeating content. A flick on periodic content is reported as ambiguous, never wrong.
 - [ ] The live harness page is exact.

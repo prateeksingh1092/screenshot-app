@@ -4,7 +4,7 @@
 
 **Blocked by:** 10, 14, 15, 16, 17, 22, 25, 27, 28, 29, 30, 31, 33, 36, 38, 39
 
-**Status:** in-progress (branch `ticket/40-final-acceptance`)
+**Status:** closed 2026-09-25 (decision 60: ticket 83 replaces it)
 
 - [ ] The complete manual checklist passes, including cases added after ticket 39 (display unplug and lock outcomes, exclusion list, editor flows).
 - [ ] Performance is re-measured after scrolling capture and meets the ratified targets.

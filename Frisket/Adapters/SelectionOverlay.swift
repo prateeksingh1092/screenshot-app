@@ -19,19 +19,12 @@ extension NSScreen {
     private var spaceGeneration: (() -> UInt64)?
     private var completion: CheckedContinuation<AreaSelection?, Never>?
     fileprivate var session: DisplaySelectionSession?
-    private var loupeFeed: LoupeFeed?
-    private var loupeDisplayID: UInt32?
 
-    /// `loupe` samples device pixels for the Loupe; nil shows no Loupe.
-    func select(displays: [SelectionDisplay], pointer: CGPoint, loupe: LoupeFeed.Capture? = nil,
+    func select(displays: [SelectionDisplay], pointer: CGPoint,
                 spaceGeneration: @escaping () -> UInt64) async -> AreaSelection? {
         guard completion == nil, !displays.isEmpty else { return nil }
         self.spaceGeneration = spaceGeneration
         session = DisplaySelectionSession(displays: displays, pointer: pointer)
-        loupeDisplayID = nil
-        loupeFeed = loupe.map { capture in
-            LoupeFeed(capture: capture) { [weak self] sample, image in self?.showLoupe(image, of: sample) }
-        }
         return await withCheckedContinuation { continuation in
             completion = continuation
             NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged),
@@ -58,34 +51,7 @@ extension NSScreen {
                 panel.orderFrontRegardless()
             }
             focusOrigin()
-            // Sampled only once the overlay is on screen, so the capture route can exclude it.
-            pointerMoved(to: NSEvent.mouseLocation)
         }
-    }
-
-    /// Moves the Loupe with the pointer (global points) and asks for that pixel square.
-    fileprivate func pointerMoved(to pointer: CGPoint) {
-        guard let feed = loupeFeed, let target = session?.loupeTarget(at: pointer),
-              let sample = Loupe.sample(at: target.pointer, on: target.display),
-              let view = panels[target.display.id]?.contentView as? SelectionView else {
-            hideLoupe()
-            return
-        }
-        if loupeDisplayID != target.display.id { hideLoupe() }
-        loupeDisplayID = target.display.id
-        view.placeLoupe(beside: target.pointer)
-        feed.request(sample)
-    }
-
-    private func showLoupe(_ image: CGImage, of sample: LoupeSample) {
-        guard sample.displayID == loupeDisplayID,
-              let view = panels[sample.displayID]?.contentView as? SelectionView else { return }
-        view.showLoupe(image, of: sample)
-    }
-
-    private func hideLoupe() {
-        loupeDisplayID = nil
-        for panel in panels.values { (panel.contentView as? SelectionView)?.hideLoupe() }
     }
 
     /// Also completes a suspended selection if its caller explicitly hides it.
@@ -110,10 +76,7 @@ extension NSScreen {
             selection = AreaSelection(displayID: display.id, displayFrame: display.frame, rect: rect, scale: display.scale,
                                       spaceGeneration: spaceGeneration())
         }
-        // Tear down the Loupe and EVERY panel before resuming the pixel source.
-        loupeFeed?.stop()
-        loupeFeed = nil
-        hideLoupe()
+        // Tear down EVERY panel and frozen preview before resuming the pixel source.
         for panel in panels.values {
             panel.orderOut(nil)
             panel.contentView = nil
@@ -136,8 +99,8 @@ extension NSScreen {
         guard completion != nil else { return }
         displaysChanged()
         guard completion != nil else { return }
-        hideLoupe()
         for panel in panels.values {
+            // A frozen image of the previous Space is no longer a useful preview.
             (panel.contentView as? SelectionView)?.spaceChanged()
             panel.orderFrontRegardless()
         }
@@ -155,7 +118,6 @@ extension NSScreen {
     private var spaceHeld = false
     private var modifiers: SelectionGeometry.Modifiers = []
     private var paintedSelection: NSRect = .null
-    private let loupe = LoupeView()
     override var acceptsFirstResponder: Bool { true }
     override var needsPanelToBecomeKey: Bool { true }
 
@@ -166,8 +128,6 @@ extension NSScreen {
         scale = display.scale
         pointer = NSEvent.mouseLocation
         super.init(frame: CGRect(origin: .zero, size: display.frame.size))
-        wantsLayer = true
-        addSubview(loupe)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Select capture area")
@@ -217,13 +177,6 @@ extension NSScreen {
         setNeedsDisplay(dirty)
     }
 
-    /// `pointer` is in global points; the Loupe stays inside this display.
-    func placeLoupe(beside pointer: CGPoint) {
-        loupe.place(beside: CGPoint(x: pointer.x - displayFrame.minX, y: pointer.y - displayFrame.minY), in: bounds)
-    }
-    func showLoupe(_ image: CGImage, of sample: LoupeSample) { loupe.show(image, of: sample) }
-    func hideLoupe() { loupe.clear() }
-
     private func currentSelectionRect() -> NSRect {
         guard overlay.session?.originDisplay?.id == displayID, let rect = overlay.session?.rect else { return .null }
         return rect.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
@@ -253,7 +206,6 @@ extension NSScreen {
     }
     override func mouseMoved(with event: NSEvent) {
         pointer = point(event)
-        overlay.pointerMoved(to: pointer)
     }
     override func mouseDown(with event: NSEvent) {
         pointer = point(event)
@@ -264,7 +216,6 @@ extension NSScreen {
         dragging = true
         updateModifiers(event)
         updateGeometry()
-        overlay.pointerMoved(to: pointer)
         overlay.redraw()
         overlay.focusOrigin()
     }
@@ -272,7 +223,6 @@ extension NSScreen {
         pointer = point(event)
         updateModifiers(event)
         updateGeometry()
-        overlay.pointerMoved(to: pointer)
     }
     override func mouseUp(with event: NSEvent) {
         guard dragging else { return }

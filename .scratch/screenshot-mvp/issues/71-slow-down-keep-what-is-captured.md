@@ -6,7 +6,7 @@
 
 **Phase:** 3
 
-**Status:** ready-for-agent
+**Status:** withdrawn 2026-09-25 (decision 60: scrolling capture removed)
 
 - [ ] The hint appears on a fast or ambiguous step and clears after a good frame.
 - [ ] A single alignment failure keeps the accepted part, and the result never contains a wrong seam.

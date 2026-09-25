@@ -188,6 +188,16 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **Filled rectangles:** allowed only in colours other than black, never as fully opaque black, so no mark can be mistaken for Solid redaction.
     - **Pixelate:** not added as concealment. If it is ever added, it is a softening effect like Blur, labelled as not hiding content.
 
+60. **Scrolling capture and the Loupe removed; one-row Thumbnail; ticket 40 closed (Prateek, 2026-09-25):**
+    - **Scrolling capture is removed as a feature.** This supersedes decisions 32 and 48 and the scrolling parts of decisions 2, 13 and 55. ⌘⇧6 is freed.
+      - Retired stories: 4, 16, 17, 18, 81, 92 and 93, plus the ⌘⇧6 part of story 19.
+      - Retired defects: D3, D11 and D20, plus DA-9.
+      - Withdrawn tickets: 64, 70, 71 and 72.
+      - The removal plan is in `Plans/2026-09-25-remove-scrolling-capture.md`.
+    - **No Loupe while selecting.** Prateek had removed it on purpose; ticket 51 brought it back by mistake. This supersedes story 6, story 100 and D26, and ticket 51 is reverted.
+    - **Thumbnail controls sit on one row.** Copy, Save, Edit, Copy Text and Delete share a single row.
+    - **Ticket 40 (v1 final acceptance) is closed.** Ticket 83 (remediation acceptance) replaces it.
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).

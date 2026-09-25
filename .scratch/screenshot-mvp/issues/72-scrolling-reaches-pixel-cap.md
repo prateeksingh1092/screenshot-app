@@ -6,7 +6,7 @@
 
 **Phase:** 3 (O14, D20)
 
-**Status:** ready-for-agent
+**Status:** withdrawn 2026-09-25 (decision 60: scrolling capture removed)
 
 - [ ] The D20 test passes without the known-defect mark.
 - [ ] A preview update costs time in proportion to the new rows. Peak memory for a 5,120-px-wide capture up to the cap is measured and recorded.

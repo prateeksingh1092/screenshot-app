@@ -46,17 +46,6 @@ public struct DisplaySelectionSession: Sendable {
         }
     }
 
-    /// Where the Loupe belongs: the display under the pointer until a drag chooses the
-    /// Origin display, then only the Origin display, with the pointer clamped onto it.
-    public func loupeTarget(at point: CGPoint) -> (display: SelectionDisplay, pointer: CGPoint)? {
-        guard !isCancelled else { return nil }
-        guard locked else { return display(at: point).map { ($0, point) } }
-        guard let origin = originDisplay else { return nil }
-        let pixel = 1 / origin.scale
-        return (origin, CGPoint(x: min(max(point.x, origin.frame.minX), origin.frame.maxX - pixel),
-                                y: min(max(point.y, origin.frame.minY + pixel), origin.frame.maxY)))
-    }
-
     /// The first drag selects the origin, which may differ from the invocation
     /// display. Later drags may restart only on that same display.
     @discardableResult public mutating func begin(at point: CGPoint) -> Bool {

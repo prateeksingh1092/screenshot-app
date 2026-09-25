@@ -1,7 +1,7 @@
 import Foundation
 @preconcurrency import ScreenCaptureKit
 
-/// Shared policy for the Loupe and the final capture. Callers retain
+/// Shared policy for the frozen preview and final capture. Callers retain
 /// their own size budgets, pixel-format needs, and image handling.
 @MainActor enum ScreenCapturePolicy {
     enum OwnProcessListing: Equatable, Sendable {

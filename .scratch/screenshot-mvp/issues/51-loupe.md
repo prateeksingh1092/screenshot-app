@@ -6,7 +6,7 @@
 
 **Phase:** 1
 
-**Status:** resolved in code (tested on `main` at `b6233e9`); live checks wait for an approved install
+**Status:** reverted 2026-09-25 (decision 60: no Loupe)
 
 - [x] The Loupe shows device pixels around the pointer, with the centre pixel marked, on Retina and 1× displays.
 - [x] It stays on the Origin display and moves aside near display edges so it never covers the pointer.

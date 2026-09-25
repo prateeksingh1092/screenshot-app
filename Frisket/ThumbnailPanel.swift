@@ -94,28 +94,25 @@ private struct ThumbnailCardControls: View {
     @FocusState private var copyFocused: Bool
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Button(model.copiedWhilePending ? "Copied" : model.copyFailed ? "Retry Copy" : "Copy", action: actions.copy)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut("c", modifiers: [])
-                    .focused($copyFocused)
-                    .accessibilityLabel("Copy capture")
-                    .disabled(model.copiedWhilePending)
-                symbolButton(model.saveFailed ? "arrow.clockwise" : "square.and.arrow.down",
-                             action: actions.save,
-                             shortcut: "s",
-                             label: model.saveFailed ? "Retry saving capture" : "Save capture")
-                if !model.historyCommitted && !model.editingUnavailable {
-                    symbolButton("pencil", action: actions.edit, shortcut: "e", label: "Edit capture")
-                }
-                symbolButton("text.viewfinder", action: actions.copyText, shortcut: "t", label: "Copy recognized text")
+        // One row (decision 60): Copy, Save, Edit, Copy Text and Delete.
+        HStack(spacing: 6) {
+            Button(model.copiedWhilePending ? "Copied" : model.copyFailed ? "Retry Copy" : "Copy", action: actions.copy)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut("c", modifiers: [])
+                .focused($copyFocused)
+                .accessibilityLabel("Copy capture")
+                .disabled(model.copiedWhilePending)
+            symbolButton(model.saveFailed ? "arrow.clockwise" : "square.and.arrow.down",
+                         action: actions.save,
+                         shortcut: "s",
+                         label: model.saveFailed ? "Retry saving capture" : "Save capture")
+            if !model.historyCommitted && !model.editingUnavailable {
+                symbolButton("pencil", action: actions.edit, shortcut: "e", label: "Edit capture")
             }
+            symbolButton("text.viewfinder", action: actions.copyText, shortcut: "t", label: "Copy recognized text")
             if !model.historyCommitted {
-                HStack {
-                    symbolButton("trash", action: actions.delete, shortcut: nil, label: "Delete pending capture")
-                        .keyboardShortcut(.delete, modifiers: [])
-                }
+                symbolButton("trash", action: actions.delete, shortcut: nil, label: "Delete pending capture")
+                    .keyboardShortcut(.delete, modifiers: [])
             }
         }
         .buttonStyle(.bordered)

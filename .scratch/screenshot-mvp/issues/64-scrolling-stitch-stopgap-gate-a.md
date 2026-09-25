@@ -15,7 +15,7 @@ Gate A follows: measure on the harness page and record the scope of ticket 70.
 
 **Effort:** xhigh. Before starting, stop and ask Prateek to switch Claude Code to xhigh (decision 58).
 
-**Status:** ready-for-agent
+**Status:** withdrawn 2026-09-25 (decision 60: scrolling capture removed)
 
 - [ ] The steady and mid-step round-trip tests pass exactly without the known-defect mark.
 - [ ] The periodic-content flick is either exact or reported as ambiguous, never silently short. If it is still red, it stays marked.

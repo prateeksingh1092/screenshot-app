@@ -11,8 +11,6 @@ import UniformTypeIdentifiers
     private lazy var overlay = SelectionOverlay()
     private let permission: ScreenCapturePermissionAdapter
     private var content: (any ScreenCaptureContent)?
-    /// Loaded once the overlay is on screen, so it lists Frisket and its filter leaves the overlay out.
-    private var loupeContent: (any ScreenCaptureContent)?
     private var areaLayout: DisplaySelectionSession?
     private var selectionPointer: CGPoint = .zero
     private var selectionDisplays: [SelectionDisplay] = []
@@ -22,9 +20,7 @@ import UniformTypeIdentifiers
     private let connectedDisplays: @MainActor () -> [SelectionDisplay]
     private let applicationNotifications: NotificationCenter
     private let exclusions: @MainActor () -> Set<String>
-    private let bundleIdentifier: String?
     init(permission: ScreenCapturePermissionAdapter,
-         bundleIdentifier: String? = Bundle.main.bundleIdentifier,
          exclusions: @escaping @MainActor () -> Set<String> = { [] },
          loadContent: @escaping @MainActor () async throws -> any ScreenCaptureContent = {
              ShareableScreenCaptureContent(content: try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true))
@@ -32,7 +28,6 @@ import UniformTypeIdentifiers
          connectedDisplays: @escaping @MainActor () -> [SelectionDisplay] = { NSScreen.screens.compactMap(\.selectionDisplay) },
          applicationNotifications: NotificationCenter = NSWorkspace.shared.notificationCenter) {
         self.permission = permission
-        self.bundleIdentifier = bundleIdentifier
         self.exclusions = exclusions
         self.loadContent = loadContent
         self.connectedDisplays = connectedDisplays
@@ -72,39 +67,13 @@ import UniformTypeIdentifiers
         hideSelection()
     }
 
-    func discardSelectionPreviews() { loupeContent = nil }
-
-    /// The Loupe's pixels, through the Selection's own route: the same ScreenCaptureKit
-    /// snapshot type, filter policy and exclusions, for one small square only. It fails
-    /// closed unless the snapshot lists this Frisket process, since the overlay is showing.
-    func sampleLoupe(_ sample: LoupeSample) async throws -> CGImage {
-        guard content != nil, let bundleIdentifier else { throw CapturePlatformError.unavailable }
-        let generation = applicationGeneration
-        let available: any ScreenCaptureContent
-        if let loupeContent {
-            available = loupeContent
-        } else {
-            available = try await loadContent()
-            guard generation == applicationGeneration,
-                  available.listsOwnProcess(bundleIdentifier: bundleIdentifier) else {
-                throw CapturePlatformError.unavailable
-            }
-            loupeContent = available
-        }
-        let request = AreaCaptureRequest(displayID: sample.displayID, sourceRect: sample.sourceRect,
-            pixelWidth: sample.span, pixelHeight: sample.span, excludingBundleIdentifier: bundleIdentifier,
-            additionalExcludedBundleIdentifiers: exclusions())
-        let image = try await available.captureImage(request, additionalExclusions: [])
-        guard generation == applicationGeneration else { throw CapturePlatformError.unavailable }
-        return image
-    }
+    func discardSelectionPreviews() {}
 
     func selectArea() async -> AreaSelection? {
         // A change on ANY display during preparation invalidates the whole layout.
         areaLayout?.updateDisplays(connectedDisplays())
         guard areaLayout?.isCancelled == false else { return nil }
         let selection = await overlay.select(displays: selectionDisplays, pointer: selectionPointer,
-                                             loupe: { try await self.sampleLoupe($0) },
                                              spaceGeneration: { self.spaceGeneration })
         captureDisplayID = selection?.displayID
         return selection
