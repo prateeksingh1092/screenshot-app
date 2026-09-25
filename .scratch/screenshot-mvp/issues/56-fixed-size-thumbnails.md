@@ -6,7 +6,7 @@
 
 **Phase:** 1 (D9 → O10)
 
-**Status:** reopened 2026-09-25 (the live stack row fails on both displays; see the last comment)
+**Status:** resolved 2026-09-25 (stack row passes live on the external display)
 
 - [x] Thumbnails of very wide, very tall and square captures have identical frames.
 - [x] Stack positions come from a pure layout function with a unit test: no overlap up to the stack limit, and removing one Thumbnail closes the gap.
@@ -47,3 +47,9 @@ Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82�
 - **`place(at:)`:** it sets the origin directly instead of animating it, so no animation still in flight can leave a card in its old slot.
 - **No package seam:** this is app-layer window code, so the live `stack` row is the test. The row expects pass again.
 - **Not verified yet:** the row can't be run until the fix is installed. That is one row at about 1 minute, inside the 15-minute cap.
+
+### 2026-09-25: coordinator, verified live
+
+- **Result:** on the installed `b13dcde`, the `stack` row passes on the external display (run `20260925-014103`). The whole live check took 27 s.
+- **Decision 60, one row:** the Thumbnail's Copy, Save, Edit, Copy Text and Delete all sit on one row, at y = 1008–1010.
+- **Resolved:** the D9 fix holds live; only the built-in display is still unchecked.

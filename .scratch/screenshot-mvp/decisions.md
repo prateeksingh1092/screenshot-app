@@ -203,10 +203,12 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **The invariant:** every redacted pixel is exactly the chosen colour at full opacity (alpha 255), in every output: clipboard, file, drag, History, Thumbnail and OCR input. The default colour is black.
     - **What had drifted:** this choice was never recorded here. `CLAUDE.md`, the remediation plan, the CleanShot study and decision 59 all narrowed it to "exact black". This entry corrects them.
     - **Decision 59's filled-rectangle rule:** it assumed black redaction, so it has to be restated.
-    - **Open for Prateek:**
-      - how a filled shape stays distinguishable from a redaction;
-      - whether the colours are a palette or free.
+    - **Resolved by Prateek the same day:**
+      - **No filled shapes.** Shapes are outlines only, so Solid redaction is the only solid fill in the editor. This replaces decision 59's filled-rectangle rule.
+      - **A small palette:** black (the default), white, grey and a few neutral colours. There is no free colour picker.
     - **Ticket:** 88.
+
+62. **Effort (Prateek, 2026-09-25):** medium effort for every remaining ticket. This supersedes decision 58's high default and its xhigh list (tickets 65–68). He chose this after being told the risk: the renderer and lifecycle tickets guard the Solid redaction and Pending capture invariants. The mitigation is that those tickets keep their test-first seams and the canary leak tests.
 
 ## Evaluation update: Xcode question resolved narrowly
 

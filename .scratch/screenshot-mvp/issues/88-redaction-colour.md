@@ -6,9 +6,9 @@
 
 **Phase:** 2b (with 84–86)
 
-**Status:** needs-info (the two open questions in decision 61)
+**Status:** ready-for-agent (decision 61: no filled shapes, a small palette)
 
 - [ ] The canary leak tests at the flatten seam pass for black and for at least two other colours.
 - [ ] `pattern --verify-redacted` takes the expected colour, and the live `editor-redaction` row checks a colour other than black.
-- [ ] A filled shape can't be mistaken for a redaction, using the rule chosen in decision 61.
+- [ ] Shapes are outlines only; no editor tool other than Solid redaction draws an opaque fill.
 - [ ] Decision 59's filled-rectangle rule, the plan's "guaranteed black" wording and the CleanShot study are updated.
