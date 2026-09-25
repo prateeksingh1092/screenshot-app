@@ -11,7 +11,7 @@ actor CaptureLifecycleCoordinator {
     private let history: (any CaptureHistory)?
     private let exporter: (any CaptureExport)?
     private let drag: (any DragHandoff)?
-    private let codec: (any BitmapCodec)?
+    private let flattener: (any CaptureFlattening)?
     private let textRecognizer: (any TextRecognizer)?
     private let textClipboard: (any TextClipboard)?
     private var finalized: Set<CaptureID> = []
@@ -42,7 +42,7 @@ actor CaptureLifecycleCoordinator {
          clipboard: any ImageClipboard, pendingByteLimit: Int, history: (any CaptureHistory)?, exporter: (any CaptureExport)?,
          drag: (any DragHandoff)?,
          thumbnailPolicy: ThumbnailStackPolicy, clock: @escaping @Sendable () -> ContinuousClock.Instant,
-         codec: (any BitmapCodec)?,
+         flattener: (any CaptureFlattening)?,
          textRecognizer: (any TextRecognizer)?, textClipboard: (any TextClipboard)?) {
         stack = ThumbnailStack(policy: thumbnailPolicy)
         self.clock = clock
@@ -55,7 +55,7 @@ actor CaptureLifecycleCoordinator {
         self.history = history
         self.exporter = exporter
         self.drag = drag
-        self.codec = codec
+        self.flattener = flattener
         self.textRecognizer = textRecognizer
         self.textClipboard = textClipboard
     }
@@ -229,7 +229,9 @@ actor CaptureLifecycleCoordinator {
             // Once redaction is submitted, a rejected render must not expose the
             // original to delivery or History. Only an accepted Done or Delete resolves it.
             if !edits.redactions.isEmpty { unfinishedRedactions.insert(id) }
-            guard let codec, let pngData = codec.encode(image.pngData, edits: edits),
+            // Synchronous on purpose: no suspension separates the guards above from the
+            // replacement below. If flatten ever becomes async, insert `inProgress` before the await.
+            guard let flattener, let pngData = try? flattener.flatten(image.pngData, edits: edits),
                   !pngData.isEmpty else { return .rejected(.editingUnavailable) }
             guard pngData.count <= pendingByteLimit - (pendingBytes - image.pngData.count) else {
                 return .rejected(.pendingByteBudgetExceeded)
@@ -518,9 +520,9 @@ actor CaptureLifecycleCoordinator {
             failedDeliveries.removeValue(forKey: id)
             if fromHistory { break }
             delivered.insert(id)
-            // A failed History commit leaves an editable Pending capture when a codec
+            // A failed History commit leaves an editable Pending capture when a flattener
             // can replace the earlier copy. Keep its byte charge and receipt.
-            if kind == .copy, commit != .committed, !recoveryRequired.contains(id), codec != nil,
+            if kind == .copy, commit != .committed, !recoveryRequired.contains(id), flattener != nil,
                let copyReceipt = receipt as? ClipboardReceipt {
                 copyReceipts[id] = copyReceipt
                 automaticExitSuppressed.insert(id)

@@ -35,7 +35,7 @@ func repositorySatisfiesStaticChecks(check: String) throws {
     "identity-rejected", "identity-accepted", "identity-after-header-rejected",
     "provenance-rejected", "provenance-accepted", "provenance-tampered", "provenance-hash-tampered",
     "diagnostics-rejected", "diagnostics-accepted", "diagnostics-collection-rejected",
-    "capture-memory-rejected", "capture-memory-accepted", "capture-finalization-rejected", "capture-finalization-accepted",
+    "capture-memory-rejected", "capture-memory-accepted", "capture-memory-render-accepted", "capture-memory-render-url-rejected", "capture-finalization-rejected", "capture-finalization-accepted",
     "capture-latency-stdout-accepted", "capture-latency-stdout-rejected",
     "network-rejected", "network-accepted", "silgen-rejected", "silgen-accepted", "silgen-strict-rejected"
 ])

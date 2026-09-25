@@ -184,7 +184,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         let png = try fixture.png()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
-            codec: PNGBitmapCodec())
+            flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
@@ -203,7 +203,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         defer { try? FileManager.default.removeItem(at: root) }
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
-            codec: PNGBitmapCodec())
+            flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -224,7 +224,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = RecordingClipboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), codec: PNGBitmapCodec())
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), flattener: CaptureRenderer())
         let other = CaptureID()
         _ = await commands.execute(.capture(other, maximumBytes: 1_000_000))
         _ = await commands.execute(.copy(CaptureRevision(captureID: other, number: 1)))
@@ -252,7 +252,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         let root = historyRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root), codec: PNGBitmapCodec())
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root), flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -273,7 +273,7 @@ private struct CropCanary: Sendable, CustomTestStringConvertible {
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = RecordingClipboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), codec: PNGBitmapCodec())
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -299,13 +299,12 @@ private actor FlakyHistory: CaptureHistory {
 extension EditorRedactionCommandsTests {
     @Test func compressedDoneFitsTheBudgetThatHeldTheOriginal() async throws {
         let png = try encodeSRGB(Array(repeating: [UInt8(48), 80, 112, 255], count: 256).flatMap { $0 }, width: 16, height: 16)
-        let codec = PNGBitmapCodec()
         let redaction = try #require(SolidRedaction(x: 3, y: 4, width: 5, height: 7))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
-        let strip = try #require(codec.encode(png, edits: edits))
+        let strip = try CaptureRenderer().flatten(png, edits: edits)
         #expect(strip.count < png.count)
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
-            clipboard: RecordingClipboard(), pendingByteLimit: png.count, codec: codec)
+            clipboard: RecordingClipboard(), pendingByteLimit: png.count, flattener: CaptureRenderer())
         let id = CaptureID(), revision = CaptureRevision(captureID: CaptureID(), number: 1)
         let original = CaptureRevision(captureID: id, number: 1)
         let edited = CaptureRevision(captureID: id, number: 2)
@@ -323,7 +322,7 @@ extension EditorRedactionCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = RecordingClipboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: FlakyHistory(root: root), codec: PNGBitmapCodec())
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: FlakyHistory(root: root), flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -346,7 +345,7 @@ extension EditorRedactionCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let history = FlakyHistory(root: root)
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: history, codec: PNGBitmapCodec())
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: history, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -375,22 +374,6 @@ private actor FailingOnceClipboard: ImageClipboard {
 
 private enum InterruptedCommit: Error { case stopped }
 
-/// Fault injection at the encoding boundary; subsequent attempts use the real PNG codec.
-private final class RejectOnceCodec: BitmapCodec {
-    private let attempted = Mutex(false)
-    let oversizedBytes: Int?
-    init(oversizedBytes: Int?) { self.oversizedBytes = oversizedBytes }
-    func decode(_ pngData: Data) -> Bitmap? { PNGBitmapCodec().decode(pngData) }
-    func encode(_ bitmap: Bitmap) -> Data? {
-        let first = attempted.withLock { attempted in
-            defer { attempted = true }
-            return !attempted
-        }
-        if first { return oversizedBytes.map { Data(repeating: 0, count: $0) } }
-        return PNGBitmapCodec().encode(bitmap)
-    }
-}
-
 extension EditorRedactionCommandsTests {
     @Test(arguments: [false, true])
     private func rejectedRedactionDoneCannotDeliverTheOriginalAndCanRetry(oversized: Bool) async throws {
@@ -402,7 +385,8 @@ extension EditorRedactionCommandsTests {
         let limit = png.count + 1_000
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
             clipboard: clipboard, pendingByteLimit: limit, history: HistoryStore(root: root),
-            codec: RejectOnceCodec(oversizedBytes: oversized ? limit + 1 : nil))
+            // Fault injection at the flatten seam; the retry uses the production renderer.
+            flattener: ScriptedFlattener([oversized ? .success(Data(repeating: 0, count: limit + 1)) : .failure(.encodingFailed)]))
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         let edits = try fixture.edits()
@@ -442,7 +426,7 @@ extension EditorRedactionCommandsTests {
             if reached == point { throw InterruptedCommit.stopped }
         })
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: store, codec: PNGBitmapCodec())
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: store, flattener: CaptureRenderer())
         let original = CaptureRevision(captureID: CaptureID(), number: 1)
         _ = await commands.execute(.capture(original.captureID, maximumBytes: 1_000_000))
         #expect(await commands.execute(.copy(original)) == .copy(CopyOutcome(revision: original,
@@ -471,7 +455,7 @@ extension EditorRedactionCommandsTests {
     private func repeatedDoneReplacesTheEarlierCopyWhileHistoryRemainsUnavailable(fixture: CanaryCase) async throws {
         let destination = ConditionalPasteboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 4_000_000, codec: PNGBitmapCodec())
+            clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 4_000_000, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let first = CaptureRevision(captureID: id, number: 2)
@@ -497,7 +481,7 @@ extension EditorRedactionCommandsTests {
         let destination = ConditionalPasteboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 4_000_000,
-            history: FlakyHistory(root: root), codec: PNGBitmapCodec())
+            history: FlakyHistory(root: root), flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -520,7 +504,7 @@ extension EditorRedactionCommandsTests {
         let destination = ConditionalPasteboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: PasteboardAdapter(destination: destination), pendingByteLimit: 4_000_000,
-            history: FlakyHistory(root: root), codec: PNGBitmapCodec())
+            history: FlakyHistory(root: root), flattener: CaptureRenderer())
         let id = CaptureID(), other = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -556,7 +540,7 @@ extension EditorRedactionCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = FailingOnceClipboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: FlakyHistory(root: root), codec: PNGBitmapCodec())
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: FlakyHistory(root: root), flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1), rendered = CaptureRevision(captureID: id, number: 2)
         _ = await commands.execute(.capture(id, maximumBytes: 1_000_000))
@@ -595,7 +579,7 @@ extension EditorRedactionCommandsTests {
             clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
             drag: drag,
-            codec: PNGBitmapCodec())
+            flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)
@@ -690,7 +674,7 @@ extension EditorRedactionCommandsTests {
             clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
             drag: drag,
-            codec: PNGBitmapCodec())
+            flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)
@@ -722,7 +706,7 @@ extension EditorRedactionCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
-            codec: PNGBitmapCodec())
+            flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
@@ -736,7 +720,7 @@ extension EditorRedactionCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
-            codec: PNGBitmapCodec())
+            flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
@@ -751,7 +735,7 @@ extension EditorRedactionCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
-            codec: PNGBitmapCodec())
+            flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         #expect(await commands.execute(.capture(id, maximumBytes: 1_000_000)) == .pending(original))
@@ -772,7 +756,7 @@ extension EditorRedactionCommandsTests {
             clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
             drag: drag,
-            codec: PNGBitmapCodec())
+            flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)
@@ -801,7 +785,7 @@ extension EditorRedactionCommandsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let clipboard = FailingOnceClipboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), codec: PNGBitmapCodec())
+            clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root), flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)
@@ -850,7 +834,7 @@ extension EditorRedactionCommandsTests {
             clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
             exporter: PNGFileExporter(folder: { exports }, historyRoot: root),
             drag: drag,
-            codec: PNGBitmapCodec())
+            flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)
@@ -898,7 +882,7 @@ extension EditorRedactionCommandsTests {
     private func copyRecognizedTextStandInSeesCanaryUntilRedactionCoversIt(fixture: CanaryCase) async throws {
         let clipboard = RecordingTextClipboard()
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, codec: PNGBitmapCodec(),
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, flattener: CaptureRenderer(),
             textRecognizer: CanaryColorRecognizer(canaries: fixture.canaries), textClipboard: clipboard)
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
@@ -929,7 +913,7 @@ extension EditorRedactionCommandsTests {
         let redaction = try #require(SolidRedaction(x: 0, y: 40, width: 16, height: 16))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
-            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, codec: PNGBitmapCodec())
+            clipboard: RecordingClipboard(), pendingByteLimit: 4_000_000, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)
@@ -946,13 +930,13 @@ extension EditorRedactionCommandsTests {
         #expect(output.pixels[0] == background)
     }
 
-    @Test func stripPNGEncoderRoundTripsThroughTheRealCodec() throws {
-        let base = try #require(PNGBitmapCodec().decode(try encodeSRGB(
+    @Test func captureRendererRoundTripsThroughAnIndependentDecoder() throws {
+        let source = try encodeSRGB(
             [0xc1, 0x7a, 0x3e, 0xff, 0x30, 0x50, 0x70, 0xff,
-             0x30, 0x50, 0x70, 0xff, 0xc1, 0x7a, 0x3e, 0xff], width: 2, height: 2)))
+             0x30, 0x50, 0x70, 0xff, 0xc1, 0x7a, 0x3e, 0xff], width: 2, height: 2)
         let redaction = try #require(SolidRedaction(x: 1, y: 0, width: 1, height: 1))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
-        let png = try #require(PNGBitmapCodec().encode(EditorDocument(base: base, edits: edits)))
+        let png = try CaptureRenderer().flatten(source, edits: edits)
         let decoded = try decodeSRGB(png)
         #expect(decoded.pixels[0] == RGBA(r: 0xc1, g: 0x7a, b: 0x3e, a: 0xff))
         #expect(decoded.pixels[1] == opaqueBlack)
@@ -983,7 +967,7 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
 @Suite struct EditedOutputParityTests {
     private func done(_ png: Data, _ edits: DocumentEdits) async throws -> (width: Int, height: Int, pixels: [RGBA]) {
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: png),
-            clipboard: RecordingClipboard(), pendingByteLimit: 8_000_000, codec: PNGBitmapCodec())
+            clipboard: RecordingClipboard(), pendingByteLimit: 8_000_000, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)
@@ -1038,8 +1022,9 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
                 "D1: the label drawn at row 30 repeats in rows 256–300 of the delivered image (\(inkRows(saved, 256..<300)) ink pixels)")
     }
 
-    /// D21: the strip encoder writes premultiplied bytes into a straight-alpha PNG, so every
-    /// partly transparent pixel (an edited window's rounded corner) comes back darker.
+    /// D21: the strip encoder wrote premultiplied bytes into a straight-alpha PNG, so every
+    /// partly transparent pixel (an edited window's rounded corner) came back darker. Fixed by
+    /// ticket 65: `CaptureRenderer` encodes through ImageIO, which unpremultiplies.
     @Test func d21PartlyTransparentPixelsSurviveDoneWithoutDarkening() async throws {
         let width = 8, height = 8
         let corner = RGBA(r: 0x40, g: 0x10, b: 0x08, a: 0x80) // premultiplied, half transparent
@@ -1056,16 +1041,14 @@ private func editorPreview(of png: Data, scale: Double, edits: DocumentEdits) th
         let redaction = try #require(SolidRedaction(x: 6, y: 6, width: 1, height: 1))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
         let after = try await done(png, edits).pixels[1 * width + 1]
-        try await knownDefect("D21") {
-            let drift = [Int(after.r) - Int(before.r), Int(after.g) - Int(before.g),
-                         Int(after.b) - Int(before.b), Int(after.a) - Int(before.a)].map(abs).max() ?? 0
-            #expect(drift <= 1, "D21: a half-transparent pixel \(before) is delivered as \(after) after Done")
-        }
+        let drift = [Int(after.r) - Int(before.r), Int(after.g) - Int(before.g),
+                     Int(after.b) - Int(before.b), Int(after.a) - Int(before.a)].map(abs).max() ?? 0
+        #expect(drift <= 1, "D21: a half-transparent pixel \(before) is delivered as \(after) after Done")
     }
 }
 
-/// Ticket 52 (decision 58): the save path renders every output up to 32,768 px tall in one pass
-/// with `DocumentRenderer.render`, the editor preview's function.
+/// Ticket 65: the save path is `CaptureRenderer.flatten` for every output up to 32,768 px tall
+/// (DA-6), and it paints the same pixels as `DocumentRenderer.render`, the editor preview's function.
 extension EditedOutputParityTests {
     private static func pattern(width: Int, height: Int) -> [UInt8] {
         var bytes = [UInt8]()
@@ -1080,7 +1063,7 @@ extension EditedOutputParityTests {
 
     @Test(arguments: [
         (width: 400, height: 500, scale: 2.0, crop: true),
-        (width: 24, height: PNGBitmapCodec.wholeRenderMaxHeight, scale: 1.0, crop: false)
+        (width: 24, height: CaptureRenderer.maximumOutputHeight, scale: 1.0, crop: false)
     ])
     func savedEditEqualsTheWholeImageRenderUpTo32768RowsTall(fixture: (width: Int, height: Int, scale: Double, crop: Bool)) throws {
         let codec = PNGBitmapCodec()
@@ -1097,22 +1080,19 @@ extension EditedOutputParityTests {
                                                annotations: [label, arrow], effects: [blur]))
         let base = try #require(codec.decode(png))
         let expected = DocumentRenderer.render(EditorDocument(base: base, edits: edits))
-        let savedPNG = try #require(codec.encode(png, edits: edits))
+        let savedPNG = try CaptureRenderer().flatten(png, edits: edits)
         let saved = try #require(codec.decode(savedPNG))
         #expect(saved.width == expected.width && saved.height == expected.height)
         #expect(saved == expected, "the save path delivers the whole-image render at \(fixture.width)×\(fixture.height)")
-        let documentPNG = try #require(codec.encode(EditorDocument(base: base, edits: edits)))
-        let document = try #require(codec.decode(documentPNG))
-        #expect(document == expected, "encoding an EditorDocument delivers the whole-image render")
     }
 
-    /// Peak memory of an edited 5,120 × 32,768 save through the production codec (ticket 52).
+    /// Peak memory of an edited 5,120 × 32,768 save through the production renderer (tickets 52 and 65).
     /// The fixture PNG is written strip by strip, so the recorded peak is the save's.
     /// Run: `FRISKET_EDITOR_MEMORY_RUN=1 scripts/test-core.sh -c release --filter editedSaveOf5120x32768`.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["FRISKET_EDITOR_MEMORY_RUN"] == "1"))
     func editedSaveOf5120x32768MeasuresPeakMemory() throws {
         let started = ContinuousClock.now
-        let width = 5120, height = PNGBitmapCodec.wholeRenderMaxHeight
+        let width = 5120, height = CaptureRenderer.maximumOutputHeight
         let encoder = try #require(StripPNGEncoder(width: width, height: height))
         var row = 0
         while row < height {
@@ -1142,7 +1122,7 @@ extension EditedOutputParityTests {
         let magnify = try #require(DocumentEffect(.magnify(x: 1_000, y: 20_000, width: 300, height: 200)))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], annotations: [label, arrow],
                                                effects: [blur, magnify]))
-        let saved = try #require(PNGBitmapCodec().encode(png, edits: edits))
+        let saved = try CaptureRenderer().flatten(png, edits: edits)
         let peak = try peakPhysicalFootprint()
         print("EDITED_SAVE_MEMORY_RUN dimensions=\(width)x\(height) source_png_bytes=\(png.count) saved_png_bytes=\(saved.count) peak_before_save_bytes=\(beforeSave) peak_phys_footprint_bytes=\(peak) elapsed=\(started.duration(to: .now))")
         #expect(saved.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]))
@@ -1198,7 +1178,7 @@ extension EditorRedactionCommandsTests {
         let drag = PromiseFileDragHandoff(destination: dropped)
         let commands = CaptureCommandLayer(permission: GrantedTestPermission(), source: CanaryPixels(png: try fixture.png()),
             clipboard: clipboard, pendingByteLimit: 4_000_000, history: HistoryStore(root: root),
-            exporter: PNGFileExporter(folder: { exports }, historyRoot: root), drag: drag, codec: PNGBitmapCodec())
+            exporter: PNGFileExporter(folder: { exports }, historyRoot: root), drag: drag, flattener: CaptureRenderer())
         let id = CaptureID()
         let original = CaptureRevision(captureID: id, number: 1)
         let rendered = CaptureRevision(captureID: id, number: 2)

@@ -7,7 +7,7 @@ import Testing
     @Test(.enabled(if: ProcessInfo.processInfo.environment["FRISKET_EDITOR_MEMORY_RUN"] == "1"))
     func tallSyntheticEditStaysUnderTwoGigabytes() throws {
         let started = ContinuousClock.now
-        let width = 5120, height = 57_600
+        let width = 5120, height = CaptureRenderer.maximumOutputHeight
         let redaction = try #require(SolidRedaction(x: 0, y: 1000, width: 64, height: 64))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
         let encoder = try #require(StripPNGEncoder(width: width, height: height))
@@ -19,10 +19,10 @@ import Testing
             strips += 1
         }
         let png = try #require(encoder.finish())
-        #expect(strips == 225)
+        #expect(strips == 128)
         #expect(png.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]))
         let peak = try peakPhysicalFootprint()
-        print("EDITOR_MEMORY_RUN dimensions=5120x57600 strips=\(strips) png_bytes=\(png.count) peak_phys_footprint_bytes=\(peak) elapsed=\(started.duration(to: .now))")
+        print("EDITOR_MEMORY_RUN dimensions=5120x\(height) strips=\(strips) png_bytes=\(png.count) peak_phys_footprint_bytes=\(peak) elapsed=\(started.duration(to: .now))")
         #expect(peak < 2_000_000_000)
         withExtendedLifetime(png) {}
     }

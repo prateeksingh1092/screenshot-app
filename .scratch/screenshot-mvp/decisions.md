@@ -211,6 +211,11 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
 62. **Effort (Prateek, 2026-09-25):** medium effort for every remaining ticket. This supersedes decision 58's high default and its xhigh list (tickets 65–68). He chose this after being told the risk: the renderer and lifecycle tickets guard the Solid redaction and Pending capture invariants. The mitigation is that those tickets keep their test-first seams and the canary leak tests.
 
 63. **Saved shortcuts outlive removed actions (coordinator, 2026-09-25, ticket 87):** `ShortcutAction.savedBindings(from:)` skips actions it no longer knows, such as `captureScrolling`. Without this, the saved `globalShortcuts.v1` preference would stop decoding and silently reset every shortcut the user had customised. Two tests cover it.
+64. **Capture renderer choices (implementer, 2026-09-25, ticket 65; under decisions 54 and 57):**
+    - **Redaction colour as data:** each `SolidRedaction` carries its `colour` (default black). An initializer refuses any colour whose alpha isn't 255. Ticket 88 only adds the choice in the editor.
+    - **Synchronous `flatten`:** the coordinator calls it with no suspension between its guards and the replacement of the original, so no in-progress guard moves. An async `flatten` must insert `inProgress` before the await.
+    - **One whole-output bitmap:** captures are at most one display (decision 60), so there is no tile or strip path. The 32,768 px cap (DA-6) is read from the PNG header before decoding.
+    - **PNG metadata:** the output keeps only the chunks that define pixels and colour (IHDR, IDAT, IEND and the sRGB tag). ImageIO adds an eXIf chunk even when given no properties, so the renderer drops every other chunk after encoding: no text, time, EXIF or resolution chunk.
     - **Drift check:** `Checks/check_drift.py` runs in `ci.sh` and fails when a term retired by a decision (listed in `Checks/retired-terms.tsv`) appears in a live file.
 
 

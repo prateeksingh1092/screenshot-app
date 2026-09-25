@@ -91,21 +91,31 @@ public enum DocumentRenderer {
         return Bitmap(width: window.width, height: rowCount, bytes: bytes) ?? window
     }
 
+    /// The crop's snapped top-left in output pixels of the uncropped image, for a capture of this size.
+    static func cropOrigin(width: Int, height: Int, edits: DocumentEdits) -> (x: Int, y: Int) {
+        cropOrigin(width: width, height: height, crop: edits.crop, scale: edits.scale)
+    }
+
+    /// Paints redactions, effects, redactions again, then annotations over an already cropped
+    /// output. `CaptureRenderer` uses it so the delivered image matches the preview's `render`.
+    static func paintEdits(_ output: inout Bitmap, edits: DocumentEdits, origin: (x: Int, y: Int)) {
+        paint(&output, edits: edits, origin: origin, rowShift: 0, fullWidth: output.width, fullHeight: output.height)
+    }
+
     /// `origin` is the crop's top-left in output pixels of the uncropped image, already snapped.
     private static func paint(_ output: inout Bitmap, edits: DocumentEdits, origin: (x: Int, y: Int), rowShift: Int,
                               fullWidth: Int, fullHeight: Int) {
-        let fill = SolidRedaction.fill
         let scale = edits.scale
         let originX = origin.x
         let originY = origin.y
         fillRedactions(edits.redactions, on: &output, scale: scale, originX: originX, originY: originY,
-                       fill: fill, rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
+                       rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
         for effect in edits.effects {
             apply(effect, on: &output, scale: scale, originX: originX, originY: originY,
                   rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
         }
         fillRedactions(edits.redactions, on: &output, scale: scale, originX: originX, originY: originY,
-                       fill: fill, rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
+                       rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
         let covered = edits.redactions.compactMap { redaction in
             snapped(x: redaction.x, y: redaction.y, width: redaction.width, height: redaction.height,
                     scale: scale, originX: originX, originY: originY, rowShift: rowShift,
@@ -118,17 +128,17 @@ public enum DocumentRenderer {
     }
 
     private static func fillRedactions(_ redactions: [SolidRedaction], on output: inout Bitmap, scale: Double,
-                                       originX: Int, originY: Int, fill: RGBAPixel,
+                                       originX: Int, originY: Int,
                                        rowShift: Int, fullWidth: Int, fullHeight: Int) {
         let boxes = redactions.compactMap { redaction in
             snapped(x: redaction.x, y: redaction.y, width: redaction.width, height: redaction.height,
                     scale: scale, originX: originX, originY: originY, rowShift: rowShift,
-                    fullWidth: fullWidth, fullHeight: fullHeight, in: output)
+                    fullWidth: fullWidth, fullHeight: fullHeight, in: output).map { (box: $0, fill: redaction.colour) }
         }
         let rowWidth = output.width
         output.bytes.withUnsafeMutableBytes { raw in
             guard let pixels = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            for bounds in boxes {
+            for (bounds, fill) in boxes {
                 let span = bounds.maxX - bounds.minX
                 for y in bounds.minY..<bounds.maxY {
                     var index = (y * rowWidth + bounds.minX) * 4

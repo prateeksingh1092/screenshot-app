@@ -70,7 +70,7 @@ import FrisketCore
             history: HistoryStore.launch(root: identity.historyRoot, limits: historySettings.limits),
             exporter: PNGFileExporter(folder: { await exportSettings.folder }, historyRoot: identity.historyRoot),
             drag: dragAdapter, thumbnailPolicy: thumbnailSettings.policy,
-            codec: PNGBitmapCodec(),
+            flattener: CaptureRenderer(),
             textRecognizer: VisionTextRecognizer(), textClipboard: pasteboard)
         if let commands {
             historySettings.connect(commands)

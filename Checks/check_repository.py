@@ -202,9 +202,12 @@ def capture_memory_issues(files):
             continue
         imports = re.findall(r'\bimport\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(\w+)', code)
         disk_symbols = r'\b(?:URL|NSURL|FileManager|FileHandle|OutputStream|InputStream|UserDefaults|Process|Bundle|NSFileCoordinator|StorageAdapter|GRDB|Darwin|Glibc|POSIX|fopen|freopen|open|openat|creat|fwrite|pwrite|writev|unlink|rename|mkdir|mmap)\b'
-        allowed_imports = {"Foundation", "Synchronization"}
+        # DA-1 (decision 57): rendering may use these frameworks, but only in memory.
+        allowed_imports = {"Foundation", "Synchronization", "CoreGraphics", "CoreText", "ImageIO", "Accelerate"}
+        file_routes = r'\b(?:CG|CT|CF)\w*(?:URL|Filename)\w*|\burl\s*:'
         if (any(module not in allowed_imports for module in imports)
                 or re.search(disk_symbols, code)
+                or re.search(file_routes, code)
                 or re.search(r'\.\s*write\s*\(\s*to\s*:', code)):
             issues.append(f"{path}: platform or filesystem capability in memory-only core")
         invalid_clipboard = False
