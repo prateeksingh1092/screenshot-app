@@ -2,10 +2,11 @@ import Foundation
 
 /// A pure function from document to bitmap; the same document always renders the same pixels.
 ///
-/// Crop is applied first. Each Solid redaction is then shifted into the cropped document,
+/// Crop is applied first, snapped outward to whole output pixels. Each Solid redaction is then
 /// scaled to output pixels, snapped outward (down on the minimum edges, up on the maximum
-/// edges), clipped to the cropped image, and copied as opaque fill with no blending or
-/// antialiasing. Sampling effects read that redacted composite; redactions are stamped
+/// edges), shifted by the crop's whole-pixel origin, clipped to the cropped image, and copied
+/// as opaque fill with no blending or antialiasing. Every mark therefore covers the same
+/// content it would cover without the crop (D18). Sampling effects read that redacted composite; redactions are stamped
 /// again afterwards. Stroke annotations draw last.
 public enum DocumentRenderer {
     public static let stripHeight = 256
@@ -19,7 +20,10 @@ public enum DocumentRenderer {
 
     public static func render(_ document: EditorDocument) -> Bitmap {
         var output = croppedBase(document.base, crop: document.edits.crop, scale: document.edits.scale)
-        paint(&output, edits: document.edits, rowShift: 0, fullWidth: output.width, fullHeight: output.height)
+        let origin = cropOrigin(width: document.base.width, height: document.base.height,
+                                crop: document.edits.crop, scale: document.edits.scale)
+        paint(&output, edits: document.edits, origin: origin, rowShift: 0,
+              fullWidth: output.width, fullHeight: output.height)
         return output
     }
 
@@ -39,11 +43,13 @@ public enum DocumentRenderer {
                                     copyRows: (Int, Int) -> Bitmap?,
                                     body: (Bitmap) throws -> Void) rethrows {
         let size = cropBounds(width: width, height: height, crop: edits.crop, scale: edits.scale)
+        let origin = cropOrigin(width: width, height: height, crop: edits.crop, scale: edits.scale)
         let rowsPerStrip = max(1, stripHeight)
         var row = 0
         while row < size.height {
             let count = min(rowsPerStrip, size.height - row)
-            try body(renderWindow(edits: edits, startRow: row, rowCount: count, full: size, copyRows: copyRows))
+            try body(renderWindow(edits: edits, origin: origin, startRow: row, rowCount: count, full: size,
+                                  copyRows: copyRows))
             row += count
         }
     }
@@ -65,7 +71,7 @@ public enum DocumentRenderer {
         cropBounds(width: width, height: height, crop: edits.crop, scale: edits.scale)
     }
 
-    private static func renderWindow(edits: DocumentEdits, startRow: Int, rowCount: Int,
+    private static func renderWindow(edits: DocumentEdits, origin: (x: Int, y: Int), startRow: Int, rowCount: Int,
                                      full: (width: Int, height: Int),
                                      copyRows: (Int, Int) -> Bitmap?) -> Bitmap {
         let halo = (edits.effects.isEmpty && edits.annotations.isEmpty) ? 0 : 1
@@ -73,7 +79,7 @@ public enum DocumentRenderer {
         let paddedEnd = min(full.height, startRow + rowCount + halo)
         var window = copyRows(paddedStart, paddedEnd - paddedStart)
             ?? Bitmap(width: full.width, height: rowCount, bytes: [UInt8](repeating: 0, count: full.width * rowCount * 4))!
-        paint(&window, edits: edits, rowShift: paddedStart, fullWidth: full.width, fullHeight: full.height)
+        paint(&window, edits: edits, origin: origin, rowShift: paddedStart, fullWidth: full.width, fullHeight: full.height)
         guard paddedStart != startRow || paddedEnd != startRow + rowCount else { return window }
         let localStart = startRow - paddedStart
         var bytes: [UInt8] = []
@@ -85,12 +91,13 @@ public enum DocumentRenderer {
         return Bitmap(width: window.width, height: rowCount, bytes: bytes) ?? window
     }
 
-    private static func paint(_ output: inout Bitmap, edits: DocumentEdits, rowShift: Int,
+    /// `origin` is the crop's top-left in output pixels of the uncropped image, already snapped.
+    private static func paint(_ output: inout Bitmap, edits: DocumentEdits, origin: (x: Int, y: Int), rowShift: Int,
                               fullWidth: Int, fullHeight: Int) {
         let fill = SolidRedaction.fill
         let scale = edits.scale
-        let originX = edits.crop?.x ?? 0
-        let originY = edits.crop?.y ?? 0
+        let originX = origin.x
+        let originY = origin.y
         fillRedactions(edits.redactions, on: &output, scale: scale, originX: originX, originY: originY,
                        fill: fill, rowShift: rowShift, fullWidth: fullWidth, fullHeight: fullHeight)
         for effect in edits.effects {
@@ -111,7 +118,7 @@ public enum DocumentRenderer {
     }
 
     private static func fillRedactions(_ redactions: [SolidRedaction], on output: inout Bitmap, scale: Double,
-                                       originX: Double, originY: Double, fill: RGBAPixel,
+                                       originX: Int, originY: Int, fill: RGBAPixel,
                                        rowShift: Int, fullWidth: Int, fullHeight: Int) {
         let boxes = redactions.compactMap { redaction in
             snapped(x: redaction.x, y: redaction.y, width: redaction.width, height: redaction.height,
@@ -138,7 +145,7 @@ public enum DocumentRenderer {
     }
 
     private static func apply(_ effect: DocumentEffect, on output: inout Bitmap, scale: Double,
-                              originX: Double, originY: Double, rowShift: Int, fullWidth: Int, fullHeight: Int) {
+                              originX: Int, originY: Int, rowShift: Int, fullWidth: Int, fullHeight: Int) {
         let rectangle: (x: Double, y: Double, width: Double, height: Double)
         switch effect.kind {
         case let .blur(x, y, width, height), let .magnify(x, y, width, height):
@@ -244,15 +251,15 @@ public enum DocumentRenderer {
     }
 
     private static func snapped(x: Double, y: Double, width: Double, height: Double, scale: Double,
-                                originX: Double, originY: Double, rowShift: Int,
+                                originX: Int, originY: Int, rowShift: Int,
                                 fullWidth: Int, fullHeight: Int, in output: Bitmap)
     -> (minX: Int, minY: Int, maxX: Int, maxY: Int)? {
         func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullWidth))) }
         func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullHeight))) }
-        let minX = column(((x - originX) * scale).rounded(.down))
-        let rawMinY = row(((y - originY) * scale).rounded(.down))
-        let maxX = column(((x - originX + width) * scale).rounded(.up))
-        let rawMaxY = row(((y - originY + height) * scale).rounded(.up))
+        let minX = column((x * scale).rounded(.down) - Double(originX))
+        let rawMinY = row((y * scale).rounded(.down) - Double(originY))
+        let maxX = column(((x + width) * scale).rounded(.up) - Double(originX))
+        let rawMaxY = row(((y + height) * scale).rounded(.up) - Double(originY))
         let minY = max(0, rawMinY - rowShift)
         let maxY = min(output.height, rawMaxY - rowShift)
         return minX < maxX && minY < maxY ? (minX, minY, maxX, maxY) : nil
@@ -270,7 +277,7 @@ public enum DocumentRenderer {
     }
 
     private static func draw(_ annotation: DocumentAnnotation, on output: inout Bitmap, scale: Double,
-                             originX: Double, originY: Double, rowShift: Int, fullWidth: Int, fullHeight: Int,
+                             originX: Int, originY: Int, rowShift: Int, fullWidth: Int, fullHeight: Int,
                              covered: [(minX: Int, minY: Int, maxX: Int, maxY: Int)]) {
         func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullWidth))) }
         func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(fullHeight))) - rowShift }
@@ -289,10 +296,10 @@ public enum DocumentRenderer {
         }
         switch annotation.kind {
         case let .rectangle(x, y, width, height):
-            let minX = column(((x - originX) * scale).rounded(.down))
-            let minY = row(((y - originY) * scale).rounded(.down))
-            let maxX = column(((x - originX + width) * scale).rounded(.up))
-            let maxY = row(((y - originY + height) * scale).rounded(.up))
+            let minX = column((x * scale).rounded(.down) - Double(originX))
+            let minY = row((y * scale).rounded(.down) - Double(originY))
+            let maxX = column(((x + width) * scale).rounded(.up) - Double(originX))
+            let maxY = row(((y + height) * scale).rounded(.up) - Double(originY))
             guard minX < maxX, minY < maxY else { return }
             for x in minX..<maxX {
                 plot(x, minY)
@@ -303,15 +310,15 @@ public enum DocumentRenderer {
                 plot(maxX - 1, y)
             }
         case let .arrow(x0, y0, x1, y1):
-            let startX = Int(((x0 - originX) * scale).rounded())
-            let startY = Int(((y0 - originY) * scale).rounded())
-            let endX = Int(((x1 - originX) * scale).rounded())
-            let endY = Int(((y1 - originY) * scale).rounded())
+            let startX = Int((x0 * scale).rounded()) - originX
+            let startY = Int((y0 * scale).rounded()) - originY
+            let endX = Int((x1 * scale).rounded()) - originX
+            let endY = Int((y1 * scale).rounded()) - originY
             plotLine(from: (startX, startY), to: (endX, endY), plot: plot)
             plotArrowHead(from: (startX, startY), to: (endX, endY), scale: scale, plot: plot)
         case let .text(x, y, characters):
-            let originColumn = Int(((x - originX) * scale).rounded(.down))
-            let originRow = Int(((y - originY) * scale).rounded(.down))
+            let originColumn = Int((x * scale).rounded(.down) - Double(originX))
+            let originRow = Int((y * scale).rounded(.down) - Double(originY))
             let cell = max(2, Int((2 * scale).rounded()))
             var cursor = 0
             for character in AnnotationFont.glyphs(in: characters) {
@@ -397,6 +404,14 @@ public enum DocumentRenderer {
         let maxX = column(((crop.x + crop.width) * scale).rounded(.up))
         let maxY = row(((crop.y + crop.height) * scale).rounded(.up))
         return minX < maxX && minY < maxY ? (maxX - minX, maxY - minY) : (width, height)
+    }
+
+    /// The crop's snapped top-left in output pixels of the uncropped image; the same pixel `croppedRows` starts at.
+    private static func cropOrigin(width: Int, height: Int, crop: DocumentCrop?, scale: Double) -> (x: Int, y: Int) {
+        guard let crop else { return (0, 0) }
+        func column(_ value: Double) -> Int { Int(min(max(value, 0), Double(width))) }
+        func row(_ value: Double) -> Int { Int(min(max(value, 0), Double(height))) }
+        return (column((crop.x * scale).rounded(.down)), row((crop.y * scale).rounded(.down)))
     }
 
     private static func croppedBase(_ base: Bitmap, crop: DocumentCrop?, scale: Double) -> Bitmap {
