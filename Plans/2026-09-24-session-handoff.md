@@ -1,4 +1,27 @@
-> **Next session starts here:** Phase 0 is done and stopped at its gate (see "Phase 0 results" below). Wait for Prateek to approve Phase 1. Then work the Phase 1 tickets (49–64) from the frontier. Before ticket 64, and before 65–68 and 70, stop and ask Prateek to switch to xhigh effort (decision 58). The first live-matrix run (ticket 48) waits until Prateek says he is away.
+> **Next session starts here:** Phase 1 is in progress (see "Phase 1 progress" below). Finish 51 and 53 if their helpers didn't. Ticket 64 needs xhigh: ask Prateek to switch, then run it and stop at Gate A. The live-matrix checks of every Phase 1 fix wait until Prateek approves installing a new signed build (docs/app-build.md). After install, run `Tools/LiveHarness/beta-matrix.sh --live` on both displays.
+
+
+## Phase 1 progress (2026-09-25)
+
+- **Merged into `main`, with `ci.sh` green:**
+  - 58 (D19, including relaunch), 55 (D8), 57 (D10), 59 (D25);
+  - 49 (D2), 60 (D18), 63 (DA-2/D13, D22 `notify_post` removed);
+  - 50 (D4, D14), 61 (D11, ⌘⇧6 means Done), 62 (D12);
+  - 52 (D1 interim; peak 1.41 GB at 5,120 × 32,768), 54 (D7/DA-3; `.render` for editor drags), 56 (D9).
+  - At the last batch, `ci.sh` showed 335 tests and 52 known issues.
+- **Running when written:** helpers on 51 (Loupe) and 53 (editor action bar).
+- **Left:** 64 (xhigh, Gate A).
+- **Live checks, not yet run:** every live row of the fixes above. The harness drives the *installed* build 8, and a new install needs Prateek's approval.
+- **The harness was calibrated in its first live run:** 6 rows pass and 12 fail as expected on both displays, and 3 rows fail for reasons not yet clear. See ticket 48.
+- **Candidates to verify after install:**
+  - D28: a second drag doesn't replace the Selection; it may be the D4 cause.
+  - Pressing the selected editor tool deselects it.
+  - A redaction drag that starts outside the image is ignored.
+- **CleanShot editor study:** `.scratch/visual-pass/cleanshot-editor-study.md`, with three product decisions for Prateek.
+- **Flakes:**
+  - D27 (the History root lock) has a 250 ms retry.
+  - The eviction process-kill test tolerates only `.recoveryRequired` as intermittent.
+  - Ticket 78 retires both.
 
 ## Phase 0 results (2026-09-24, second session)
 
