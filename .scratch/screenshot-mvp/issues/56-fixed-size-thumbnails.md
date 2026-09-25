@@ -6,7 +6,7 @@
 
 **Phase:** 1 (D9 → O10)
 
-**Status:** resolved (tested on `main`; live row waits for an approved install)
+**Status:** reopened 2026-09-25 (the live stack row fails on both displays; see the last comment)
 
 - [x] Thumbnails of very wide, very tall and square captures have identical frames.
 - [x] Stack positions come from a pure layout function with a unit test: no overlap up to the stack limit, and removing one Thumbnail closes the gap.
@@ -33,3 +33,10 @@ Created by to-tickets from `Plans/dreamy-giggling-barto.md` and spec stories 82�
   Ticket 78 retires it.
 - **CI:** `ci.sh` is green: 331 tests.
 - **Live:** the `stack` row now expects pass.
+
+### 2026-09-25: coordinator, reopened after the live run
+
+- **Result:** on the installed `7ea997e`, two Thumbnails taken within 10 s sit on the same 288 × 216 frame, according to both the window server and accessibility, on both displays. The layout function is right; the app layer doesn't apply its slot.
+- **Suspect:** `ThumbnailPanel.layoutChrome` (lines 334–336) runs on every model change through `syncChrome`. It reads `panel.frame.origin`, then sets it again, which cancels the animated move that `place(at:)` has just started.
+- **Likely fix:** resize only when the size changes, and never re-set the origin there, because `setContentSize` keeps the bottom-left origin.
+- **Matrix:** the row is back to `xfail` until the fix is verified live.

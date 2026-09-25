@@ -90,3 +90,47 @@ The installed Frisket (build 8, `73be4ce`) ran on both displays. Only synthetic 
 - **Minor:** a redaction drag that starts just outside the image is ignored. CleanShot accepts such drags.
 
 **Still open:** calibrate the three unclear rows, and rerun the whole matrix after each Phase 1 batch.
+
+### 2026-09-25: coordinator, Phase 1 live run (Prateek away)
+
+Installed signed build of `main` at `7ea997e` (decision 59), in `~/Applications/Frisket.app`. Full run `20260925-002814` covered both displays, followed by single-row reruns and hand checks. Only synthetic content was used, and the clipboard was restored.
+
+**Phase 1 fixes confirmed live on both displays:**
+- D1: arrow and label ink both land in place.
+- D5: Done, Copy and Save are visible.
+- D11: Page Down scrolls during a scrolling capture.
+- D12: ⌘⇧2 gives keys to the Thumbnail.
+- D14: a pointer on the top pixel row still starts a Selection.
+- D4: a press inside the preselected Selection doesn't move the pattern window, and Esc cancels.
+- D7: a cancelled drag leaves History and drag staging unchanged.
+
+**Confirmed by hand; the row still fails for a harness reason:**
+- D8: "No text found" is shown, the clipboard is unchanged, and no alert appears.
+- D10: Delete asks first, then removes the image.
+
+**Still open, as the matrix expects:** D2, D3 (steady and flick), D6, D17.
+
+**Reopened: D9, ticket 56.** Two Thumbnails taken within 10 s sit on the identical frame, according to both the window server and accessibility.
+- **Suspect:** `ThumbnailPanel.layoutChrome` (lines 334–336) re-sets the origin it has just read on every model change, which cancels `place(at:)`'s animated move.
+- **Matrix:** the row is now `xfail`.
+
+**Calibration fixes (`beta-matrix.sh`):**
+- **area-click-inside:** mouse-up accepts a Selection, so the old row's "click inside" landed after the capture had finished. The row now presses inside the *preselected* Selection of a second activation, then checks Esc in a third.
+- **copytext-none:** the notice is a static text's value, which `axfind` doesn't search. The row now greps `axdump`.
+- **history-delete:**
+  - It uses Copy, which keeps the Thumbnail open; the editor's Done closes it.
+  - It presses the alert's Delete button through accessibility; Return doesn't reach the modal while another app is frontmost.
+- **Thumbnail buttons:** they report `enabled="0"` for a moment after the Thumbnail appears. Captures now wait for `card_ready`, and `card_copy` waits too. Whether a user notices this delay is unmeasured.
+- **drag-cancel:**
+  - The drop point is the first pattern point of a 5×5 grid.
+  - The Dock's full-display backdrop is skipped, which is why the built-in display found no point before.
+
+**Flakes:** in the full run, editor-arrow-label (D1) and editor-finish-visible (D5) failed on the external display, and both passed alone. This points to state leaking between rows. One likely source: `reset_state` never closes the History window.
+
+**Candidates:**
+- **D28 is not a defect.** Mouse-up accepts the Selection, so a second drag within one activation doesn't exist.
+- **Deferred to editor tickets 84–86:** tool deselection and the outside-image redaction drag were not checked.
+
+**Still open:**
+- copytext-none and history-delete still fail in the harness after these fixes. Their logs haven't been read yet.
+- The History window leak between rows.

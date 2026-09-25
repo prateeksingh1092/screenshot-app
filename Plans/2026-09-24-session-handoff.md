@@ -25,6 +25,18 @@
 > - Run long commands in the background, with logs.
 
 
+## Steps 1–2 done (2026-09-25, live run on `7ea997e`)
+
+- **Installed:** signed build `7ea997e` in `~/Applications/Frisket.app`. The previous bundle is at `.build/Frisket-previous-20260925-002715.app`.
+- **Confirmed live:** D1, D4, D5, D7, D11, D12 and D14 are fixed. D8 and D10 are fixed when checked by hand; their rows still fail for harness reasons.
+- **Reopened: D9 (ticket 56).** The Thumbnails don't stack. The suspect is `ThumbnailPanel.layoutChrome`; ticket 56 has the details.
+- **D28 is not a defect:** mouse-up accepts the Selection.
+- **Not checked:** the two minor editor candidates. They are deferred to tickets 84–86.
+- **Details:** ticket 48, comment of 2026-09-25.
+- **Next:**
+  1. Fix ticket 56 at high effort.
+  2. Ticket 64, which needs xhigh: ask first.
+
 ## Phase 1 progress (2026-09-25)
 
 - **Merged into `main`, with `ci.sh` green:**

@@ -120,6 +120,8 @@ pattern_up() {  # pattern_up MODE: the synthetic pattern on the current display
 }
 overlay_up() { "$H/drive" cgwin | awk -F'\t' '$1 != "pattern" { split($3, l, "="); if (l[2] + 0 >= 1000) found = 1 } END { exit !found }'; }
 card_present() { "$H/drive" axfind frisket "Copy capture" >/dev/null 2>&1; }
+# The newest Thumbnail's controls start disabled for a moment after it appears; press only once enabled.
+card_ready() { "$H/drive" axfind frisket "Copy capture" 2>/dev/null | grep -q 'enabled="1"'; }
 editor_up() { "$H/drive" axfind frisket "Capture canvas" >/dev/null 2>&1; }
 editor_gone() { ! editor_up; }
 no_cards() { ! card_present; }
@@ -149,10 +151,10 @@ capture_area() {  # capture_area X0 Y0 X1 Y1: ⌘⇧4, select, Return, wait for 
   hotkey 4; nap 1
   select_rect "$@"
   key 36
-  wait_for 6 card_present
+  wait_for 6 card_present && wait_for 4 card_ready
 }
 capture_pattern() { capture_area $(( CX - 160 )) $(( CY - 90 )) $(( CX + 160 )) $(( CY + 90 )); }
-card_copy() { drv axpress frisket "Copy capture" && nap 1; }
+card_copy() { wait_for 4 card_ready; drv axpress frisket "Copy capture" && nap 1; }
 clip_to() { drv clip-png "$ev/$1.png"; }
 
 open_editor() {  # a real click on the Thumbnail's Edit (an AX press doesn't activate Frisket)
@@ -229,14 +231,22 @@ row_area_click_inside() {
   pattern_up --show-window || return 1
   local x y w h before after
   read -r x y w h <<<"$(pattern_bounds)"
+  # Mouse-up accepts a Selection, so the hole to press into is the preselected last Selection
+  # of the next activation. The first capture sets it over the window, title bar included.
   drv move $(( x + w / 2 )) $(( y + h / 2 )); hotkey 4; nap 1
-  select_rect $(( x + 10 )) $(( y + 2 )) $(( x + w - 10 )) $(( y + h - 10 ))   # the hole covers the title bar
+  select_rect $(( x + 10 )) $(( y + 2 )) $(( x + w - 10 )) $(( y + h - 10 ))
+  wait_for 6 card_present || { note "first capture gave no Thumbnail"; return 1; }
+  hotkey 4; nap 1
+  overlay_up || { note "no overlay on the second activation"; return 1; }
   before=$(pattern_bounds)
+  # A press-drag on the title bar inside the hole: it must start a Selection, not move the window.
   drv seq "down $(( x + w / 2 )) $(( y + 12 ))" "drag $(( x + w / 2 + 50 )) $(( y + 62 ))" "drag $(( x + w / 2 + 100 )) $(( y + 112 ))" "up $(( x + w / 2 + 100 )) $(( y + 112 ))"
-  nap 0.4; after=$(pattern_bounds); shot_pattern area-click-inside
-  pattern_running && key 53; nap 0.6
+  nap 0.6; after=$(pattern_bounds); shot_pattern area-click-inside
   note "pattern window before=$before after=$after"
-  [ "$before" = "$after" ] && ! overlay_up && pattern_running
+  [ "$before" = "$after" ] || return 1
+  # Esc cancels an open overlay; the pattern (which quits on Esc) must not receive it.
+  hotkey 4; nap 1; key 53; nap 0.6
+  ! overlay_up && pattern_running
 }
 
 row_top_row() {
@@ -379,8 +389,8 @@ row_copytext_none() {
   drv axpress frisket "Copy recognized text"; nap 2
   after=$("$H/drive" clip-count)
   "$H/drive" axfind frisket "Copied 0" >>"$log" 2>&1 && alert=1 && dismiss_alert
-  local shown=0
-  "$H/drive" axfind frisket "No text found" >>"$log" 2>&1 && shown=1
+  local shown=0   # the notice is a static text's value, which axfind doesn't search
+  "$H/drive" axdump frisket 2>/dev/null | grep -q 'value="No text found"' && shown=1
   note "clipboard changeCount before=$before after=$after alert=$alert status=$shown"
   [ "$before" = "$after" ] && [ $alert -eq 0 ] && [ $shown -eq 1 ]
 }
@@ -429,14 +439,14 @@ row_history_save() {
   [ "$(printf '%s\n' "$new" | grep -c .)" -eq 1 ] && printf '%s\n' "$new" | grep -Eq '20[0-9]{2}-[01][0-9]-[0-3][0-9]'
 }
 row_history_delete() {
-  pattern_up --show && capture_pattern && open_editor || return 1
-  editor_done   # a finalized capture whose Thumbnail stays open
-  wait_for 6 card_present && history_newest || return 1
+  # Copy finalizes and keeps the Thumbnail open (editor Done closes it). Stay inside its 10 s timeout.
+  pattern_up --show && capture_pattern && card_copy && card_present && history_newest || return 1
   local before after asked=0
   before=$(history_images)
-  drv axpress frisket "Delete"; nap 1
-  if "$H/drive" axfind frisket "Cancel" >>"$log" 2>&1; then
-    asked=1; key 36; nap 1.2   # Return: the alert's default button, Delete
+  drv axpress frisket "Delete selected History capture"; nap 1
+  if "$H/drive" axdump frisket 2>/dev/null | grep -q 'value="Delete this capture from History?"'; then
+    # Return doesn't reach the modal alert when another app is frontmost; press its Delete button.
+    asked=1; drv axpress frisket "Delete"; nap 1.2
   fi
   after=$(history_images)
   "$H/drive" axfind frisket "Delete failed" >>"$log" 2>&1 && note "saw: Delete failed"
@@ -452,8 +462,12 @@ row_drag_cancel() {
   images=$(history_images); staged=$(drag_staging)
   read -r wx wy ww wh <<<"$("$H/drive" axframe frisket "Drag the edited capture")"
   [ -n "${wh:-}" ] || return 1
-  for p in "$(( DX + 60 )) $(( DY + DH / 2 ))" "$(( DX + DW - 60 )) $(( DY + DH / 2 ))" "$(( CX )) $(( DY + 80 ))" "$(( CX )) $(( DY + DH - 80 ))"; do
-    if "$H/drive" whatat $p | head -1 | grep -q 'owner=pattern'; then target=$p; break; fi
+  local fx fy p   # the first point of a 5×5 grid where the pattern is the front window
+  for fy in 2 5 8 3 7; do
+    for fx in 1 9 5 3 7; do
+      p="$(( DX + DW * fx / 10 )) $(( DY + DH * fy / 10 ))"
+      if "$H/drive" whatat $p | grep -v owner=Dock | head -1 | grep -q 'owner=pattern'; then target=$p; break 2; fi
+    done
   done
   [ -n "$target" ] || { note "no visible pattern point to drop on"; return 1; }
   drv drag $(( wx + ww / 2 )) $(( wy + wh / 2 )) $target 30; nap 2   # the pattern window accepts no drops
