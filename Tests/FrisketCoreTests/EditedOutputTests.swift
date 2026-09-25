@@ -1,3 +1,5 @@
+import CoreGraphics
+import Foundation
 import FrisketCore
 import Testing
 
@@ -10,18 +12,20 @@ private let palette: [Character: RGBAPixel] = [
     "*": DocumentAnnotation.stroke
 ]
 
-private func blank(_ width: Int, _ height: Int) throws -> Bitmap {
+private func blank(_ width: Int, _ height: Int) throws -> Picture {
     try picture(Array(repeating: String(repeating: ".", count: width), count: height))
 }
 
-private func picture(_ rows: [String]) throws -> Bitmap {
+private func picture(_ rows: [String]) throws -> Picture {
     let pixels = try rows.flatMap { row in
         try row.map { character in try #require(palette[character]) }
     }
-    return try #require(Bitmap(width: rows[0].count, height: rows.count, pixels: pixels))
+    return try #require(Picture(width: rows[0].count, height: rows.count, pixels: pixels))
 }
 
-@Suite struct DocumentRendererTests {
+/// The edit rules, checked at the save path (`CaptureRenderer.flatten`): every picture here is
+/// encoded as a PNG, flattened with the edits and decoded again.
+@Suite struct EditedOutputTests {
     @Test func wholePixelRedactionReplacesExactlyTheCoveredPixelsWithOpaqueBlack() throws {
         let base = try picture([
             ".....",
@@ -92,7 +96,6 @@ private func picture(_ rows: [String]) throws -> Bitmap {
             #expect(DocumentCrop(x: x, y: y, width: width, height: height) == nil)
         }
         for scale: Double in [0, -2, .nan, .infinity] { #expect(DocumentEdits(scale: scale) == nil) }
-        #expect(Bitmap(width: 2, height: 1, bytes: [0, 0, 0, 255]) == nil)
     }
 
     @Test func cropExtractsTheSnappedOutputPixelsAndKeepsUnredactedColours() throws {
@@ -160,7 +163,7 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         let pixels = (0..<(side * side)).map { index in
             RGBAPixel(red: UInt8(index % 251), green: UInt8(index / side), blue: 0x60, alpha: 0xff)
         }
-        let base = try #require(Bitmap(width: side, height: side, pixels: pixels))
+        let base = try #require(Picture(width: side, height: side, pixels: pixels))
         let redactions = [(2.1, 1.6, 1.3, 2.2), (5 + fraction, 4 - fraction, 2.5, 1.75), (8.4, 7.9, 3, 3)]
         let crop = (1 + fraction, 1 + fraction / 2, 8.5, 7.25)
         let whole = try render(base, scale: scale, redactions)
@@ -168,7 +171,7 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         let minX = Int((crop.0 * scale).rounded(.down)), minY = Int((crop.1 * scale).rounded(.down))
         let maxX = Int(((crop.0 + crop.2) * scale).rounded(.up)), maxY = Int(((crop.1 + crop.3) * scale).rounded(.up))
         let window = (minY..<maxY).flatMap { y in (minX..<maxX).map { x in whole.pixel(x: x, y: y)! } }
-        #expect(cropped == Bitmap(width: maxX - minX, height: maxY - minY, pixels: window),
+        #expect(cropped == Picture(width: maxX - minX, height: maxY - minY, pixels: window),
                 "D18: a fractional crop moved a redaction relative to the content it covers")
     }
 
@@ -221,7 +224,7 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         let rendered = try render(base, annotations: [annotation])
         // 18 pt HelveticaNeue-Bold: the H's stems are solid ink, ringed by the white plate.
         #expect(rendered.contains(DocumentAnnotation.stroke))
-        #expect(rendered.contains(DocumentRenderer.plate))
+        #expect(rendered.contains(plate))
         let ink = try #require(rendered.bounds(of: DocumentAnnotation.stroke))
         #expect(ink.minX >= 4 && ink.maxX <= 20 && ink.minY >= 2 && ink.maxY <= 22,
                 "an 18 pt capital sits inside its em box below the label's top-left: \(ink)")
@@ -248,7 +251,7 @@ private func picture(_ rows: [String]) throws -> Bitmap {
             "p********p",
             "pppppppppp"
         ]
-        let colours: [Character: RGBAPixel?] = ["*": DocumentAnnotation.stroke, "p": DocumentRenderer.plate, ".": palette["."]]
+        let colours: [Character: RGBAPixel?] = ["*": DocumentAnnotation.stroke, "p": plate, ".": palette["."]]
         let annotation = try #require(DocumentAnnotation(.rectangle(x: 1, y: 1, width: 8, height: 8)))
         let rendered = try render(try blank(10, 10), annotations: [annotation])
         for (y, row) in golden.enumerated() {
@@ -328,79 +331,85 @@ private func picture(_ rows: [String]) throws -> Bitmap {
         #expect(DocumentEffect(.blur(x: 0, y: 0, width: 0, height: 1)) == nil)
         #expect(DocumentEffect(.magnify(x: 1, y: 1, width: -1, height: 1)) == nil)
     }
-
-    @Test func stripRenderMatchesFullRenderOnATallCanary() throws {
-        let base = try picture([
-            "a.....",
-            "..a...",
-            "....a.",
-            "a.....",
-            "..a...",
-            "....a.",
-            "a.....",
-            "..a..."
-        ])
-        let redaction = try #require(SolidRedaction(x: 2, y: 1, width: 3, height: 4))
-        let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction]))
-        let document = EditorDocument(base: base, edits: edits)
-        let full = DocumentRenderer.render(document)
-        var rows: [Bitmap] = []
-        DocumentRenderer.forEachStrip(document, stripHeight: 3) { rows.append($0) }
-        #expect(rows.map(\.height) == [3, 3, 2])
-        #expect(DocumentRenderer.concatenate(rows) == full)
-        #expect(full.pixel(x: 2, y: 1) == SolidRedaction.fill)
-        #expect(full.pixel(x: 0, y: 0) == palette["a"])
-    }
-
-    @Test func editorProxyShrinksOnlyWhenAnEdgeExceedsTheCap() {
-        #expect(EditorProxy.displaySize(width: 40, height: 30) == (40, 30))
-        let tall = EditorProxy.displaySize(width: 5120, height: 57_600, maxEdge: 2048)
-        #expect(tall.width == 182)
-        #expect(tall.height == 2048)
-        #expect(EditorProxy.displayScale(fullWidth: 5120, proxyWidth: 182, scale: 2) == 2 * 182.0 / 5120)
-    }
 }
 
-private func render(_ base: Bitmap, scale: Double = 1, crop: (Double, Double, Double, Double)? = nil,
+/// Flattens `base` with these edits through the save path and decodes the result.
+private func render(_ base: Picture, scale: Double = 1, crop: (Double, Double, Double, Double)? = nil,
                     _ rectangles: [(Double, Double, Double, Double)] = [],
                     annotations: [DocumentAnnotation] = [],
-                    effects: [DocumentEffect] = []) throws -> Bitmap {
+                    effects: [DocumentEffect] = []) throws -> Picture {
     let redactions = try rectangles.map { try #require(SolidRedaction(x: $0.0, y: $0.1, width: $0.2, height: $0.3)) }
     let cropRect = try crop.map { try #require(DocumentCrop(x: $0.0, y: $0.1, width: $0.2, height: $0.3)) }
     let edits = try #require(DocumentEdits(scale: scale, crop: cropRect, redactions: redactions,
                                            annotations: annotations, effects: effects))
-    return DocumentRenderer.render(EditorDocument(base: base, edits: edits))
+    return try delivered(base.png(), edits)
 }
 
-/// Per-channel tolerance for antialiased annotation pixels in the strip walk (ticket 66).
-/// CoreGraphics places a long, near-vertical stroke a fraction of a pixel differently in a short
-/// strip context than in the whole image (measured: at most 23 per channel, on the stroke's edge
-/// pixels). The delivered image and the editor preview both render the whole image, so they stay
-/// byte-equal (`d1DeliveredAnnotationsEqualThePreviewAndAppearWhereDrawn`). A missing or repeated
-/// mark differs by far more than this. Solid redaction goldens stay exact.
-private let annotationTolerance = 32
+/// White annotation plate (decision 68).
+private let plate = RGBAPixel(red: 255, green: 255, blue: 255, alpha: 255)
 
-private extension Bitmap {
-    /// The first row where a pixel differs by more than `tolerance` in any channel.
-    func firstDifferingRow(from other: Bitmap, tolerance: Int) -> Int? {
-        guard width == other.width, height == other.height else { return 0 }
-        for y in 0..<height {
-            for x in 0..<width {
-                let a = pixel(x: x, y: y)!, b = other.pixel(x: x, y: y)!
-                if a == b { continue }
-                let channels = [(a.red, b.red), (a.green, b.green), (a.blue, b.blue), (a.alpha, b.alpha)]
-                if channels.contains(where: { abs(Int($0.0) - Int($0.1)) > tolerance }) { return y }
-            }
-        }
-        return nil
+/// Pixels in the renderer's working format: 8-bit sRGB RGBA, premultiplied, rows top to bottom.
+/// Test-only; the product exposes PNG bytes and `CGImage`s.
+struct Picture: Equatable {
+    let width: Int
+    let height: Int
+    var bytes: [UInt8]
+
+    init?(width: Int, height: Int, bytes: [UInt8]) {
+        guard width > 0, height > 0, bytes.count == width * height * 4 else { return nil }
+        (self.width, self.height, self.bytes) = (width, height, bytes)
     }
 
+    init?(width: Int, height: Int, pixels: [RGBAPixel]) {
+        self.init(width: width, height: height, bytes: pixels.flatMap { [$0.red, $0.green, $0.blue, $0.alpha] })
+    }
+
+    /// Draws any image into a fixed sRGB RGBA8 premultiplied bitmap.
+    init(_ image: CGImage) throws {
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try #require(CGContext(data: buffer.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setBlendMode(.copy)
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        (width, height, self.bytes) = (image.width, image.height, bytes)
+    }
+
+    init(png: Data) throws {
+        let decoded = try CaptureRendererTests.decode(png)
+        (width, height, bytes) = (decoded.width, decoded.height, decoded.bytes)
+    }
+
+    func png() throws -> Data { try CaptureRendererTests.encode(bytes, width: width, height: height) }
+
+    func pixel(x: Int, y: Int) -> RGBAPixel? {
+        guard (0..<width).contains(x), (0..<height).contains(y) else { return nil }
+        let index = (y * width + x) * 4
+        return RGBAPixel(red: bytes[index], green: bytes[index + 1], blue: bytes[index + 2], alpha: bytes[index + 3])
+    }
+}
+
+/// What Done delivers for these edits, decoded.
+func delivered(_ png: Data, _ edits: DocumentEdits) throws -> Picture {
+    try Picture(png: try CaptureRenderer().flatten(png, edits: edits))
+}
+
+/// What the editor preview shows for these edits.
+func previewed(_ preview: CapturePreview, _ edits: DocumentEdits) throws -> Picture {
+    try Picture(try preview.render(edits))
+}
+
+extension Picture {
     func contains(_ colour: RGBAPixel) -> Bool {
         (0..<height).contains { y in (0..<width).contains { x in pixel(x: x, y: y) == colour } }
     }
 
     /// The first row where two same-sized bitmaps differ, or nil when they are identical.
-    func firstDifferingRow(from other: Bitmap) -> Int? {
+    func firstDifferingRow(from other: Picture) -> Int? {
         guard width == other.width, height == other.height else { return 0 }
         let rowBytes = width * 4
         return (0..<height).first { y in
@@ -409,10 +418,13 @@ private extension Bitmap {
     }
 
     /// Half-open pixel bounds of every pixel equal to `colour`.
-    func bounds(of colour: RGBAPixel) -> (minX: Int, minY: Int, maxX: Int, maxY: Int)? {
+    func bounds(of colour: RGBAPixel) -> (minX: Int, minY: Int, maxX: Int, maxY: Int)? { bounds { $0 == colour } }
+
+    /// Half-open pixel bounds of every pixel that matches.
+    func bounds(where matches: (RGBAPixel) -> Bool) -> (minX: Int, minY: Int, maxX: Int, maxY: Int)? {
         var box: (minX: Int, minY: Int, maxX: Int, maxY: Int)?
         for y in 0..<height {
-            for x in 0..<width where pixel(x: x, y: y) == colour {
+            for x in 0..<width where matches(pixel(x: x, y: y)!) {
                 box = (min(box?.minX ?? x, x), min(box?.minY ?? y, y), max(box?.maxX ?? x + 1, x + 1), max(box?.maxY ?? y + 1, y + 1))
             }
         }
@@ -436,7 +448,7 @@ private struct SeededGenerator: RandomNumberGenerator {
 /// A 48-px-wide patterned capture with at least one of every edit kind: Solid redaction,
 /// rectangle, arrow, label, Blur and Magnify. Positions are anywhere in the image.
 private func generatedDocument(seed: UInt64, height: Int, effects withEffects: Bool = true,
-                               annotations withAnnotations: Bool = true) throws -> EditorDocument {
+                               annotations withAnnotations: Bool = true) throws -> (base: Picture, edits: DocumentEdits) {
     var random = SeededGenerator(seed: seed)
     let width = 48
     var pixels: [RGBAPixel] = []
@@ -447,7 +459,7 @@ private func generatedDocument(seed: UInt64, height: Int, effects withEffects: B
                                     blue: UInt8((y * 7) % 256), alpha: 255))
         }
     }
-    let base = try #require(Bitmap(width: width, height: height, pixels: pixels))
+    let base = try #require(Picture(width: width, height: height, pixels: pixels))
     let w = Double(width), h = Double(height)
     func box() -> (x: Double, y: Double, width: Double, height: Double) {
         let x = Double.random(in: 0..<(w - 4), using: &random)
@@ -476,87 +488,134 @@ private func generatedDocument(seed: UInt64, height: Int, effects withEffects: B
     ]
     let edits = try #require(DocumentEdits(scale: 1, redactions: redactions, annotations: withAnnotations ? annotations : [],
                                            effects: withEffects ? effects : []))
-    return EditorDocument(base: base, edits: edits)
+    return (base, edits)
 }
 
-/// Known defects in edited output (ticket 44). Each stays red until its fix removes the wrapper.
-@Suite struct EditedOutputDefectTests {
-    /// D1: strips must equal the whole-image render. Annotations are drawn by CoreGraphics and
-    /// CoreText translated by the strip's row offset (ticket 66), so a mark that crosses a strip
-    /// boundary is drawn once, where it was placed, to within the stated `annotationTolerance`.
-    @Test(arguments: [7, 64, DocumentRenderer.stripHeight])
-    func d1StripOutputEqualsTheWholeImageRenderForRedactionsAndAnnotations(stripHeight: Int) throws {
-        for (index, height) in [8, 13, 255, 256, 257, 600, 1024, 1500, 2000].enumerated() {
-            let seed = UInt64(index + 1)
-            let document = try generatedDocument(seed: seed, height: height, effects: false)
-            var strips: [Bitmap] = []
-            DocumentRenderer.forEachStrip(document, stripHeight: stripHeight) { strips.append($0) }
-            let joined = try #require(DocumentRenderer.concatenate(strips))
-            let whole = DocumentRenderer.render(document)
-            let row = joined.firstDifferingRow(from: whole, tolerance: annotationTolerance)
-            #expect(row == nil, "D1: strip height \(stripHeight), image height \(height), seed \(seed): strips differ from the whole render from row \(row ?? -1)")
-        }
-    }
-
-    /// D1, effects: a strip that meets a Blur or Magnify box is widened to the box's whole rows
-    /// (and any effect box those rows meet), so each effect reads the same pixels as in the whole
-    /// image (ticket 67). Annotations keep the stated `annotationTolerance`; without them the strips
-    /// are exact.
-    @Test(arguments: [7, 64, DocumentRenderer.stripHeight])
-    func d1StripOutputEqualsTheWholeImageRenderForEveryEditKind(stripHeight: Int) throws {
-        for (index, height) in [8, 13, 255, 256, 257, 600, 1024, 1500, 2000].enumerated() {
-            let seed = UInt64(index + 1)
-            for annotated in [true, false] {
-                let document = try generatedDocument(seed: seed, height: height, annotations: annotated)
-                var strips: [Bitmap] = []
-                DocumentRenderer.forEachStrip(document, stripHeight: stripHeight) { strips.append($0) }
-                let joined = try #require(DocumentRenderer.concatenate(strips))
-                let whole = DocumentRenderer.render(document)
-                let row = joined.firstDifferingRow(from: whole, tolerance: annotated ? annotationTolerance : 0)
-                #expect(row == nil, "D1: strip height \(stripHeight), image height \(height), seed \(seed), annotations \(annotated): strips differ from the whole render from row \(row ?? -1)")
+/// Ticket 68: the editor preview is `CaptureRenderer.preview(capture).render(edits)`, with the
+/// same edits Done flattens. At full size it is the delivered image, byte for byte.
+@Suite struct EditorPreviewTests {
+    /// Every edit kind, anywhere in the image, with `maxEdge` at the capture's longer edge and above.
+    @Test(arguments: [8, 13, 257, 600, 2000])
+    func previewAtFullSizeEqualsTheDeliveredImageForEveryEditKind(height: Int) throws {
+        for seed in UInt64(1)...3 {
+            let document = try generatedDocument(seed: seed &* UInt64(height), height: height)
+            let png = try document.base.png()
+            let saved = try delivered(png, document.edits)
+            for maxEdge in [max(document.base.width, height), height + 1, CaptureRenderer.previewMaxEdge] where maxEdge >= max(document.base.width, height) {
+                let preview = try CaptureRenderer().preview(png, maxEdge: maxEdge)
+                #expect(!preview.isDownscaled)
+                let shown = try previewed(preview, document.edits)
+                let row = shown.firstDifferingRow(from: saved)
+                #expect(row == nil, "height \(height), seed \(seed), maxEdge \(maxEdge): the preview differs from the delivered image from row \(row ?? -1)")
             }
         }
     }
 
-    /// D23 mirrors the editor preview. `CaptureSurfaces.edit` decodes a proxy at most
-    /// `EditorProxy.maxEdge` px on a side (`ThumbnailImage`), and `EditorWindow.refresh()` renders
-    /// `DocumentRenderer.render` over it with the edits rescaled by `EditorProxy.displayScale`. The
-    /// base here is uniform, so any downsampling filter gives the same proxy. The saved output is the
-    /// whole-image render at full size (what the save path gives once D1 is fixed). A mark in the
-    /// preview may cover the whole preview pixels its saved pixels touch, and no more; strokes and
-    /// label text at 18 pt (and arrow heads at 8 px) are larger than that.
+    @Test func previewAtFullSizeEqualsTheDeliveredImageWithACropAtTwoTimes() throws {
+        let document = try generatedDocument(seed: 99, height: 300)
+        let crop = try #require(DocumentCrop(x: 3.25, y: 17.5, width: 30.3, height: 211.1))
+        let edits = try #require(DocumentEdits(scale: 2, crop: crop, redactions: document.edits.redactions,
+                                               annotations: document.edits.annotations, effects: document.edits.effects))
+        let png = try document.base.png()
+        let preview = try CaptureRenderer().preview(png)
+        #expect(try previewed(preview, edits) == delivered(png, edits))
+    }
+
+    @Test func previewShrinksOnlyWhenAnEdgeExceedsMaxEdge() throws {
+        let small = try CaptureRenderer().preview(try blank(40, 30).png())
+        #expect((small.width, small.height, small.isDownscaled) == (40, 30, false))
+        let tall = try CaptureRenderer().preview(try blank(60, 900).png(), maxEdge: 300)
+        #expect((tall.captureWidth, tall.captureHeight) == (60, 900))
+        #expect((tall.width, tall.height, tall.isDownscaled) == (20, 300, true))
+    }
+
+    @Test func previewRefusesWhatFlattenRefuses() throws {
+        #expect(throws: RenderFailure.unreadableCapture) { try CaptureRenderer().preview(Data([1, 2, 3])) }
+    }
+
+    /// Decision 61: downscaled, every preview pixel whose block touches a redacted pixel is exactly
+    /// the redaction's colour at alpha 255, and no other preview pixel shows anything from under it.
+    /// The two captures differ only under the redaction (a canary against a neutral colour), so
+    /// their previews must be identical. Sizes make the reduction non-integer, with Blur over the
+    /// redaction's edge.
+    @Test(arguments: [(1000, 333, 300), (301, 97, 128), (777, 1234, 500), (4000, 45, 2048)])
+    func downscaledPreviewFillsEveryBlockTouchingARedactionAndShowsNothingUnderIt(width: Int, height: Int, maxEdge: Int) throws {
+        let w = Double(width), h = Double(height)
+        let grey = RGBAPixel(red: 0x80, green: 0x80, blue: 0x80, alpha: 0xff)
+        for colour in [SolidRedaction.fill, grey] {
+            let redaction = try #require(SolidRedaction(x: w * 0.31 + 0.4, y: h * 0.27 + 0.3, width: w * 0.2 + 0.35,
+                                                        height: h * 0.3 + 0.45, colour: colour))
+            let blur = try #require(DocumentEffect(.blur(x: w * 0.25, y: h * 0.2, width: w * 0.2, height: h * 0.2)))
+            let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], effects: [blur]))
+            let redacted = CaptureRendererTests.snapped(redaction.x, redaction.y, redaction.width, redaction.height, scale: 1)
+            func capture(under fill: RGBAPixel) throws -> Data {
+                var bytes = CaptureRendererTests.pattern(width: width, height: height)
+                for y in redacted.minY..<redacted.maxY {
+                    for x in redacted.minX..<redacted.maxX {
+                        let i = (y * width + x) * 4
+                        bytes.replaceSubrange(i..<(i + 4), with: [fill.red, fill.green, fill.blue, fill.alpha])
+                    }
+                }
+                return try CaptureRendererTests.encode(bytes, width: width, height: height)
+            }
+            let canary = try CaptureRenderer().preview(try capture(under: RGBAPixel(red: 0xff, green: 0, blue: 0xff, alpha: 0xff)), maxEdge: maxEdge)
+            let neutral = try CaptureRenderer().preview(try capture(under: RGBAPixel(red: 0, green: 0xff, blue: 0, alpha: 0xff)), maxEdge: maxEdge)
+            #expect(canary.isDownscaled)
+            let shown = try previewed(canary, edits)
+            #expect(shown == (try previewed(neutral, edits)), "\(width)×\(height) at \(maxEdge): the preview shows what the redaction covers")
+            let block = cover(redacted, capture: (width, height), preview: (shown.width, shown.height))
+            for y in block.minY..<block.maxY {
+                for x in block.minX..<block.maxX where shown.pixel(x: x, y: y) != colour {
+                    Issue.record("\(width)×\(height) at \(maxEdge): preview pixel (\(x), \(y)) touches the redaction but is \(String(describing: shown.pixel(x: x, y: y)))")
+                    return
+                }
+            }
+        }
+    }
+}
+
+/// The preview pixels a box of capture pixels touches: minimum edges down, maximum edges up.
+private func cover(_ box: (minX: Int, minY: Int, maxX: Int, maxY: Int), capture: (width: Int, height: Int),
+                   preview: (width: Int, height: Int)) -> (minX: Int, minY: Int, maxX: Int, maxY: Int) {
+    (box.minX * preview.width / capture.width, box.minY * preview.height / capture.height,
+     (box.maxX * preview.width + capture.width - 1) / capture.width,
+     (box.maxY * preview.height + capture.height - 1) / capture.height)
+}
+
+/// Known defects in edited output (ticket 44). Each stays red until its fix removes the wrapper.
+@Suite struct EditedOutputDefectTests {
+    /// D23: the downscaled editor preview drew marks larger than the saved output (strokes floored
+    /// at 2 preview px, arrow heads at 8, labels at 18 pt per preview point). A mark in the preview
+    /// may cover the preview pixels its saved pixels touch, and no more. A Solid redaction covers
+    /// exactly those, in its own colour.
     @Test(arguments: [1.0, 2.0])
-    func d23DownscaledPreviewDrawsMarksNoLargerThanTheSavedOutput(scale: Double) async throws {
+    func d23DownscaledPreviewDrawsMarksNoLargerThanTheSavedOutput(scale: Double) throws {
         let full = (width: 64, height: Int(4096 * scale))
-        let proxy = EditorProxy.displaySize(width: full.width, height: full.height)
-        let displayScale = EditorProxy.displayScale(fullWidth: full.width, proxyWidth: proxy.width, scale: scale)
-        let kx = Double(proxy.width) / Double(full.width), ky = Double(proxy.height) / Double(full.height)
-        #expect(kx < 1 && ky < 1, "the capture must be downscaled for the preview")
-        let fullBase = try blank(full.width, full.height)
-        let proxyBase = try blank(proxy.width, proxy.height)
-        func cover(_ box: (minX: Int, minY: Int, maxX: Int, maxY: Int)) -> (minX: Int, minY: Int, maxX: Int, maxY: Int) {
-            (Int((Double(box.minX) * kx).rounded(.down)), Int((Double(box.minY) * ky).rounded(.down)),
-             Int((Double(box.maxX) * kx).rounded(.up)), Int((Double(box.maxY) * ky).rounded(.up)))
-        }
-        let marks: [(name: String, annotations: [DocumentAnnotation], redactions: [SolidRedaction], colour: RGBAPixel)] = [
-            ("label", [try #require(DocumentAnnotation(.text(x: 2, y: 4, characters: "A")))], [], DocumentAnnotation.stroke),
-            ("arrow", [try #require(DocumentAnnotation(.arrow(x0: 2, y0: 40, x1: 28, y1: 40)))], [], DocumentAnnotation.stroke),
-            ("Solid redaction", [], [try #require(SolidRedaction(x: 3.3, y: 60.2, width: 7.1, height: 5.6))], SolidRedaction.fill)
+        let base = try blank(full.width, full.height)
+        let png = try base.png()
+        let preview = try CaptureRenderer().preview(png)
+        #expect(preview.isDownscaled, "the capture must be downscaled for the preview")
+        let grey = RGBAPixel(red: 0x80, green: 0x80, blue: 0x80, alpha: 0xff)
+        let marks: [(name: String, annotations: [DocumentAnnotation], redactions: [SolidRedaction])] = [
+            ("label", [try #require(DocumentAnnotation(.text(x: 2, y: 4, characters: "A")))], []),
+            ("arrow", [try #require(DocumentAnnotation(.arrow(x0: 2, y0: 40, x1: 28, y1: 40)))], []),
+            ("outline", [try #require(DocumentAnnotation(.rectangle(x: 3, y: 80, width: 20, height: 9.5)))], []),
+            ("Solid redaction", [], [try #require(SolidRedaction(x: 3.3, y: 60.2, width: 7.1, height: 5.6))]),
+            ("grey Solid redaction", [], [try #require(SolidRedaction(x: 13.3, y: 70.2, width: 7.1, height: 5.6, colour: grey))])
         ]
-        var measured: [(name: String, saved: (minX: Int, minY: Int, maxX: Int, maxY: Int), preview: (minX: Int, minY: Int, maxX: Int, maxY: Int))] = []
+        let background = try #require(base.pixel(x: 0, y: 0))
         for mark in marks {
-            let saved = DocumentRenderer.render(EditorDocument(base: fullBase, edits: try #require(
-                DocumentEdits(scale: scale, redactions: mark.redactions, annotations: mark.annotations))))
-            let preview = DocumentRenderer.render(EditorDocument(base: proxyBase, edits: try #require(
-                DocumentEdits(scale: displayScale, redactions: mark.redactions, annotations: mark.annotations))))
-            measured.append((mark.name, try #require(saved.bounds(of: mark.colour)), try #require(preview.bounds(of: mark.colour))))
-        }
-        try await knownDefect("D23") {
-            for item in measured {
-                let allowed = cover(item.saved)
-                let inside = item.preview.minX >= allowed.minX && item.preview.minY >= allowed.minY
-                    && item.preview.maxX <= allowed.maxX && item.preview.maxY <= allowed.maxY
-                #expect(inside, "D23: at \(Int(scale))× the preview draws the \(item.name) over preview pixels \(item.preview), but the saved output covers only \(allowed) at that scale")
+            let edits = try #require(DocumentEdits(scale: scale, redactions: mark.redactions, annotations: mark.annotations))
+            let saved = try #require(delivered(png, edits).bounds { $0 != background })
+            let shown = try previewed(preview, edits)
+            let drawn = try #require(shown.bounds { $0 != background })
+            let allowed = cover(saved, capture: full, preview: (shown.width, shown.height))
+            let inside = drawn.minX >= allowed.minX && drawn.minY >= allowed.minY
+                && drawn.maxX <= allowed.maxX && drawn.maxY <= allowed.maxY
+            #expect(inside, "D23: at \(Int(scale))× the preview draws the \(mark.name) over preview pixels \(drawn), but the saved output covers only \(allowed) at that scale")
+            if let redaction = mark.redactions.first {
+                #expect(drawn == allowed, "D23: the \(mark.name) must fill every preview pixel its saved pixels touch")
+                #expect(shown.bounds { $0 == redaction.colour }.map { $0 == allowed } == true)
             }
         }
     }
@@ -566,12 +625,11 @@ private func generatedDocument(seed: UInt64, height: Int, effects withEffects: B
     @Test func d6LabelKeepsEveryTypedCharacter() throws {
         let typed = "v2.1 $4.99 -10%"
         let base = try blank(220, 24)
-        func label(_ characters: String) throws -> Bitmap? {
+        func label(_ characters: String) throws -> Picture? {
             guard let annotation = DocumentAnnotation(.text(x: 2, y: 2, characters: characters)) else { return nil }
-            return DocumentRenderer.render(EditorDocument(base: base, edits: try #require(
-                DocumentEdits(scale: 1, annotations: [annotation]))))
+            return try render(base, annotations: [annotation])
         }
-        var steps: [(character: Character, before: Bitmap?, after: Bitmap?)] = []
+        var steps: [(character: Character, before: Picture?, after: Picture?)] = []
         for (index, character) in typed.enumerated() where character != " " {
             let prefix = String(typed.prefix(index))
             steps.append((character, try label(prefix), try label(prefix + String(character))))

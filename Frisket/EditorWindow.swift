@@ -222,9 +222,9 @@ enum EditorAction {
 @MainActor final class EditorWindow: NSObject, NSWindowDelegate {
     private let window: EditorKeyWindow
     private let canvas: EditorCanvasView
-    private let base: Bitmap
+    /// The capture decoded once for the preview; `render(edits)` runs off the main actor.
+    private let preview: CapturePreview
     private let pixelSize: CGSize
-    private let displayScale: Double
     private var documentSize: CGSize
     private var edits: DocumentEdits
     private var undoStack: [DocumentEdits] = []
@@ -244,20 +244,21 @@ enum EditorAction {
     var currentEdits: DocumentEdits { edits }
     var dragPreview: NSImage? { canvas.rendered }
     private var finishing = false
+    /// The edits the canvas shows, or is rendering now; the main actor only swaps finished images.
     private var renderedEdits: DocumentEdits?
+    private var rendering = false
     /// Close only after the command accepts the edits (or the unchanged close).
     private var finish: ((EditorLeave) async -> Bool)?
     private var promptOpen = false
     private let placementScreen: NSScreen?
 
-    init?(base: Bitmap, pixelSize: CGSize? = nil, scale: Double, screen: NSScreen?,
+    init?(preview: CapturePreview, scale: Double, screen: NSScreen?,
           finish: @escaping (EditorLeave) async -> Bool) {
         guard let edits = DocumentEdits(scale: scale) else { return nil }
-        self.base = base
+        self.preview = preview
         self.edits = edits
         self.finish = finish
-        self.pixelSize = pixelSize ?? CGSize(width: base.width, height: base.height)
-        displayScale = EditorProxy.displayScale(fullWidth: Int(self.pixelSize.width), proxyWidth: base.width, scale: scale)
+        pixelSize = CGSize(width: preview.captureWidth, height: preview.captureHeight)
         tools = [SolidRedactionTool(), CropTool(), ArrowTool(), RectangleTool(), textTool, BlurTool(), MagnifyTool()]
         documentSize = CGSize(width: self.pixelSize.width / scale, height: self.pixelSize.height / scale)
         canvas = EditorCanvasView(documentSize: documentSize)
@@ -431,15 +432,7 @@ enum EditorAction {
         let size = currentDocumentSize
         if documentSize != size { documentSize = size }
         if canvas.documentSize != size { canvas.documentSize = size }
-        if let displayEdits = DocumentEdits(scale: displayScale, crop: edits.crop, redactions: edits.redactions,
-                                            annotations: edits.annotations, effects: edits.effects),
-           displayEdits != renderedEdits {
-            let rendered = DocumentRenderer.render(EditorDocument(base: base, edits: displayEdits))
-            if let image = PNGBitmapCodec.image(rendered) {
-                canvas.rendered = NSImage(cgImage: image, size: size)
-                renderedEdits = displayEdits
-            }
-        }
+        renderLatestEdits()
         for button in toolButtons {
             button.state = button.tag == activeTool ? .on : .off
             button.isEnabled = !finishing
@@ -453,6 +446,30 @@ enum EditorAction {
         doneButton.isEnabled = !finishing
         dragWell.image = canvas.rendered
         dragWell.alphaValue = finishing ? 0.4 : 1
+    }
+
+    /// Renders the current edits off the main actor with the same renderer Done uses. At most one
+    /// render runs; edits made meanwhile are rendered next, and older results are still shown
+    /// until then. The main actor only swaps the finished image in.
+    private func renderLatestEdits() {
+        guard !rendering, edits != renderedEdits else { return }
+        rendering = true
+        let target = edits, size = currentDocumentSize, preview = preview
+        renderedEdits = target
+        Task { [weak self] in
+            let image = await Self.render(preview, target)
+            guard let self else { return }
+            rendering = false
+            if let image, finish != nil {
+                canvas.rendered = NSImage(cgImage: image, size: size)
+                dragWell.image = canvas.rendered
+            }
+            if finish != nil { renderLatestEdits() }
+        }
+    }
+
+    @concurrent private nonisolated static func render(_ preview: CapturePreview, _ edits: DocumentEdits) async -> CGImage? {
+        try? preview.render(edits)
     }
 
     private func describeActiveTool() {

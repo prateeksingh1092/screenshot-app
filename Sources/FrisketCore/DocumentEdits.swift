@@ -14,27 +14,18 @@ public struct RGBAPixel: Hashable, Sendable {
     }
 }
 
-/// An in-memory 8-bit RGBA bitmap in sRGB with premultiplied alpha, rows top to bottom, tightly packed.
-public struct Bitmap: Equatable, Sendable {
-    public let width: Int
-    public let height: Int
-    public internal(set) var bytes: [UInt8]
+/// The renderer's working pixels: 8-bit sRGB RGBA with premultiplied alpha, rows top to bottom,
+/// tightly packed. Internal to the core; callers see PNG bytes (`flatten`) or a `CGImage` (`CapturePreview`).
+struct RGBABuffer: Sendable {
+    let width: Int
+    let height: Int
+    var bytes: [UInt8]
 
-    public init?(width: Int, height: Int, bytes: [UInt8]) {
+    init?(width: Int, height: Int, bytes: [UInt8]) {
         guard width > 0, height > 0, width <= Int.max / 4 / height, bytes.count == width * height * 4 else { return nil }
         self.width = width
         self.height = height
         self.bytes = bytes
-    }
-
-    public init?(width: Int, height: Int, pixels: [RGBAPixel]) {
-        self.init(width: width, height: height, bytes: pixels.flatMap { [$0.red, $0.green, $0.blue, $0.alpha] })
-    }
-
-    public func pixel(x: Int, y: Int) -> RGBAPixel? {
-        guard (0..<width).contains(x), (0..<height).contains(y) else { return nil }
-        let index = (y * width + x) * 4
-        return RGBAPixel(red: bytes[index], green: bytes[index + 1], blue: bytes[index + 2], alpha: bytes[index + 3])
     }
 }
 
@@ -139,23 +130,5 @@ public struct DocumentEdits: Equatable, Sendable {
         self.redactions = redactions
         self.annotations = annotations
         self.effects = effects
-    }
-}
-
-/// Converts encoded capture bytes to and from the editor preview's sRGB bitmap, in memory only.
-/// Delivered output never uses it; that is `CaptureFlattening.flatten` (ticket 65).
-public protocol BitmapCodec: Sendable {
-    func decode(_ pngData: Data) -> Bitmap?
-    func encode(_ bitmap: Bitmap) -> Data?
-}
-
-/// The editor's document: a base image plus its edits. Rendering is `DocumentRenderer.render`.
-public struct EditorDocument: Equatable, Sendable {
-    public let base: Bitmap
-    public let edits: DocumentEdits
-
-    public init(base: Bitmap, edits: DocumentEdits) {
-        self.base = base
-        self.edits = edits
     }
 }

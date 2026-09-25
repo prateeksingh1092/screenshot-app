@@ -285,9 +285,7 @@ import Testing
         let outline = try #require(DocumentAnnotation(.rectangle(x: 3, y: h * 0.4, width: w / 2, height: h / 3)))
         let redaction = try #require(SolidRedaction(x: 1, y: h * 0.45, width: w / 3, height: h / 4))
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], annotations: [outline, arrow, label]))
-        let decoded = try Self.decode(png)
-        let base = try #require(Bitmap(width: decoded.width, height: decoded.height, bytes: decoded.bytes))
-        let preview = DocumentRenderer.render(EditorDocument(base: base, edits: edits))
+        let preview = try previewed(try CaptureRenderer().preview(png), edits)
         let output = try Self.decode(try CaptureRenderer().flatten(png, edits: edits))
         #expect(output.bytes == preview.bytes, "D1: delivered annotations differ from the preview")
         let ink = DocumentAnnotation.stroke
@@ -318,9 +316,7 @@ import Testing
         let crop = try #require(DocumentCrop(x: 1.5, y: 2.25, width: 55, height: 40))
         let edits = try #require(DocumentEdits(scale: scale, crop: crop, redactions: [redaction],
                                                annotations: [label, arrow], effects: [blur, magnify]))
-        let decoded = try Self.decode(png)
-        let base = try #require(Bitmap(width: decoded.width, height: decoded.height, bytes: decoded.bytes))
-        let preview = DocumentRenderer.render(EditorDocument(base: base, edits: edits))
+        let preview = try previewed(try CaptureRenderer().preview(png), edits)
         let output = try Self.decode(try CaptureRenderer().flatten(png, edits: edits))
         #expect(output.width == preview.width && output.height == preview.height)
         #expect(output.bytes == preview.bytes)

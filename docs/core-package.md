@@ -367,23 +367,20 @@ directory (ticket 78); the launch sweep removes any `staging/` an earlier build 
 
 ## Ticket 26 editor document, renderer and Done
 
-- **Document:** `EditorDocument(base: Bitmap, edits: DocumentEdits)`. `Bitmap` is
-  premultiplied sRGB RGBA8, rows top to bottom. `DocumentEdits` holds `scale`
+- **Edits:** `DocumentEdits` holds `scale`
   (output pixels per document point), an optional `crop` in original document
   points, and the ordered `redactions`.
   `SolidRedaction(x:y:width:height:)` is in document points from the top-left
   and fails for non-finite or non-positive geometry. It carries its `colour`
   (decision 61), which must have alpha 255; the default, `SolidRedaction.fill`,
   is black. It has no opacity, radius or stroke to set.
-- **Renderer (seam 2):** `DocumentRenderer.render(_:) -> Bitmap` is pure Swift
-  (Foundation only). Crop is applied first (outward snap to output pixels).
+- **Renderer (seam 2):** `CaptureRenderer.flatten(_:edits:)` is the only output
+  path, and `CaptureRenderer.preview(_:maxEdge:)` returns the editor's
+  `CapturePreview`, whose `render(edits)` paints with the same internal
+  function (ticket 68). Crop is applied first (outward snap to output pixels).
   Each redaction is then shifted into the cropped document, multiplied by
   `scale`, snapped outward, clipped, and copied as fill bytes with no blending
   or antialiasing.
-- **Codec seam:** `BitmapCodec` converts PNG bytes to and from `Bitmap` in
-  memory. The app injects `PNGBitmapCodec` (ImageIO, fixed sRGB) through
-  `CaptureLifecycleCoordinator(…, codec:)`; without one, Done returns
-  `rejected(.editingUnavailable)`.
 - **Done (seam 1):** `execute(.done(revision, edits))` decodes the current
   pending image, renders, encodes, and replaces the pending image with the
   result as revision *n*+1 before any suspension. It then finalizes that
@@ -627,17 +624,19 @@ display. Done renders the whole image once with `CaptureRenderer.flatten`
 (ticket 65) and encodes it with ImageIO; the strip PNG encoder and its zlib
 bindings were deleted by ticket 67.
 
-`DocumentRenderer.forEachStrip` remains only as a test oracle and the Gate B
-fallback: it paints 256-row output windows, widened to the whole rows of any
-Blur or Magnify box a window meets, so its strips equal the whole-image render
-(D1). Blur is a vImage 3×3 box convolution, edge-extended at its box and run
-six times; Magnify draws the box's top-left quarter at 2× over the whole box
-with CoreGraphics and no interpolation. Both read only their own box of the
-redacted composite, and the redactions are stamped again after them.
+Blur is a vImage 3×3 box convolution, edge-extended at its box and run six
+times; Magnify draws the box's top-left quarter at 2× over the whole box with
+CoreGraphics and no interpolation. Both read only their own box of the
+redacted composite, and the redactions are stamped again after them. The strip
+walk was deleted with the old renderer (ticket 68).
 
-The editor canvas uses `EditorProxy` (max edge **2048**) built from an
-ImageIO thumbnail. Edits stay in document points at the capture scale; Done
-re-renders the pending PNG at full resolution.
+The editor canvas is `CaptureRenderer.preview(capture)` (max edge **2048**),
+decoded once off the main actor; each edit renders off the main actor and the
+main actor only swaps the image. At full size the preview equals the
+delivered image. Downscaled, each preview pixel averages only capture pixels
+inside its own block, every block that touches a Solid redaction is exactly
+that redaction's colour, and annotations keep their full-size geometry, scaled
+(D23). Done re-renders the pending PNG at full resolution.
 
 The opt-in peak is `sh scripts/editor-memory-run.sh` (one display, 6,016 ×
 3,384, every edit kind) or `sh scripts/editor-memory-run.sh cap` (5,120 ×
