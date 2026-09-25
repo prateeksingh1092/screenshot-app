@@ -85,6 +85,10 @@ echo "# Failures in $(basename "$run") (read all of these before rerunning any r
 watchdog=$!
 cleanup() {
   pkill -P "$watchdog" 2>/dev/null; kill "$watchdog" 2>/dev/null   # its sleep too, so no late kill hits a reused PID
+  # A run stopped mid-row can leave a selection overlay or an alert up, which blocks Quit and the
+  # next install. Cancel them while the pattern is still frontmost (drive types only to it or Frisket).
+  if "$H/drive" cgwin 2>/dev/null | grep -q 'layer=1000'; then "$H/drive" key 53 >/dev/null 2>&1; sleep 0.5; fi
+  "$H/drive" axpress frisket "OK" >/dev/null 2>&1
   pkill -x pattern 2>/dev/null
   if "$H/drive" clip-restore "$private/clipboard.plist" >>"$run/harness.log" 2>&1; then
     rm -rf "$private"
