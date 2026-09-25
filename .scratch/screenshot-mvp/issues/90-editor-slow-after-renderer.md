@@ -22,6 +22,17 @@
 
 **Status:** ready-for-agent (medium effort; use the `diagnosing-bugs` skill)
 
-- [ ] A package test times `CaptureFlattening.flatten` and the editor preview render (`DocumentRenderer.render`) for 800 × 1,000 px with one arrow and one label, and fails above a budget: 250 ms each in a debug build, or whatever the measurement supports, recorded in `decisions.md`.
+- [x] A package test times `CaptureFlattening.flatten` and the editor preview render (`DocumentRenderer.render`) for 800 × 1,000 px with one arrow and one label, and fails above a budget: 250 ms each in a debug build, or whatever the measurement supports, recorded in `decisions.md`.
 - [ ] The measured cause is named in the report with numbers, and fixed. The delivered-vs-preview byte equality and every Solid redaction test stay exact.
 - [ ] Live, checked by the coordinator: on the built-in display the editor opens in 1 s or less, and Done returns a ready Thumbnail in 1 s or less.
+
+### 2026-09-25: implementer, report
+
+Claude Opus 5.5, medium effort (decision 62), `diagnosing-bugs` loop.
+
+- **Loop:** `scripts/test-core.sh --filter RenderTimingTests` (new, `Tests/FrisketCoreTests/RenderTimingTests.swift`): 800 × 1,000 px noise PNG (2.8 MB), scale 2, one arrow and one label; budget 250 ms per seam, fastest of three (decision 70).
+- **Measured (debug, this Intel Mac):** `DocumentRenderer.render` 2–8 ms; `CaptureRenderer.flatten` 120–130 ms; the whole Done command (`CaptureCommandLayer.execute`, flatten plus History commit) 220–250 ms, also with 240 items in History; the editor-open chain (`ThumbnailImage.make` 18 ms, `bitmap(from:)` 11 ms, render, `PNGBitmapCodec.image` <1 ms). A throwaway probe measured these and was deleted.
+- **Cause:** not in the renderer. None of the four suspects costs more than 130 ms, so no product code changed and the test never went red. The live slowness is outside every package seam.
+- **Lead for the coordinator (History, ticket 74's area, not touched here):** the failed-row screenshot of run `20260925-024155` shows the History window open, and the live History holds 240 items (the harness keeps its captures). With the window visible, each Copy, Save or Close runs `HistoryWindowModel.reload`, which awaits 240 thumbnail lookups one at a time (1.8 s core-side, measured) and assigns `rows` after each one, so the list re-renders 240 times on the main actor. In that run's `editor-label-text` row, the old, busy Thumbnail was still up after Done ("Copy recognized text" `enabled="0"`).
+- **Open:** the live criterion. Time it with the History window closed, then open.
+
