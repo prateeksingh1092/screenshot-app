@@ -7,5 +7,5 @@
 **Status:** ready-for-agent (medium effort)
 
 - [ ] Focus Latest Thumbnail is disabled whenever `thumbnails()` is empty, by the same rule as Copy Latest. Add a test at that seam, and extend the live `menu-latest` row.
-- [ ] Once permission has been requested before (`PreferenceKey.screenRecordingRequested`) or refused, the button reads "Open Screen Recording Settings" and opens System Settings › Privacy & Security › Screen & System Audio Recording. On first use it still requests. Add a test on the permission-recovery state (see `docs/permission-recovery.md`).
+- [ ] Remove the "Request Screen Recording" button from the permission message (decision 100). The existing "Open System Settings" button, which already opens the Screen & System Audio Recording page, stays. Add a test on the permission-recovery state (see `docs/permission-recovery.md`).
 - [ ] The permission message text matches the button: after a refusal, it tells the user to turn Frisket on in System Settings and relaunch if asked.

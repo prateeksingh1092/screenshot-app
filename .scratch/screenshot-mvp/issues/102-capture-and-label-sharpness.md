@@ -26,3 +26,7 @@
 ### 2026-09-25: coordinator, live
 
 A Frisket window capture of a 1792 × 986 pt window on the built-in Retina display, saved as a file: 3584 × 1972 px, 72 dpi. Its pixels are exactly 2× the points, so hypothesis 2 (resampling) is unlikely. Hypothesis 1 (dpi) is the lead. Test hypothesis 3 (labels) separately.
+
+### 2026-09-25: Prateek, acceptance test 12
+
+"The text quality/appearance is kinda blurry even in the editor, even at the smallest size." Because the blur shows inside the editor too, the dpi marking (hypothesis 1) can't explain all of it. Label rendering (hypothesis 3) is confirmed as a cause and comes first. The white halo is removed by decision 100, which may also help labels look sharper.

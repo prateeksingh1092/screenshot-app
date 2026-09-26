@@ -430,6 +430,13 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - Picking any tool other than Select, by button or key, deselects the selected mark. The style bar then shows that tool's controls, for example the redaction colours for Solid Redaction, instead of the old mark's.
     - **Why:** in the 2026-09-25 editor screenshots, a label stayed selected after switching to Solid Redaction, so the style bar showed label size and style where the redaction colours belonged.
 
+100. **Acceptance-test choices (Prateek, 2026-09-25, ticket 83):**
+    - **The permission message loses its Request button.** "Request Screen Recording" does nothing once macOS has asked, so only "Open System Settings" (the Screen & System Audio Recording page) stays (D34, ticket 103).
+    - **The default line width stays 2 pt.**
+    - **The white halo goes.** Arrows, lines, shapes and labels no longer get the 1-pixel white plate. This reverses decision 68's plate and decision 97's "the plate stays white for every ink". Outlined and Box labels keep their own outline and box.
+    - **Text must be as crisp as CleanShot's:** in the editor, in every output and at every label size (D32, ticket 102).
+    - Prateek's overall verdict on feel against CleanShot: "It will take me time to adjust to Frisket. CleanShot is a robust app for sure."
+
 ## Evaluation update: Xcode question resolved narrowly
 
 The requested Cursor Opus 5.5 high review completed and Codex assessed it. The installed CLT compiled/linked a native-framework probe and ran it without screen capture; Preview and XCTest probes failed for missing tooling. Full Xcode is not a universal native-app requirement, while Snapzy's existing source build/tests still depend on Xcode tooling. This is factual evaluation evidence, not approval to change the foundation or port its build system. See [Codex's assessment](../../docs/research/2026-09-22-xcode-necessity-assessment.md).
