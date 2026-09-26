@@ -1,3 +1,15 @@
+> **Next session starts here (2026-09-25, 21:45, end of day).** `main` is at `daf2b16` plus this handoff, with `ci.sh` green (459 tests, 7 known issues). Signed build `daf2b16` is installed, and the full live matrix passes **31/31 on both displays** (runs `20260925-213258` and `-213920`). Everything is pushed to `origin/main`.
+> - **Prateek's acceptance walkthrough (ticket 83):** tests 1–11 passed, and test 12 was his verdict on feel. The results are in ticket 83's comment of 2026-09-25.
+> - **Merged after the walkthrough:**
+>   - 103 (decision 101): Focus Latest is disabled with no Thumbnail, and the Request button stays only on the first run.
+>   - 102 + 104 (decision 102): the editor showed a copy of the capture with pixel columns dropped; every PNG was marked 72 dpi; the white halo is removed.
+>   - Prateek's choices are decision 100.
+> - **Next:**
+>   1. Prateek redoes the side-by-side with CleanShot: the same text captured by both apps, and a label in the editor at the smallest size. Sharpness is his call; the evidence is in `.build/evidence-102/`, outside git.
+>   2. Confirm decision 101 with him: the first run keeps the Request button, because it is the only way to trigger macOS's prompt.
+>   3. The rest of ticket 83: re-measure performance (`Tools/Performance`, capture-to-Thumbnail latency, the editor memory run at 5,120 × 32,768); mark the §1.3 CleanShot rows as met or intentionally different; close the stale ticket 40; audit that every DA item is in `decisions.md`. Then close 83.
+> - **Hazards seen today:** CleanShot X holds the ⌘⇧ keys (the harness refuses while it runs); the displays sleep and the Mac locks while Prateek is away (hold `caffeinate -d -i -u`); a cancelled quit once left an old build running (the harness now refuses a stale process); `FindMyMacMessenger` took the front mid-row once.
+>
 > **2026-09-25 17:08:** signed build `4969168` is installed. On `9a8d791` the full matrix passed 31/31 on both displays after one harness fix: the Thumbnail's × is also "Close", so Undo and Close are now checked inside the editor window. On `4969168` the 8 editor rows pass on both displays.
 > - **Decision 99:** choosing a drawing tool drops the selection. Found in the editor screenshots (`.build/visual-now/`, beside `.scratch/visual-pass/cleanshot-editor/`).
 > - **New harness guard:** it refuses to run when the running Frisket predates the installed bundle. A cancelled quit had left the old build running.
