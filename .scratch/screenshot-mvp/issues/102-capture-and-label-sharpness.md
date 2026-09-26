@@ -20,3 +20,9 @@
 - [ ] A test: a capture's pixels equal the display's pixels 1:1 at native scale, with no resampling.
 - [ ] Labels render at output resolution. Compare against CleanShot at 2×.
 - [ ] Live: a side-by-side of CleanShot and Frisket on the same synthetic text, at 1× and 2×.
+
+## Comments
+
+### 2026-09-25: coordinator, live
+
+A Frisket window capture of a 1792 × 986 pt window on the built-in Retina display, saved as a file: 3584 × 1972 px, 72 dpi. Its pixels are exactly 2× the points, so hypothesis 2 (resampling) is unlikely. Hypothesis 1 (dpi) is the lead. Test hypothesis 3 (labels) separately.
