@@ -41,7 +41,7 @@ Frisket is a native macOS menu-bar app that captures an area, a window or the fu
 20. As a user, I want to remap every shortcut, and be told when a mapping collides with an enabled system shortcut, so that I can set my own layout safely.
 21. As a new user, I want onboarding to explain the Screen Recording permission, what History keeps and for how long, and that Save keeps a permanent copy, so that I know what Frisket stores.
 22. As a user, I want Frisket to check permission before showing any overlay, so that I never draw a selection that can't be captured.
-23. As a user, I want a recovery panel with "Open Privacy & Security" and "Quit & Reopen" when permission is missing, denied, revoked, or needs a relaunch, so that I can fix it in one step.
+23. As a user, I want a recovery panel with "Open System Settings" and "Quit & Reopen" when permission is missing, denied, revoked, or needs a relaunch, so that I can fix it in one step.
 24. As a user, I want the menu-bar icon to show when permission is missing, so that I notice before trying to capture.
 25. As a user, I want Frisket never to draw over a pending macOS screen-capture alert, so that system prompts stay visible.
 26. As a user, I want my Screen Recording permission to survive rebuilds of Frisket, so that development doesn't keep re-prompting me.

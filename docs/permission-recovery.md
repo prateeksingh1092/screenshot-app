@@ -57,7 +57,12 @@ a detected loss of access.
 The command gate performs no permission request. Missing access opens an ordinary
 recovery panel. Only its explicit Request Screen Recording button invokes
 `CGRequestScreenCaptureAccess`, after closing the panel; capture invocation is
-blocked while that request executes. Capture never resumes automatically after
+blocked while that request executes. The button appears only in the not-asked
+state: once macOS has asked, a second request is silent, so denied, revoked and
+needs-relaunch recovery offer only Open System Settings and Quit & Reopen, and
+the message tells the user to turn Frisket on in System Settings and relaunch if
+macOS asks (decision 100, D34, ticket 103). `PermissionRecoveryContent` in
+FrisketCore holds the message and buttons for each state. Capture never resumes automatically after
 the request. While recovery is open, repeated capture commands focus it instead
 of opening selection.
 
@@ -75,7 +80,7 @@ arbitrary external system alerts through these APIs.
 
 ## Recovery actions
 
-The Screen Recording deep link used by **Open Privacy & Security** is:
+The Screen Recording deep link used by **Open System Settings** is:
 
 `x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`
 

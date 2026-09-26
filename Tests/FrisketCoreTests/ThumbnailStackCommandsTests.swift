@@ -823,3 +823,21 @@ extension ThumbnailStackCommandsTests {
         #expect(await fixture.commands.thumbnails().latestToDelete == nil)
     }
 }
+
+extension ThumbnailStackCommandsTests {
+    /// D33: Focus Latest Thumbnail follows the same rule as Copy Latest. With no Thumbnail, as after a
+    /// display is unplugged and its card leaves, there is nothing to focus and the menu item is disabled (ticket 103).
+    @Test func focusLatestActsOnlyWhenAThumbnailIsShown() async throws {
+        let fixture = StackFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        #expect(await fixture.commands.thumbnails().latestToFocus == nil)
+        let revision = try await fixture.capture()
+        #expect(await fixture.commands.thumbnails().latestToFocus?.revision == revision)
+        await fixture.commands.setThumbnailStackFocus(true)
+        #expect(await fixture.commands.focusedThumbnail() == revision)
+        _ = await fixture.commands.execute(.exitThumbnail(revision, .close))
+        #expect(await fixture.commands.thumbnails().isEmpty)
+        #expect(await fixture.commands.thumbnails().latestToFocus == nil)
+        #expect(await fixture.commands.focusedThumbnail() == nil)
+    }
+}
