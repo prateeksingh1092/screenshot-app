@@ -4,7 +4,7 @@ import Foundation
 
 /// How a label is drawn (ticket 86, story 104).
 public enum LabelStyle: String, CaseIterable, Sendable {
-    /// Ink glyphs with a 1 px white plate around them (decision 68).
+    /// Ink glyphs, with no plate (decision 100).
     case standard
     /// White glyphs (black in a light ink) inside an ink outline.
     case outlined
@@ -130,14 +130,12 @@ public struct LabelLayout: Equatable, Sendable {
 }
 
 extension AnnotationPainter {
-    /// Draws one layer of a label whose text starts at `top` (output pixels). Standard: the plate
-    /// strokes the glyphs 2 px wide in white, the ink fills them. Outlined: the plate strokes them
-    /// wider than the outline, the ink strokes the outline, then the glyphs fill white (black in a
-    /// light ink). Box: the
-    /// plate fills the box snapped outward and 1 px larger, the ink fills the box, then the glyphs
-    /// fill in white (black on a light ink).
+    /// Draws a label whose text starts at `top` (output pixels), with no white plate (decision 100).
+    /// Standard: the ink fills the glyphs. Outlined: the ink strokes the outline, then the glyphs fill
+    /// white (black in a light ink). Box: the ink fills the box snapped outward, then the glyphs fill
+    /// white (black on a light ink).
     static func drawLabel(_ characters: String, format: LabelFormat, colour: RGBAPixel, top: CGPoint, scale: Double,
-                          layer: Layer, in context: CGContext) {
+                          in context: CGContext) {
         let layout = LabelLayout(characters: characters, format: format)
         let font = LabelLayout.font(size: format.size * scale)
         guard let typesetter = LabelLayout.typesetter(characters, font: font, colourFromContext: true) else { return }
@@ -155,19 +153,13 @@ extension AnnotationPainter {
         }
         switch format.style {
         case .standard:
-            context.setLineWidth(2)
-            glyphs(layer == .ink ? .fill : .stroke)
+            glyphs(.fill)
         case .outlined:
             let outline = max(1, (format.outline * scale).rounded())
-            if layer == .plate {
-                context.setLineWidth(2 * outline + 2)
-                glyphs(.stroke)
-            } else {
-                context.setLineWidth(2 * outline)
-                glyphs(.stroke)
-                context.setFillColor(letterColour(on: colour))
-                glyphs(.fill)
-            }
+            context.setLineWidth(2 * outline)
+            glyphs(.stroke)
+            context.setFillColor(letterColour(on: colour))
+            glyphs(.fill)
         case .box:
             // Snapped outward to whole output pixels, like a shape, so its edges are exact.
             let box = layout.bounds
@@ -175,13 +167,9 @@ extension AnnotationPainter {
             let maxX = (top.x + (box.x + box.width) * scale).rounded(.up)
             let maxY = (top.y + (box.y + box.height) * scale).rounded(.up)
             let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-            if layer == .plate {
-                context.fill(rect.insetBy(dx: -1, dy: -1))
-            } else {
-                context.fill(rect)
-                context.setFillColor(letterColour(on: colour))
-                glyphs(.fill)
-            }
+            context.fill(rect)
+            context.setFillColor(letterColour(on: colour))
+            glyphs(.fill)
         }
     }
 
@@ -189,7 +177,7 @@ extension AnnotationPainter {
     /// one (Yellow, White), so the letters never vanish into their ink (ticket 99).
     static func letterColour(on ink: RGBAPixel) -> CGColor {
         let luma = (0.299 * Double(ink.red) + 0.587 * Double(ink.green) + 0.114 * Double(ink.blue)) / 255
-        return luma > 0.6 ? CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1) : plateColour
+        return luma > 0.6 ? CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1) : white
     }
 }
 

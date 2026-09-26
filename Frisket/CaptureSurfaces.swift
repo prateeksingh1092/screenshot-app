@@ -229,8 +229,8 @@ import FrisketCore
         Task {
             let screen = await thumbnailScreen(id)
             guard let image = await commands.image(for: panel.revision),
-                  let preview = await Self.editorPreview(image.pngData),
-                  let editor = EditorWindow(preview: preview,
+                  let previews = await Self.editorPreview(image.pngData),
+                  let editor = EditorWindow(preview: previews.shown, livePreview: previews.live,
                                             scale: Double(screen?.backingScaleFactor ?? 1), screen: screen,
                                             finish: { [weak self] leave in await self?.finishEditing(id, leave) ?? false }) else {
                 panel.model.busy = false
@@ -244,9 +244,11 @@ import FrisketCore
         }
     }
 
-    /// Decodes the capture once for the editor, off the main actor (ticket 68).
-    @concurrent private nonisolated static func editorPreview(_ png: Data) async -> CapturePreview? {
-        try? CaptureRenderer().preview(png)
+    /// Decodes the capture once for the editor, off the main actor (ticket 68), with the reduced
+    /// preview a live drag renders through (ticket 102).
+    @concurrent private nonisolated static func editorPreview(_ png: Data) async -> (shown: CapturePreview, live: CapturePreview)? {
+        guard let preview = try? CaptureRenderer().preview(png) else { return nil }
+        return (preview, preview.reduced())
     }
 
     private func finishEditing(_ id: CaptureID, _ leave: EditorLeave) async -> Bool {

@@ -250,7 +250,7 @@ import Testing
         }
         let standard = try picture(.standard)
         #expect(standard.pixel(x: stem.x, y: stem.y) == Self.ink, "Standard: ink glyphs")
-        #expect(standard.pixel(x: stem.right + 3, y: stem.y) == Self.base, "Standard: 1 px plate only")
+        #expect(standard.pixel(x: stem.right + 3, y: stem.y) == Self.base, "Standard: no plate")
 
         let outlined = try picture(.outlined)
         #expect(outlined.pixel(x: stem.x, y: stem.y) == Self.white, "Outlined: white glyphs")
@@ -266,8 +266,8 @@ import Testing
         for (px, py) in [(minX, minY), (maxX - 1, minY), (minX, maxY - 1), (maxX - 1, maxY - 1)] {
             #expect(boxed.pixel(x: px, y: py) == Self.ink, "Box: filled to its snapped corner \(px), \(py)")
         }
-        #expect(boxed.pixel(x: minX - 1, y: minY) == Self.white, "Box: a 1 px plate")
-        #expect(boxed.pixel(x: minX - 2, y: minY) == Self.base && boxed.pixel(x: maxX + 1, y: maxY) == Self.base)
+        #expect(boxed.pixel(x: minX - 1, y: minY) == Self.base, "Box: no plate")
+        #expect(boxed.pixel(x: maxX, y: maxY) == Self.base && boxed.pixel(x: maxX + 1, y: maxY) == Self.base)
 
         // A light ink gets black text.
         let yellow = RGBAPixel(red: 0xff, green: 0xd6, blue: 0x0a, alpha: 0xff)

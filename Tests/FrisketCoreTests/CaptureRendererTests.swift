@@ -124,7 +124,7 @@ import Testing
     }
 
     /// Ticket 88 (decision 61): a shape is an outline at every width; only Solid redaction fills.
-    /// Pixels well inside the stroke (past its legibility halo) are the source, untouched.
+    /// Pixels well inside the stroke are the source, untouched (no plate since decision 100).
     @Test(arguments: DocumentAnnotation.lineWidths)
     func aShapeIsAnOutlineOnly(lineWidth: Double) throws {
         let width = 48, height = 40
@@ -235,7 +235,7 @@ import Testing
         #expect(Array(output.bytes[4..<8]) != [0xe0, 0x40, 0x20, 0xff])
     }
 
-    // 7. The PNG carries no metadata.
+    // 7. The PNG carries no metadata but its density.
     @Test func deliveredPNGCarriesNoMetadata() throws {
         let width = 6, height = 5
         let properties: [CFString: Any] = [
@@ -250,7 +250,8 @@ import Testing
         let flattened = try CaptureRenderer().flatten(png, edits: edits)
         let types = Self.chunkTypes(flattened)
         #expect(types.first == "IHDR" && types.last == "IEND")
-        let allowed: Set<String> = ["IHDR", "sRGB", "iCCP", "gAMA", "cHRM", "IDAT", "IEND"]
+        // pHYs, the capture's density, is kept (ticket 102); it says nothing about the content.
+        let allowed: Set<String> = ["IHDR", "sRGB", "iCCP", "gAMA", "cHRM", "pHYs", "IDAT", "IEND"]
         #expect(Set(types).isSubset(of: allowed), "unexpected chunks: \(Set(types).subtracting(allowed).sorted())")
         #expect(!String(decoding: flattened, as: UTF8.self).contains("canary"))
     }

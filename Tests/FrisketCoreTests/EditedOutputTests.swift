@@ -219,13 +219,13 @@ private func picture(_ rows: [String]) throws -> Picture {
         #expect(rendered.pixel(x: 0, y: 0) == palette["."])
     }
 
-    @Test func labelIsDrawnInThePinnedFontAboveAWhitePlate() throws {
+    @Test func labelIsDrawnInThePinnedFontWithNoPlate() throws {
         let base = try blank(40, 28)
         let annotation = try #require(DocumentAnnotation(.text(x: 4, y: 2, characters: "H")))
         let rendered = try render(base, annotations: [annotation])
-        // 18 pt HelveticaNeue-Bold: the H's stems are solid ink, ringed by the white plate.
+        // 18 pt HelveticaNeue-Bold: the H's stems are solid ink, with no white plate (decision 100).
         #expect(rendered.contains(DocumentAnnotation.stroke))
-        #expect(rendered.contains(plate))
+        #expect(!rendered.contains(plate))
         let ink = try #require(rendered.bounds(of: DocumentAnnotation.stroke))
         #expect(ink.minX >= 4 && ink.maxX <= 20 && ink.minY >= 2 && ink.maxY <= 22,
                 "an 18 pt capital sits inside its em box below the label's top-left: \(ink)")
@@ -237,20 +237,20 @@ private func picture(_ rows: [String]) throws -> Picture {
     }
 
     /// Annotation golden, with a stated tolerance of 2 per channel. A snapped rectangle's 2 px stroke
-    /// and 1 px plate fall on whole pixels, so antialiasing adds nothing here; '~' cells (pixels an
-    /// edge covers in part) would be free, and this golden has none. '*' ink, 'p' plate, '.' capture.
+    /// falls on whole pixels, so antialiasing adds nothing here; '~' cells (pixels an edge covers in
+    /// part) would be free, and this golden has none. '*' ink, '.' capture; no white plate (decision 100).
     @Test func rectangleOutlineMatchesItsGoldenWithinTwoPerChannel() throws {
         let golden = [
-            "pppppppppp",
-            "p********p",
-            "p********p",
-            "p**pppp**p",
-            "p**p..p**p",
-            "p**p..p**p",
-            "p**pppp**p",
-            "p********p",
-            "p********p",
-            "pppppppppp"
+            "..........",
+            ".********.",
+            ".********.",
+            ".**....**.",
+            ".**....**.",
+            ".**....**.",
+            ".**....**.",
+            ".********.",
+            ".********.",
+            ".........."
         ]
         let colours: [Character: RGBAPixel?] = ["*": DocumentAnnotation.stroke, "p": plate, ".": palette["."]]
         let annotation = try #require(DocumentAnnotation(.rectangle(x: 1, y: 1, width: 8, height: 8)))
@@ -346,7 +346,7 @@ private func render(_ base: Picture, scale: Double = 1, crop: (Double, Double, D
     return try delivered(base.png(), edits)
 }
 
-/// White annotation plate (decision 68).
+/// The white annotation plate that decision 100 removed; no output may show it around a mark.
 private let plate = RGBAPixel(red: 255, green: 255, blue: 255, alpha: 255)
 
 /// Pixels in the renderer's working format: 8-bit sRGB RGBA, premultiplied, rows top to bottom.
@@ -591,7 +591,7 @@ private func cover(_ box: (minX: Int, minY: Int, maxX: Int, maxY: Int), capture:
     /// exactly those, in its own colour.
     @Test(arguments: [1.0, 2.0])
     func d23DownscaledPreviewDrawsMarksNoLargerThanTheSavedOutput(scale: Double) throws {
-        let full = (width: 64, height: Int(4096 * scale))
+        let full = (width: 64, height: Int(Double(2 * CaptureRenderer.previewMaxEdge) * scale))
         let base = try blank(full.width, full.height)
         let png = try base.png()
         let preview = try CaptureRenderer().preview(png)

@@ -22,7 +22,8 @@ public protocol CaptureFlattening: Sendable {
 
 /// Production flattener. The crop is copied as whole source pixels into one sRGB bitmap
 /// (`.copy` blend, no interpolation, so nothing is resampled), Solid redactions are stamped
-/// in each redaction's colour, and the result is encoded as PNG in memory with no metadata.
+/// in each redaction's colour, and the result is encoded as PNG in memory with no metadata but the
+/// capture's density (`capturePNG`).
 /// Nothing touches the disk.
 ///
 /// Blur (vImage) and Magnify (CoreGraphics) run in `EditPainter.paint` over the redacted composite;
@@ -54,6 +55,9 @@ public struct CaptureRenderer: CaptureFlattening {
             return .failure(.unreadableCapture)
         }
         let origin = EditPainter.cropOrigin(width: width, height: height, edits: edits)
+        // The capture's own density when it has one (its display's scale), else the document's.
+        let density = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue
+        let scale = density.flatMap { $0.isFinite && $0 > 0 ? $0 / 72 : nil } ?? edits.scale
         guard let image = CGImageSourceCreateImageAtIndex(source, 0, options),
               image.width == width, image.height == height,
               let cropped = image.cropping(to: CGRect(x: origin.x, y: origin.y, width: size.width, height: size.height)),
@@ -76,24 +80,15 @@ public struct CaptureRenderer: CaptureFlattening {
         }
         bytes = []   // `output` now owns the only copy, so painting mutates it in place.
         EditPainter.paint(&output, edits: edits, output: size, grid: .identity(output: size, origin: origin))
-        return encode(output, space: space)
-    }
-
-    /// PNG in memory, with no properties: no text, time, EXIF or resolution chunks.
-    private static func encode(_ buffer: RGBABuffer, space: CGColorSpace) -> Result<Data, RenderFailure> {
-        let data = NSMutableData()
-        guard let image = buffer.image(space: space),
-              let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)
-        else { return .failure(.encodingFailed) }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination),
-              let stripped = imageChunksOnly(data as Data) else { return .failure(.encodingFailed) }
-        return .success(stripped)
+        guard let image = output.image(space: space), let png = capturePNG(image, scale: scale) else {
+            return .failure(.encodingFailed)
+        }
+        return .success(png)
     }
 
     /// ImageIO adds an eXIf chunk even with no properties. Keep only the chunks that define the
-    /// pixels and their colour; each kept chunk is copied whole, with its CRC.
-    private static let keptChunks: Set<String> = ["IHDR", "PLTE", "tRNS", "sRGB", "iCCP", "gAMA", "cHRM", "IDAT", "IEND"]
+    /// pixels, their colour and their density (pHYs, ticket 102); each kept chunk is copied whole, with its CRC.
+    private static let keptChunks: Set<String> = ["IHDR", "PLTE", "tRNS", "sRGB", "iCCP", "gAMA", "cHRM", "pHYs", "IDAT", "IEND"]
 
     private static func imageChunksOnly(_ png: Data) -> Data? {
         let bytes = [UInt8](png)
@@ -114,15 +109,36 @@ public struct CaptureRenderer: CaptureFlattening {
 }
 
 extension CaptureRenderer {
-    /// The editor preview's default size limit: its longer edge is at most this many pixels.
-    public static let previewMaxEdge = 2048
+    /// The one PNG encoder for capture pixels (ticket 102): the capture sources and `flatten` use it.
+    /// The PNG holds the pixels as they are, their colour, and a density of 72 dpi × `scale` (the
+    /// display's backing scale: 144 dpi at 2×), as `screencapture` writes; no other metadata.
+    /// Viewers that honour the density show a Retina capture at its point size, pixel for pixel.
+    public static func capturePNG(_ image: CGImage, scale: Double) -> Data? {
+        guard scale.isFinite, scale > 0 else { return nil }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return nil }
+        let dpi = 72 * scale
+        CGImageDestinationAddImage(destination, image, [kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return imageChunksOnly(data as Data)
+    }
+
+    /// The editor preview's default size limit: its longer edge is at most this many pixels. It is the
+    /// longer edge of the largest Apple display (6,016 px, decision 60), so a capture of one display is
+    /// previewed at full resolution and the editor shows its real pixels (ticket 102). Only captures
+    /// taller than a display (up to the DA-6 cap) are downscaled.
+    public static let previewMaxEdge = 6016
+
+    /// The live-drag preview's size limit (decision 75's 2,048): renders during a drag stay inside the
+    /// 60 Hz frame on the largest display (ticket 97). The settled edits render at full size.
+    public static let livePreviewMaxEdge = 2048
 
     /// Decodes a pending capture once for the editor preview, downscaled so neither edge exceeds
     /// `maxEdge`. Run it off the main actor: it decodes the whole capture. Nothing touches the disk.
     ///
     /// Downscaling is leak-free by construction. Preview pixel `j` averages only capture pixels that
-    /// overlap its own block `[j·W/w, (j+1)·W/w)` (a vImage box average centred in the block and no
-    /// wider than it), and `render` fills every preview pixel whose block touches a redacted pixel.
+    /// overlap its own block `[j·W/w, (j+1)·W/w)` (an area average of the block), and `render` fills
+    /// every preview pixel whose block touches a redacted pixel.
     /// So no preview pixel mixes in content from under a Solid redaction.
     public func preview(_ capture: Data, maxEdge: Int = CaptureRenderer.previewMaxEdge) throws(RenderFailure) -> CapturePreview {
         try autoreleasepool { Self.makePreview(capture, maxEdge: maxEdge) }.get()
@@ -155,48 +171,75 @@ extension CaptureRenderer {
         }
         guard drawn, let whole = RGBABuffer(width: width, height: height, bytes: bytes) else { return .failure(.encodingFailed) }
         bytes = []
+        guard let preview = reduce(whole, maxEdge: maxEdge) else { return .failure(.encodingFailed) }
+        return .success(preview)
+    }
+
+    /// The preview of a fully decoded capture, downscaled so neither edge exceeds `maxEdge`.
+    static func reduce(_ whole: RGBABuffer, maxEdge: Int) -> CapturePreview? {
+        let width = whole.width, height = whole.height
         let edge = max(1, maxEdge)
-        guard max(width, height) > edge else { return .success(CapturePreview(base: whole, captureWidth: width, captureHeight: height)) }
+        guard max(width, height) > edge else { return CapturePreview(base: whole, captureWidth: width, captureHeight: height) }
         let fraction = Double(edge) / Double(max(width, height))
         let size = (width: min(width, max(1, Int((Double(width) * fraction).rounded()))),
                     height: min(height, max(1, Int((Double(height) * fraction).rounded()))))
-        guard let reduced = downscale(whole, to: size) else { return .failure(.encodingFailed) }
-        return .success(CapturePreview(base: reduced, captureWidth: width, captureHeight: height))
+        guard let reduced = downscale(whole, to: size) else { return nil }
+        return CapturePreview(base: reduced, captureWidth: width, captureHeight: height)
     }
 
-    /// Preview pixel `(i, j)` is a box average of capture pixels centred at column `⌊(2i+1)·W/2w⌋` and
-    /// row `⌊(2j+1)·H/2h⌋`, `2r+1` wide with `r = ⌊(W−w)/2w⌋` (and the same for rows). That box lies
-    /// inside the pixel's own block, so each preview pixel reads only pixels that overlap its block.
+    /// Preview pixel `(i, j)` is the area average of its block: the capture rectangle
+    /// `[i·W/w, (i+1)·W/w) × [j·H/h, (j+1)·H/h)`, each capture pixel weighted by the part of it
+    /// inside the block (ticket 102). Every capture pixel counts, so no column or row is dropped, and
+    /// no pixel outside the block is read. The weights are whole numbers (overlaps in units of
+    /// 1/w and 1/h of a pixel), so the sums are exact and the result is rounded once.
     private static func downscale(_ whole: RGBABuffer, to size: (width: Int, height: Int)) -> RGBABuffer? {
         let W = whole.width, H = whole.height, w = size.width, h = size.height
-        let radiusX = (W - w) / (2 * w), radiusY = (H - h) / (2 * h)
-        var row = [UInt8](repeating: 0, count: W * 4)
+        guard w > 0, h > 0, w <= W, h <= H else { return nil }
+        // Column spans and weights: output column i reads capture columns first[i]...last[i].
+        var first = [Int](repeating: 0, count: w), last = [Int](repeating: 0, count: w), weights = [UInt64]()
+        for i in 0..<w {
+            first[i] = i * W / w
+            last[i] = ((i + 1) * W - 1) / w
+            for k in first[i]...last[i] { weights.append(UInt64(min((k + 1) * w, (i + 1) * W) - max(k * w, i * W))) }
+        }
+        let total = UInt64(W) * UInt64(H)
         var output = [UInt8](repeating: 0, count: w * h * 4)
-        let failed = whole.bytes.withUnsafeBytes { wholeRaw -> Bool in
-            row.withUnsafeMutableBytes { rowRaw -> Bool in
-                output.withUnsafeMutableBytes { outputRaw -> Bool in
-                    var source = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: wholeRaw.baseAddress),
-                                               height: vImagePixelCount(H), width: vImagePixelCount(W), rowBytes: W * 4)
-                    var line = vImage_Buffer(data: rowRaw.baseAddress, height: 1, width: vImagePixelCount(W), rowBytes: W * 4)
-                    let rowPixels = rowRaw.baseAddress!.assumingMemoryBound(to: UInt32.self)
-                    let outputPixels = outputRaw.baseAddress!.assumingMemoryBound(to: UInt32.self)
-                    for j in 0..<h {
-                        let centre = (2 * j + 1) * H / (2 * h)
-                        // The kernel reads real rows above and below the one-row region; only the
-                        // image's own edges are extended.
-                        let error = vImageBoxConvolve_ARGB8888(&source, &line, nil, 0, vImagePixelCount(centre),
-                                                               UInt32(2 * radiusY + 1), UInt32(2 * radiusX + 1), nil,
-                                                               vImage_Flags(kvImageEdgeExtend))
-                        guard error == kvImageNoError else { return true }
+        var reduced = [UInt64](repeating: 0, count: w * 4), accumulator = [UInt64](repeating: 0, count: w * 4)
+        var reducedRow = -1
+        whole.bytes.withUnsafeBufferPointer { source in
+            reduced.withUnsafeMutableBufferPointer { row in
+                accumulator.withUnsafeMutableBufferPointer { sum in
+                    // One capture row, reduced across: each output column's weighted sum (weights total W).
+                    func reduce(_ r: Int) {
+                        guard r != reducedRow else { return }
+                        reducedRow = r
+                        var weight = 0
+                        let base = r * W * 4
                         for i in 0..<w {
-                            outputPixels[j * w + i] = rowPixels[(2 * i + 1) * W / (2 * w)]
+                            var red: UInt64 = 0, green: UInt64 = 0, blue: UInt64 = 0, alpha: UInt64 = 0
+                            for k in first[i]...last[i] {
+                                let factor = weights[weight], p = base + k * 4
+                                weight += 1
+                                red += factor * UInt64(source[p]); green += factor * UInt64(source[p + 1])
+                                blue += factor * UInt64(source[p + 2]); alpha += factor * UInt64(source[p + 3])
+                            }
+                            row[i * 4] = red; row[i * 4 + 1] = green; row[i * 4 + 2] = blue; row[i * 4 + 3] = alpha
                         }
                     }
-                    return false
+                    for j in 0..<h {
+                        for c in 0..<(w * 4) { sum[c] = 0 }
+                        for r in (j * H / h)...(((j + 1) * H - 1) / h) {
+                            let factor = UInt64(min((r + 1) * h, (j + 1) * H) - max(r * h, j * H))
+                            reduce(r)
+                            for c in 0..<(w * 4) { sum[c] += factor * row[c] }
+                        }
+                        let start = j * w * 4
+                        for c in 0..<(w * 4) { output[start + c] = UInt8((sum[c] + total / 2) / total) }
+                    }
                 }
             }
         }
-        return failed ? nil : RGBABuffer(width: w, height: h, bytes: output)
+        return RGBABuffer(width: w, height: h, bytes: output)
     }
 }
 
@@ -215,6 +258,14 @@ public struct CapturePreview: Sendable {
     public var width: Int { base.width }
     public var height: Int { base.height }
     public var isDownscaled: Bool { base.width != captureWidth || base.height != captureHeight }
+
+    /// A smaller preview of the same capture for renders during a live drag (ticket 102): this one
+    /// downscaled so neither edge exceeds `maxEdge`, with the same leak-free blocks. A preview that is
+    /// already downscaled is returned as it is, because its blocks must come from the capture's pixels.
+    public func reduced(maxEdge: Int = CaptureRenderer.livePreviewMaxEdge) -> CapturePreview {
+        guard !isDownscaled else { return self }
+        return CaptureRenderer.reduce(base, maxEdge: maxEdge) ?? self
+    }
 
     /// The preview of the output these edits produce. Pure: the same edits give the same pixels.
     public func render(_ edits: DocumentEdits) throws(RenderFailure) -> CGImage {
@@ -261,12 +312,10 @@ extension RGBABuffer {
 /// with font smoothing off. The editor preview (`CapturePreview.render`) and `flatten` both
 /// call this, so what the user sees is what is delivered.
 enum AnnotationPainter {
-    enum Layer { case plate, ink }
-
-    /// Draws one layer of every annotation over `buffer`, an `output`-sized crop mapped through `grid`.
+    /// Draws every annotation over `buffer`, an `output`-sized crop mapped through `grid`.
     /// A downscaled grid scales the whole drawing, so strokes, arrow heads and labels keep their
     /// full-size geometry and are never drawn larger than in the delivered image (D23).
-    static func draw(_ annotations: [DocumentAnnotation], layer: Layer, on buffer: inout RGBABuffer, scale: Double,
+    static func draw(_ annotations: [DocumentAnnotation], on buffer: inout RGBABuffer, scale: Double,
                      output: (width: Int, height: Int), grid: PixelGrid) {
         guard !annotations.isEmpty, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return }
         let width = buffer.width, height = buffer.height
@@ -300,11 +349,11 @@ enum AnnotationPainter {
             for annotation in annotations {
                 // Each mark's own ink and width (ticket 84); the default 2 pt keeps decision 68's pen.
                 let pen = CGFloat(max(2, (annotation.width * scale).rounded()))
-                let colour = layer == .ink ? inkColour(annotation.colour) : plateColour
+                let colour = inkColour(annotation.colour)
                 context.setStrokeColor(colour)
                 context.setFillColor(colour)
-                context.setLineWidth(layer == .ink ? pen : pen + 2)
-                draw(annotation, layer: layer, in: context, scale: scale, origin: origin, pen: pen,
+                context.setLineWidth(pen)
+                draw(annotation, in: context, scale: scale, origin: origin, pen: pen,
                      fullWidth: fullWidth, fullHeight: fullHeight)
             }
             context.flush()
@@ -327,11 +376,10 @@ enum AnnotationPainter {
     private static func inkColour(_ ink: RGBAPixel) -> CGColor {
         CGColor(srgbRed: CGFloat(ink.red) / 255, green: CGFloat(ink.green) / 255, blue: CGFloat(ink.blue) / 255, alpha: 1)
     }
-    static let plateColour = CGColor(srgbRed: CGFloat(EditPainter.plate.red) / 255,
-                                             green: CGFloat(EditPainter.plate.green) / 255,
-                                             blue: CGFloat(EditPainter.plate.blue) / 255, alpha: 1)
+    /// The letters of an Outlined or Box label in a dark or mid ink.
+    static let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
 
-    private static func draw(_ annotation: DocumentAnnotation, layer: Layer, in context: CGContext, scale: Double,
+    private static func draw(_ annotation: DocumentAnnotation, in context: CGContext, scale: Double,
                              origin: (x: Int, y: Int), pen: CGFloat, fullWidth: Int, fullHeight: Int) {
         func point(_ x: Double, _ y: Double) -> CGPoint {
             CGPoint(x: x * scale - Double(origin.x), y: y * scale - Double(origin.y))
@@ -349,8 +397,7 @@ enum AnnotationPainter {
             let box = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
             context.stroke(box.insetBy(dx: min(pen / 2, box.width / 2), dy: min(pen / 2, box.height / 2)))
         case let .arrow(x0, y0, x1, y1):
-            // Filled polygons from the core's geometry (ticket 85): the plate fills each one and
-            // outlines it 2 px wide (1 px outside), then the ink fills it.
+            // Filled polygons from the core's geometry (ticket 85), filled with the ink.
             let head = max(8, ArrowGeometry.headLength(width: annotation.width) * scale)
             let polygons = ArrowGeometry.polygons(style: annotation.style, tail: point(x0, y0), tip: point(x1, y1),
                                                   bend: annotation.bend, width: Double(pen), head: head)
@@ -358,17 +405,12 @@ enum AnnotationPainter {
                 context.beginPath()
                 context.addLines(between: polygon)
                 context.closePath()
-                if layer == .plate {
-                    context.setLineWidth(2)
-                    context.drawPath(using: .fillStroke)
-                } else {
-                    context.fillPath()
-                }
+                context.fillPath()
             }
         case let .text(x, y, characters):
             // Layout, wrapping and styles are the core's (ticket 86, `Labels.swift`).
             drawLabel(characters, format: annotation.label, colour: annotation.colour, top: point(x, y), scale: scale,
-                      layer: layer, in: context)
+                      in: context)
         }
     }
 }

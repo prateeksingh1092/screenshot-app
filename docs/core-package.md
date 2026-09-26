@@ -117,7 +117,7 @@ except Save, which names the file.
 
 - `flatten(_ capture: Data, edits: DocumentEdits) -> Data` makes the delivered
   PNG. The coordinator calls it for Done and for editor Copy, Save and drag.
-- `preview(_ capture: Data, maxEdge: 2048) -> CapturePreview` decodes the
+- `preview(_ capture: Data, maxEdge: 6016) -> CapturePreview` decodes the
   capture once for the editor. `CapturePreview.render(edits)` paints with the
   same `EditPainter.paint` as `flatten`.
 
@@ -134,11 +134,13 @@ Painting order:
 3. Blur (vImage box, 3 × 3, six passes) and Magnify (2×, no interpolation).
    Each reads only its own box. The redactions are stamped again after them.
 4. Annotations, drawn with CoreGraphics and CoreText (decisions 68, 83 and 84):
-   a white plate for every mark, the redactions again, then the ink. Labels
+   in their ink only, above the redactions; no white plate (decision 100). Labels
    use `HelveticaNeue-Bold`. `ArrowGeometry` and `LabelLayout` compute the
    shapes in the core.
 
-The output PNG keeps only the IHDR, IDAT, sRGB and IEND chunks. A capture is at
+The output PNG keeps only the IHDR, IDAT, sRGB, pHYs and IEND chunks; pHYs is
+the capture's density, 72 dpi × its display's scale (ticket 102). The capture
+sources encode through the same `CaptureRenderer.capturePNG`. A capture is at
 most one display (decision 60). The renderer refuses anything taller than
 32,768 px, read from the PNG header.
 

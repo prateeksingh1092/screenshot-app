@@ -60,8 +60,10 @@ extension EditorMemoryRunTests {
         let edits = try #require(DocumentEdits(scale: 1, redactions: [redaction], annotations: [label, arrow], effects: [blur]))
         var slowest = Duration.zero
         for _ in 0..<5 { slowest = max(slowest, try clock.measure { _ = try shown.render(edits) }) }
-        print("EDITOR_PREVIEW_RUN run=\(run ?? "") dimensions=\(width)x\(height) preview=\(shown.width)x\(shown.height) open=\(opened) slowest_render=\(slowest)")
-        #expect(shown.isDownscaled)
+        var live: CapturePreview?
+        let reducing = clock.measure { live = shown.reduced() }
+        print("EDITOR_PREVIEW_RUN run=\(run ?? "") dimensions=\(width)x\(height) preview=\(shown.width)x\(shown.height) open=\(opened) slowest_render=\(slowest) live_preview=\(live?.width ?? 0)x\(live?.height ?? 0) reduce=\(reducing)")
+        #expect(shown.isDownscaled == (run == "cap"), "one display previews at full resolution (ticket 102)")
     }
 }
 
@@ -74,7 +76,8 @@ extension EditorMemoryRunTests {
     @MainActor func liveDragRendersEachPointWithinTheFrameBudget() throws {
         let run = ProcessInfo.processInfo.environment["FRISKET_EDITOR_MEMORY_RUN"]
         let (width, height) = run == "cap" ? (5120, CaptureRenderer.maximumOutputHeight) : (6016, 3384)
-        let shown = try CaptureRenderer().preview(try syntheticPNG(width: width, height: height))
+        // A live drag renders through the reduced preview (ticket 102); settled edits at full size.
+        let shown = try CaptureRenderer().preview(try syntheticPNG(width: width, height: height)).reduced()
         let h = Double(height)
         let label = try #require(DocumentAnnotation(.text(x: 40, y: 30, characters: "Gate B")))
         let curved = try #require(DocumentAnnotation(.arrow(x0: 40, y0: h - 40, x1: 4_000, y1: h - 400), width: 8,

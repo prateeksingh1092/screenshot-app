@@ -66,7 +66,7 @@ import Testing
     }
 
     /// Well inside a thick shape's stroke every pixel is exactly the ink, White and Yellow included:
-    /// the white plate (decision 68) only widens the stroke outside, it never tints the ink.
+    /// no plate or blend tints the ink.
     @Test func aShapeIsDrawnExactlyInEachInk() throws {
         let width = 120, height = 90
         let png = try CaptureRendererTests.encode(CaptureRendererTests.pattern(width: width, height: height),
