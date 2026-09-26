@@ -70,11 +70,9 @@ struct PixelGrid: Sendable {
 /// the grid, and copied as opaque fill with no blending or antialiasing. Every mark therefore covers
 /// the same content it would cover without the crop (D18). Blur (vImage) and Magnify (CoreGraphics)
 /// then read only that redacted composite, inside their own box; redactions are stamped again
-/// afterwards. Annotations draw last, natively (`AnnotationPainter`): a white plate, the redactions
-/// once more, then ink.
+/// afterwards. Annotations draw last, natively (`AnnotationPainter`), in their ink only: no white
+/// plate (decision 100, ticket 104).
 enum EditPainter {
-    /// One output pixel of white around annotation ink. It is a constant, never a sample of the capture.
-    static let plate = RGBAPixel(red: 255, green: 255, blue: 255, alpha: 255)
 
     static func outputSize(width: Int, height: Int, edits: DocumentEdits) -> (width: Int, height: Int) {
         guard let crop = edits.crop else { return (width, height) }
@@ -110,12 +108,9 @@ enum EditPainter {
             apply(effect, bounds, on: &buffer)
         }
         fill(redactions, on: &buffer)
-        // Plates first, then the redactions again so no plate pixel lands on a redacted pixel,
-        // then ink above everything (annotations draw above Solid redactions).
+        // Ink above everything (annotations draw above Solid redactions), with no white plate (decision 100).
         guard !edits.annotations.isEmpty else { return }
-        AnnotationPainter.draw(edits.annotations, layer: .plate, on: &buffer, scale: edits.scale, output: output, grid: grid)
-        fill(redactions, on: &buffer)
-        AnnotationPainter.draw(edits.annotations, layer: .ink, on: &buffer, scale: edits.scale, output: output, grid: grid)
+        AnnotationPainter.draw(edits.annotations, on: &buffer, scale: edits.scale, output: output, grid: grid)
     }
 
     typealias Box = (minX: Int, minY: Int, maxX: Int, maxY: Int)

@@ -122,14 +122,12 @@ import FrisketCore
         catch { throw permission.failure(for: error) }
         try requirePermission()
         guard selectionGeneration == environmentGeneration else { throw CaptureSourceFailure.cancelled }
-        let bytes = NSMutableData()
-        guard let encoder = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil) else {
-            throw CaptureSourceFailure.unavailable
+        // Marked 72 dpi × the window's display scale (ticket 102).
+        guard let bytes = CaptureRenderer.capturePNG(image, scale: Double(filter.pointPixelScale)) else {
+            throw CaptureSourceFailure.window(.systemRefused)
         }
-        CGImageDestinationAddImage(encoder, image, nil)
-        guard CGImageDestinationFinalize(encoder) else { throw CaptureSourceFailure.window(.systemRefused) }
-        guard bytes.length <= maximumBytes else { throw CaptureSourceFailure.window(.tooLarge) }
-        return bytes as Data
+        guard bytes.count <= maximumBytes else { throw CaptureSourceFailure.window(.tooLarge) }
+        return bytes
     }
 
     private func requirePermission() throws {

@@ -7,7 +7,7 @@ import Testing
 ///
 /// Tolerance (this ticket's decision): geometry goldens are exact to 1e-9 in the polygons' own units.
 /// Pixel goldens compare only pixels at least 1 px inside a polygon (exactly the ink) or at least 2 px
-/// outside it, past the 1 px white plate (exactly the base); antialiased edge pixels are not compared.
+/// outside it (exactly the base; no plate since decision 100); antialiased edge pixels are not compared.
 /// The preview and the delivered image are compared byte for byte.
 @MainActor @Suite struct ArrowStylesTests {
     private static let exact = 1e-9
@@ -222,7 +222,7 @@ import Testing
                 let saved = try delivered(png, edits)
                 let shown = try previewed(preview, edits)
                 #expect(saved.bytes == shown.bytes, "\(style) at \(width) pt, \(scale)×")
-                // The redaction stays the chosen colour at alpha 255 under the arrows' plates.
+                // The redaction stays the chosen colour at alpha 255 beside the arrows.
                 let x0 = Int(((30 - 2.5) * scale).rounded(.down)), y0 = Int(((30 - 1.25) * scale).rounded(.down))
                 #expect(saved.pixel(x: x0 + 1, y: y0 + 1) == SolidRedaction.fill)
             }

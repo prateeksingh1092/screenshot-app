@@ -149,13 +149,12 @@ import UniformTypeIdentifiers
 
     public func capture(_ request: AreaCaptureRequest, maximumBytes: Int) async throws -> Data {
         let image = try await captureRegion(request)
-        let bytes = NSMutableData()
-        guard let encoder = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil) else {
+        // Marked 72 dpi × the display's backing scale (ticket 102): pixels per point of the request.
+        let scale = request.sourceRect.width > 0 ? Double(request.pixelWidth) / request.sourceRect.width : 1
+        guard let bytes = CaptureRenderer.capturePNG(image, scale: scale), bytes.count <= maximumBytes else {
             throw CapturePlatformError.unavailable
         }
-        CGImageDestinationAddImage(encoder, image, nil)
-        guard CGImageDestinationFinalize(encoder), bytes.length <= maximumBytes else { throw CapturePlatformError.unavailable }
-        return bytes as Data
+        return bytes
     }
 }
 

@@ -225,8 +225,11 @@ enum EditorAction {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.underPageBackgroundColor.setFill()
         bounds.fill()
+        // High-quality resampling when the fitted zoom maps the preview to a non-whole number of device
+        // pixels: nearest-neighbour dropped or doubled pixel columns and made text ragged (ticket 102).
+        // At 1:1 the pixels are drawn as they are either way.
         rendered?.draw(in: imageRect, from: .zero, operation: .copy, fraction: 1, respectFlipped: true,
-                       hints: [.interpolation: NSNumber(value: NSImageInterpolation.none.rawValue)])
+                       hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)])
         drawSelection()
         if let typingBox {
             NSColor.controlAccentColor.setStroke()
@@ -329,8 +332,11 @@ enum EditorAction {
 @MainActor final class EditorWindow: NSObject, NSWindowDelegate {
     private let window: EditorKeyWindow
     private let canvas: EditorCanvasView
-    /// The capture decoded once for the preview; `render(edits)` runs off the main actor.
+    /// The capture decoded once for the preview; `render(edits)` runs off the main actor. A display's
+    /// capture is at full resolution, so the canvas shows its real pixels (ticket 102).
     private let preview: CapturePreview
+    /// The same capture reduced for renders during a live drag, which keep the 60 Hz frame (ticket 102).
+    private let livePreview: CapturePreview
     private let pixelSize: CGSize
     private var documentSize: CGSize
     /// The edits and their undo manager, which the window returns for Edit › Undo and Redo.
@@ -383,6 +389,8 @@ enum EditorAction {
     private var finishing = false
     /// The edits the canvas shows, or is rendering now; the main actor only swaps finished images.
     private var renderedEdits: DocumentEdits?
+    /// Whether the shown image came from the live-drag preview; the settled edits then render again.
+    private var renderedLive = false
     /// The edits mouse-up would commit for the drag in progress, rendered live (ticket 97). They are
     /// not in the undo history; the drag is committed once, on mouse-up (decision 77).
     private var provisional: DocumentEdits?
@@ -392,10 +400,11 @@ enum EditorAction {
     private var promptOpen = false
     private let placementScreen: NSScreen?
 
-    init?(preview: CapturePreview, scale: Double, screen: NSScreen?,
+    init?(preview: CapturePreview, livePreview: CapturePreview? = nil, scale: Double, screen: NSScreen?,
           finish: @escaping (EditorLeave) async -> Bool) {
         guard let edits = DocumentEdits(scale: scale) else { return nil }
         self.preview = preview
+        self.livePreview = livePreview ?? preview
         document = UndoableEdits(edits)
         marks = MarkEditor(document)
         self.finish = finish
@@ -764,10 +773,12 @@ enum EditorAction {
     /// The main actor only swaps the finished image in.
     private func renderLatestEdits() {
         let target = provisional ?? edits
-        guard !rendering, target != renderedEdits else { return }
+        let live = provisional != nil
+        guard !rendering, target != renderedEdits || renderedLive != live else { return }
         rendering = true
-        let size = currentDocumentSize, preview = preview
+        let size = currentDocumentSize, preview = live ? livePreview : preview
         renderedEdits = target
+        renderedLive = live
         Task { [weak self] in
             let image = await Self.render(preview, target)
             guard let self else { return }
