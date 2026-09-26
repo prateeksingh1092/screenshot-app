@@ -148,6 +148,8 @@ import FrisketCore
 
     /// Menu enablement (D17): the panels mirror the core's `Thumbnails`, so these answer synchronously.
     var canCopyLatest: Bool { !panels.isEmpty }
+    /// Focus Latest Thumbnail uses Copy Latest's rule: nothing to focus without a Thumbnail (D33).
+    var canFocusLatest: Bool { canCopyLatest }
     var canDeleteLatest: Bool { panels.values.contains { $0.model.status == .pending } }
 
     func screenLocked() {

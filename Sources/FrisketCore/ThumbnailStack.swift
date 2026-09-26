@@ -148,6 +148,8 @@ public struct Thumbnails: RandomAccessCollection, Equatable, Sendable {
     public var startIndex: Int { cards.startIndex }
     public var endIndex: Int { cards.endIndex }
     public subscript(position: Int) -> ThumbnailCard { cards[position] }
+    /// What Focus Latest Thumbnail acts on: the newest card, by Copy Latest's rule. Nil disables it (D33).
+    public var latestToFocus: ThumbnailCard? { cards.first }
     /// What Copy Latest acts on: the newest card, pending or kept in History. Nil disables it (D17).
     public var latestToCopy: ThumbnailCard? { cards.first }
     /// What Delete Latest acts on: the newest pending card; a kept card is already in History. Nil disables it (D17).

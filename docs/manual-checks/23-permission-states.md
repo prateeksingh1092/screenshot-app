@@ -15,11 +15,12 @@ account, record 3–6 as blocked. Never reset TCC to make a step pass.
    survives two signed rebuilds.
 3. **Not asked** (test account). The icon shows a warning. ⌘⇧4, ⌘⇧3 and ⌘⇧5
    each show the recovery panel, never a Selection or pixels. The panel offers
-   Request Screen Recording, Open Privacy & Security and Quit & Reopen.
+   Request Screen Recording, Open System Settings and Quit & Reopen.
 4. **Denied** (test account). Request, then deny. No overlay shows above or
    below the macOS alert. Each capture shortcut shows denied recovery, also
-   after a relaunch. Open Privacy & Security reaches Screen & System Audio
-   Recording.
+   after a relaunch, with no Request button (decision 100); the message says to
+   turn Frisket on in System Settings. Open System Settings reaches Screen &
+   System Audio Recording.
 5. **Needs relaunch** (test account). Turn Frisket on in that pane while it
    runs; choose Later if offered. Capture shows needs-relaunch recovery. Quit &
    Reopen quits the old process and opens the installed app once. Capture then

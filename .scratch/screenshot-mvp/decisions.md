@@ -436,6 +436,10 @@ Prateek asked for a red-team review and for the mutually agreed amendments to be
     - **The white halo goes.** Arrows, lines, shapes and labels no longer get the 1-pixel white plate. This reverses decision 68's plate and decision 97's "the plate stays white for every ink". Outlined and Box labels keep their own outline and box.
     - **Text must be as crisp as CleanShot's:** in the editor, in every output and at every label size (D32, ticket 102).
     - Prateek's overall verdict on feel against CleanShot: "It will take me time to adjust to Frisket. CleanShot is a robust app for sure."
+NN. **The first run keeps its Request button (implementer, 2026-09-25, ticket 103):**
+    - Decision 100 removes "Request Screen Recording" because a request is silent once macOS has asked. Before it has asked (the not-asked state), the request is the only way to raise the macOS alert, and first launch (manual check 08) and onboarding depend on it. So the button shows only in the not-asked state; denied, revoked and needs-relaunch recovery offer Open System Settings and Quit & Reopen, and the message says to turn Frisket on in System Settings and relaunch if macOS asks.
+    - The panel's "Open Privacy & Security" button is renamed "Open System Settings", decision 100's name for it. It still opens the Screen & System Audio Recording page.
+    - `PermissionRecoveryContent` in FrisketCore holds the message and buttons per state, so a package test covers them.
 
 ## Evaluation update: Xcode question resolved narrowly
 

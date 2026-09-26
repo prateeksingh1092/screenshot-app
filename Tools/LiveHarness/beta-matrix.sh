@@ -501,16 +501,18 @@ row_save_confirms() {
   return $ok
 }
 row_menu_latest() {
-  # With no Thumbnail, Copy Latest and Delete Latest are disabled (D17).
+  # With no Thumbnail, Focus Latest, Copy Latest and Delete Latest are disabled (D17, D33).
   pattern_up --show || return 1
   wait_for 12 no_cards || { note "a Thumbnail is still up"; return 1; }
   drv axpress frisket "Frisket capture menu"; nap 0.6
-  local copy delete
+  local focus copy delete
+  focus=$("$H/drive" axfind frisket "Focus Latest Thumbnail" 2>/dev/null)
   copy=$("$H/drive" axfind frisket "Copy Latest Capture" 2>/dev/null)
   delete=$("$H/drive" axfind frisket "Delete Latest Capture" 2>/dev/null)
-  note "copy: $copy"; note "delete: $delete"
+  note "focus: $focus"; note "copy: $copy"; note "delete: $delete"
   key 53; nap 0.3
-  printf '%s' "$copy" | grep -q 'enabled="0"' && printf '%s' "$delete" | grep -q 'enabled="0"'
+  printf '%s' "$focus" | grep -q 'enabled="0"' &&
+    printf '%s' "$copy" | grep -q 'enabled="0"' && printf '%s' "$delete" | grep -q 'enabled="0"'
 }
 row_history_delete() {
   # Copy finalizes and keeps the Thumbnail open (editor Done closes it). Stay inside its 10 s timeout.

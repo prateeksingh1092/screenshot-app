@@ -22,7 +22,7 @@ history-display	D15	pass	⌘⇧1 with the pointer on this display opens History 
 settings-focus	D15,D17	pass	⌘, opens Settings on this display; the auto-dismiss field doesn't have first focus; no shortcut reads ⇧⌘
 thumbnail-picture	D16	pass	A Thumbnail's picture is an accessibility element named "Pending capture preview"
 save-confirms	D17	pass	Thumbnail Save shows "… is in the export folder" on the notice line, with no modal
-menu-latest	D17	pass	With no Thumbnail, Copy Latest Capture and Delete Latest Capture are disabled
+menu-latest	D17,D33	pass	With no Thumbnail, Focus Latest Thumbnail, Copy Latest Capture and Delete Latest Capture are disabled
 history-delete	D10	pass	History Delete with the capture's Thumbnail still open asks first, then succeeds
 drag-cancel	D7	pass	A cancelled editor drag leaves History and drag staging unchanged
 history-restore	-	pass	History › Restore to Thumbnail brings back a finalized Thumbnail with Copy and no Edit; Copy gives that capture (run-unique size, pattern --verify-full); closing it adds no History image
